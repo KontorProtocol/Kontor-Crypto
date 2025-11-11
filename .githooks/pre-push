@@ -1,0 +1,67 @@
+#!/bin/sh
+#
+# This pre-push hook runs formatting, clippy, tests and a security audit before allowing a push.
+#
+# To enable this hook, run the following command from the root of the repository:
+#   git config core.hooksPath .githooks
+
+echo "--- Running Pre-Push Hook ---"
+
+# 1. Check formatting
+echo "Checking formatting with 'cargo fmt --check'..."
+cargo fmt --all -- --check
+if [ $? -ne 0 ]; then
+    echo "-------------------------------------"
+    echo "❌ Code is not formatted. Run 'cargo fmt --all' and try again."
+    echo "-------------------------------------"
+    exit 1
+fi
+echo "✅ Formatting check passed."
+echo ""
+
+# 2. Run clippy
+echo "Running clippy with 'cargo clippy'..."
+cargo clippy --all-targets --all-features -- -D warnings
+if [ $? -ne 0 ]; then
+    echo "-------------------------------------"
+    echo "❌ Clippy found issues. Fix them and try again."
+    echo "-------------------------------------"
+    exit 1
+fi
+echo "✅ Clippy check passed."
+echo ""
+
+# 3. Run tests
+echo "Running tests with 'cargo nextest run'..."
+cargo nextest run
+if [ $? -ne 0 ]; then
+    echo "-------------------------------------"
+    echo "❌ Tests failed. Push aborted."
+    echo "-------------------------------------"
+    exit 1
+fi
+echo "✅ Tests passed."
+echo ""
+
+# 4. Run security audit
+echo "Running security audit with 'cargo audit'..."
+# Check if cargo-audit is installed first
+if ! command -v cargo-audit > /dev/null; then
+    echo "⚠️  cargo-audit is not installed. Please run 'cargo install cargo-audit' to enable this check."
+    # We exit with 0 so as not to block developers who don't have it installed,
+    # as the GitHub Action will enforce the check anyway.
+    exit 0
+fi
+
+cargo audit
+if [ $? -ne 0 ]; then
+    echo "-------------------------------------"
+    echo "❌ Security audit found vulnerabilities. Push aborted."
+    echo "-------------------------------------"
+    exit 1
+fi
+echo "✅ Security audit passed."
+echo ""
+
+echo "--- Pre-Push Checks Succeeded ---"
+exit 0

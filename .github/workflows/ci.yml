@@ -1,0 +1,72 @@
+# .github/workflows/ci.yml
+
+name: Rust CI
+
+# Controls when the action will run.
+# - Triggers the workflow on push events for the main branch.
+# - Triggers the workflow on pull request events targeting the main branch.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+# Cancel in-progress runs for the same workflow on the same ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel.
+jobs:
+  build_and_test:
+    # The type of runner that the job will run on.
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job.
+    steps:
+      # 1. Check out the repository code under $GITHUB_WORKSPACE.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up the Rust toolchain.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # 3. Cache dependencies to speed up future builds.
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # 4. Check formatting
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      # 5. Run clippy
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # 6. Run tests.
+      # The --all-features flag ensures all optional dependencies are tested.
+      - name: Run tests
+        run: cargo test --all-features --workspace
+
+      # 7. Run security audit.
+      # The command will fail the workflow if any vulnerabilities are found.
+      - name: Install cargo-audit
+        run: |
+          if ! command -v cargo-audit >/dev/null; then
+            cargo install --locked cargo-audit
+          fi
+      - name: Run security audit
+        run: cargo audit

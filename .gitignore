@@ -1,0 +1,67 @@
+# Rust build artifacts
+target/
+Cargo.lock.bak
+*.rs.bk
+*.pdb
+
+# Cargo cache directory
+.cargo/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vim/
+*.sublime-project
+*.sublime-workspace
+.project
+.settings/
+.classpath
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# Editor backup and temp files
+*.bak
+*.tmp
+*.temp
+*~
+.*.sw?
+
+# Benchmark results
+/benches/*.txt
+/benches/results/
+
+# Test coverage
+*.profraw
+*.profdata
+coverage/
+tarpaulin-report.html
+
+# Documentation build
+doc/
+*.html
+
+# Flamegraph profiling
+flamegraph.svg
+perf.data
+perf.data.old
+
+# Custom/project-specific
+claude
