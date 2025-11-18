@@ -4,7 +4,7 @@
 //! allowing efficient reuse of expensive parameter generation within a session.
 //! Parameters are uniquely determined by (files_per_step, file_tree_depth, aggregated_tree_depth).
 
-use crate::{api::PorParams, circuit::PorCircuit, ledger::FileLedger, NovaPoRError, Result};
+use crate::{api::PorParams, circuit::PorCircuit, ledger::FileLedger, KontorPoRError, Result};
 use arecibo::{
     provider::{ipa_pc, PallasEngine, VestaEngine},
     spartan::snark::RelaxedR1CSSNARK,
@@ -138,7 +138,7 @@ fn generate_params_for_shape(
 
     // Generate compressed SNARK keys
     let (pk, vk) = CompressedSNARK::setup(&pp).map_err(|e| {
-        NovaPoRError::Snark(format!("Failed to setup compressed SNARK keys: {:?}", e))
+        KontorPoRError::Snark(format!("Failed to setup compressed SNARK keys: {:?}", e))
     })?;
 
     Ok(PorParams {

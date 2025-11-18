@@ -85,7 +85,7 @@ pub use verify::verify as verify_raw;
 pub use witness::generate_circuit_witness;
 
 // Re-export key external types for easier access.
-pub use crate::{NovaPoRError, Result};
+pub use crate::{KontorPoRError, Result};
 
 // Local imports for utility functions
 use crate::build_tree;
@@ -118,7 +118,7 @@ pub fn prepare_file(
     let _span = debug_span!("prepare_file", data_size = data.len(), filename).entered();
 
     if data.is_empty() {
-        return Err(NovaPoRError::EmptyData {
+        return Err(KontorPoRError::EmptyData {
             operation: "prepare_file".to_string(),
         });
     }

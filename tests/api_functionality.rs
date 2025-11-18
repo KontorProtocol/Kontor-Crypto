@@ -268,7 +268,7 @@ fn test_porsystem_challenge_id_matching() {
     let result = system.verify(&proof, &[different_challenge]);
 
     match result {
-        Err(kontor_crypto::NovaPoRError::InvalidInput(msg)) => {
+        Err(kontor_crypto::KontorPoRError::InvalidInput(msg)) => {
             assert!(
                 msg.contains("Challenge ID mismatch"),
                 "Should report challenge ID mismatch"
@@ -297,7 +297,7 @@ fn test_porsystem_file_not_found() {
     let result = system.prove(vec![&prepared], &[challenge]);
 
     match result {
-        Err(kontor_crypto::NovaPoRError::FileNotInLedger { file_id }) => {
+        Err(kontor_crypto::KontorPoRError::FileNotInLedger { file_id }) => {
             assert_eq!(
                 file_id, metadata.file_id,
                 "Should report correct missing file hash"
@@ -348,7 +348,7 @@ fn test_porsystem_prepare_file() {
     // Test empty data rejection
     let empty_result = system.prepare_file(&[], "empty.dat");
     match empty_result {
-        Err(kontor_crypto::NovaPoRError::EmptyData { operation }) => {
+        Err(kontor_crypto::KontorPoRError::EmptyData { operation }) => {
             assert_eq!(operation, "prepare_file", "Should report correct operation");
             println!("  ✓ Empty data correctly rejected");
         }

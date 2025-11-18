@@ -2,7 +2,7 @@
 
 /// Error types for the Kontor PoR library
 #[derive(Debug, thiserror::Error)]
-pub enum NovaPoRError {
+pub enum KontorPoRError {
     /// Merkle tree construction or operations failed
     #[error("Merkle tree error: {0}")]
     MerkleTree(String),
@@ -80,5 +80,5 @@ pub enum NovaPoRError {
     InvalidChunkEncoding { size: usize, max: usize },
 }
 
-/// Convenience Result type for Nova PoR operations
-pub type Result<T> = std::result::Result<T, NovaPoRError>;
+/// Convenience Result type for Kontor PoR operations
+pub type Result<T> = std::result::Result<T, KontorPoRError>;

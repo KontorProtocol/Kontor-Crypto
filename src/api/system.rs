@@ -5,7 +5,7 @@
 //! and parameter caching internally.
 
 use super::types::{Challenge, FileMetadata, PreparedFile, Proof};
-use crate::{ledger::FileLedger, NovaPoRError, Result};
+use crate::{ledger::FileLedger, KontorPoRError, Result};
 use std::collections::BTreeMap;
 use tracing::debug;
 
@@ -69,7 +69,7 @@ impl<'a> PorSystem<'a> {
         let mut files_map = BTreeMap::new();
         for file in files {
             if files_map.insert(file.file_id.clone(), file).is_some() {
-                return Err(NovaPoRError::InvalidInput(format!(
+                return Err(KontorPoRError::InvalidInput(format!(
                     "Duplicate file_id provided: {}",
                     file.file_id
                 )));
@@ -79,7 +79,7 @@ impl<'a> PorSystem<'a> {
         // Validate that all files referenced by challenges are present
         for challenge in challenges {
             if !files_map.contains_key(&challenge.file_metadata.file_id) {
-                return Err(NovaPoRError::FileNotFound {
+                return Err(KontorPoRError::FileNotFound {
                     file_id: challenge.file_metadata.file_id.clone(),
                 });
             }
@@ -114,7 +114,7 @@ impl<'a> PorSystem<'a> {
         let expected_ids: Vec<_> = challenges.iter().map(|c| c.id()).collect();
 
         if proof.challenge_ids.len() != expected_ids.len() {
-            return Err(NovaPoRError::InvalidInput(format!(
+            return Err(KontorPoRError::InvalidInput(format!(
                 "Challenge count mismatch: proof covers {} challenges, provided {}",
                 proof.challenge_ids.len(),
                 expected_ids.len()
@@ -129,7 +129,7 @@ impl<'a> PorSystem<'a> {
             .enumerate()
         {
             if proof_id != expected_id {
-                return Err(NovaPoRError::InvalidInput(format!(
+                return Err(KontorPoRError::InvalidInput(format!(
                     "Challenge ID mismatch at position {}: proof has {:?}, expected {:?}",
                     i, proof_id.0, expected_id.0
                 )));

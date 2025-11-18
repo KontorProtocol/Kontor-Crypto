@@ -4,7 +4,7 @@
 //! by handling all the common preprocessing steps in one place.
 
 use super::types::{Challenge, FieldElement};
-use crate::{config, ledger::FileLedger, NovaPoRError, Result};
+use crate::{config, ledger::FileLedger, KontorPoRError, Result};
 use ff::Field;
 
 /// Internal preprocessing plan that consolidates logic shared between prove() and verify().
@@ -35,7 +35,7 @@ impl Plan {
     /// Create a unified preprocessing plan for both prove() and verify().
     pub(crate) fn make_plan(challenges: &[Challenge], ledger: &FileLedger) -> Result<Plan> {
         if challenges.is_empty() {
-            return Err(NovaPoRError::InvalidInput(
+            return Err(KontorPoRError::InvalidInput(
                 "Cannot create plan from empty challenges".to_string(),
             ));
         }
@@ -81,7 +81,7 @@ impl Plan {
             );
 
             let ledger_idx = ledger.get_canonical_index_for_rc(rc).ok_or_else(|| {
-                NovaPoRError::FileNotInLedger {
+                KontorPoRError::FileNotInLedger {
                     file_id: challenge.file_metadata.file_id.clone(),
                 }
             })?;

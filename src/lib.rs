@@ -15,18 +15,18 @@
 //! ## Error Handling
 //!
 //! This library uses `Result` types for robust error handling. Core functions return
-//! `Result<T, NovaPoRError>` to provide detailed error information:
+//! `Result<T, KontorPoRError>` to provide detailed error information:
 //!
-//! - `prepare_file()` returns `Result<(PreparedFile, FileMetadata), NovaPoRError>`
-//! - `reconstruct_file()` returns `Result<Vec<u8>, NovaPoRError>`
-//! - `build_tree()` returns `Result<(MerkleTree, F), NovaPoRError>`
-//! - `get_padded_proof_for_leaf()` returns `Result<CircuitMerkleProof, NovaPoRError>`
+//! - `prepare_file()` returns `Result<(PreparedFile, FileMetadata), KontorPoRError>`
+//! - `reconstruct_file()` returns `Result<Vec<u8>, KontorPoRError>`
+//! - `build_tree()` returns `Result<(MerkleTree, F), KontorPoRError>`
+//! - `get_padded_proof_for_leaf()` returns `Result<CircuitMerkleProof, KontorPoRError>`
 //!
 //! ## Quick Start
 //!
 //! ### Basic Usage
 //! ```rust,no_run
-//! use kontor_crypto::{api::{self, PorSystem}, FileLedger, NovaPoRError};
+//! use kontor_crypto::{api::{self, PorSystem}, FileLedger, KontorPoRError};
 //!
 //! // 1. Prepare file with Reed-Solomon erasure coding (fixed 31-byte symbols)
 //! let data = b"Hello, world! This is test data for Nova PoR.";
@@ -48,12 +48,12 @@
 //! // 4. Verify the proof
 //! let is_valid = system.verify(&proof, &[challenge])?;
 //! assert!(is_valid);
-//! # Ok::<(), NovaPoRError>(())
+//! # Ok::<(), KontorPoRError>(())
 //! ```
 //!
 //! ### Multi-File Proof
 //! ```rust,no_run
-//! use kontor_crypto::{api::{self, PorSystem}, FileLedger, NovaPoRError};
+//! use kontor_crypto::{api::{self, PorSystem}, FileLedger, KontorPoRError};
 //!
 //! // 1. Prepare multiple files
 //! let (prepared1, metadata1) = api::prepare_file(b"File 1 content", "file1.dat")?;
@@ -75,7 +75,7 @@
 //! let proof = system.prove(files, &challenges)?;
 //! let is_valid = system.verify(&proof, &challenges)?;
 //! assert!(is_valid);
-//! # Ok::<(), NovaPoRError>(())
+//! # Ok::<(), KontorPoRError>(())
 //! ```
 
 pub mod api;
@@ -94,7 +94,7 @@ pub mod utils;
 pub use api::{prepare_file, reconstruct_file, tree_depth_from_metadata, PorSystem};
 pub use api::{Challenge, FieldElement, FileMetadata, PorParams, PreparedFile, Proof};
 pub use circuit::{CircuitWitness, FileProofWitness, PorCircuit};
-pub use error::{NovaPoRError, Result};
+pub use error::{KontorPoRError, Result};
 pub use ledger::FileLedger;
 pub use merkle::{
     build_tree, build_tree_from_leaves, get_leaf_hash, get_padded_proof_for_leaf, hash_leaf_data,

@@ -177,7 +177,7 @@ impl TestSetup {
 }
 
 /// Creates a complete test scenario from configuration.
-pub fn setup_test_scenario(config: &TestConfig) -> Result<TestSetup, kontor_crypto::NovaPoRError> {
+pub fn setup_test_scenario(config: &TestConfig) -> Result<TestSetup, kontor_crypto::KontorPoRError> {
     // 1. Create files from specs
     let mut files = BTreeMap::new();
     let mut metadatas = Vec::new();
@@ -316,7 +316,7 @@ pub fn create_circuit_public_inputs<F: PrimeField, CS: ConstraintSystem<F>>(
 pub fn create_files_meta_commitment(
     _file_metadatas: &[&FileMetadata],
     _files_per_step: usize,
-) -> Result<FieldElement, kontor_crypto::NovaPoRError> {
+) -> Result<FieldElement, kontor_crypto::KontorPoRError> {
     // Return a dummy value since meta commitments are no longer used
     Ok(FieldElement::from(42u64))
 }

@@ -9,7 +9,7 @@ use arecibo::traits::Engine;
 use ff::Field;
 use serde::{Deserialize, Serialize};
 
-use super::NovaPoRError;
+use super::KontorPoRError;
 use crate::commitment::domain_tags;
 use crate::commitment::poseidon_hash_tagged;
 use crate::config;
@@ -51,11 +51,11 @@ pub fn hash_leaf_data(left: F, right: F) -> F {
 /// # Errors
 ///
 /// Returns `InvalidInput` error if data exceeds 31 bytes (security violation).
-pub fn get_leaf_hash(data: &[u8]) -> Result<F, NovaPoRError> {
+pub fn get_leaf_hash(data: &[u8]) -> Result<F, KontorPoRError> {
     // Enforce maximum leaf size
     // Each Merkle leaf must directly encode retrievable data (not a hash of data).
     if data.len() > config::CHUNK_SIZE_BYTES {
-        return Err(NovaPoRError::InvalidInput(format!(
+        return Err(KontorPoRError::InvalidInput(format!(
             "Data chunk too large for secure PoR: {} bytes (max {}). \
              Larger chunks would be hashed, allowing provers to store only hashes \
              instead of retrievable data. Use 31-byte symbols from erasure encoding.",
@@ -100,7 +100,7 @@ impl MerkleTree {
 
 /// Builds a Poseidon-based Merkle tree from a slice of pre-computed leaves.
 /// This is the generic, core logic for tree construction.
-pub fn build_tree_from_leaves(leaves: &[F]) -> Result<MerkleTree, NovaPoRError> {
+pub fn build_tree_from_leaves(leaves: &[F]) -> Result<MerkleTree, KontorPoRError> {
     if leaves.is_empty() {
         return Ok(MerkleTree {
             layers: vec![vec![F::ZERO]],
@@ -112,12 +112,12 @@ pub fn build_tree_from_leaves(leaves: &[F]) -> Result<MerkleTree, NovaPoRError> 
     // Build the tree bottom-up
     while layers
         .last()
-        .ok_or_else(|| NovaPoRError::MerkleTree("build_tree_from_leaves: Tree layers should never be empty - internal error in tree construction".to_string()))?
+        .ok_or_else(|| KontorPoRError::MerkleTree("build_tree_from_leaves: Tree layers should never be empty - internal error in tree construction".to_string()))?
         .len()
         > 1
     {
         let current_layer = layers.last().ok_or_else(|| {
-            NovaPoRError::MerkleTree("build_tree_from_leaves: Tree layers should never be empty during layer construction - internal error".to_string())
+            KontorPoRError::MerkleTree("build_tree_from_leaves: Tree layers should never be empty during layer construction - internal error".to_string())
         })?;
         let mut next_layer = Vec::new();
 
@@ -139,7 +139,7 @@ pub fn build_tree_from_leaves(leaves: &[F]) -> Result<MerkleTree, NovaPoRError> 
 /// Builds a Poseidon-based Merkle tree from the given data chunks.
 /// This function serves as a wrapper around the generic `build_tree_from_leaves`
 /// by first converting the data chunks into leaves.
-pub fn build_tree(data_chunks: &[Vec<u8>]) -> Result<(MerkleTree, F), NovaPoRError> {
+pub fn build_tree(data_chunks: &[Vec<u8>]) -> Result<(MerkleTree, F), KontorPoRError> {
     if data_chunks.is_empty() {
         let leaf = F::ZERO;
         let tree = MerkleTree {
@@ -187,13 +187,13 @@ pub fn get_padded_proof_for_leaf(
     tree: &MerkleTree,
     leaf_index: usize,
     depth: usize,
-) -> Result<CircuitMerkleProof, NovaPoRError> {
+) -> Result<CircuitMerkleProof, KontorPoRError> {
     let leaf = tree
         .layers
         .first()
         .and_then(|layer| layer.get(leaf_index))
         .copied()
-        .ok_or_else(|| NovaPoRError::IndexOutOfBounds {
+        .ok_or_else(|| KontorPoRError::IndexOutOfBounds {
             index: leaf_index,
             length: tree.layers.first().map(|l| l.len()).unwrap_or(0),
         })?;
