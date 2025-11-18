@@ -10,8 +10,8 @@ mod common;
 #[test]
 fn test_gating_logic_correctness() {
     // Test direct circuit logic with carefully constructed scenarios
-    use arecibo::traits::circuit::StepCircuit;
-    use bellpepper_core::test_cs::TestConstraintSystem;
+    use nova_snark::traits::circuit::StepCircuit;
+    use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
     use kontor_crypto::api::FieldElement;
     use kontor_crypto::circuit::CircuitWitness;
     use kontor_crypto::circuit::{FileProofWitness, PorCircuit};
@@ -100,8 +100,8 @@ fn test_gating_logic_correctness() {
 fn test_padding_slot_zero_state_divergence() {
     // This test demonstrates the specific bug: incorrect gating of slot 0
     // creates state chain divergence between prover and verifier
-    use arecibo::traits::circuit::StepCircuit;
-    use bellpepper_core::test_cs::TestConstraintSystem;
+    use nova_snark::traits::circuit::StepCircuit;
+    use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
     use kontor_crypto::api::FieldElement;
     use kontor_crypto::circuit::CircuitWitness;
     use kontor_crypto::circuit::{FileProofWitness, PorCircuit};

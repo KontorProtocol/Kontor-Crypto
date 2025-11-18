@@ -4,8 +4,8 @@
 //! It includes helpers for hashing data into field elements (`get_leaf_hash`), constructing
 //! the tree (`build_tree`), and generating proofs of inclusion (`get_padded_proof_for_leaf`).
 
-use arecibo::provider::PallasEngine;
-use arecibo::traits::Engine;
+use nova_snark::provider::PallasEngine;
+use nova_snark::traits::Engine;
 use ff::Field;
 use serde::{Deserialize, Serialize};
 

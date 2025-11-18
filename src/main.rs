@@ -343,9 +343,9 @@ fn main() {
 fn init_tracing(verbosity: u8) {
     // Default: info, -v: debug, -vv or more: trace
     let level = match verbosity {
-        0 => "info,kontor_crypto=info,nova=warn,arecibo=warn",
-        1 => "debug,kontor_crypto=debug,nova=info,arecibo=info",
-        _ => "kontor_crypto=trace,nova=debug,arecibo=debug",
+        0 => "info,kontor_crypto=info,nova_snark=warn",
+        1 => "debug,kontor_crypto=debug,nova_snark=info",
+        _ => "kontor_crypto=trace,nova_snark=debug",
     };
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));

@@ -9,10 +9,10 @@ use super::{
     witness::generate_circuit_witness,
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
-use arecibo::{
+use nova_snark::{
+    nova::{CompressedSNARK, RecursiveSNARK},
     provider::{PallasEngine, VestaEngine},
-    traits::{circuit::TrivialCircuit, Engine},
-    CompressedSNARK, RecursiveSNARK,
+    traits::Engine,
 };
 use ff::Field;
 use std::collections::BTreeMap;
@@ -21,9 +21,8 @@ use tracing::{debug, debug_span, info_span, trace};
 // Type aliases needed for proving
 type E1 = PallasEngine;
 type E2 = VestaEngine;
-type C1 = crate::circuit::PorCircuit<FieldElement>;
-type C2 = TrivialCircuit<<E2 as Engine>::Scalar>;
-type NovaProof = RecursiveSNARK<E1, E2, C1, C2>;
+type C = crate::circuit::PorCircuit<FieldElement>;
+type NovaProof = RecursiveSNARK<E1, E2, C>;
 
 /// Generates a proof for one or more file challenges.
 ///
@@ -195,11 +194,10 @@ fn initialize_recursive_snark(
     let z0_primary = plan.build_z0_primary();
     debug!("PROVER z0_primary: {:?}", z0_primary);
 
-    let z0_secondary = vec![<E2 as Engine>::Scalar::ZERO];
-    let circuit_secondary = C2::default();
+    let _z0_secondary = vec![<E2 as Engine>::Scalar::ZERO];
 
     // Create the circuit for new() with witness from first challenge
-    let circuit_first = C1::new(
+    let circuit_first = C::new(
         plan.files_per_step,
         plan.file_tree_depth,
         plan.aggregated_tree_depth,
@@ -246,9 +244,7 @@ fn initialize_recursive_snark(
         NovaProof::new(
             &params.pp,
             &circuit_first,
-            &circuit_secondary,
             &z0_primary,
-            &z0_secondary,
         )
         .map_err(|e| KontorPoRError::Snark(format!("Initial SNARK creation failed: {e:?}")))?
     };
@@ -282,7 +278,6 @@ fn execute_proving_loop(
     );
 
     let sorted_challenges_refs: Vec<&Challenge> = plan.sorted_challenges.iter().collect();
-    let circuit_secondary = C2::default();
 
     for challenge_num in 0..num_challenges {
         let _step_span =
@@ -305,7 +300,7 @@ fn execute_proving_loop(
             // First prove_step call is a no-op - it doesn't synthesize
             // We can pass any valid circuit structure (it won't be used)
             debug!("Creating dummy circuit for no-op prove_step");
-            let dummy_circuit = C1::new(
+            let dummy_circuit = C::new(
                 plan.files_per_step,
                 plan.file_tree_depth,
                 plan.aggregated_tree_depth,
@@ -326,7 +321,7 @@ fn execute_proving_loop(
                 challenge_num,        // Step number matches challenge_num
                 &plan.ledger_indices, // Pass precomputed indices from plan
             )?;
-            let circuit = C1::new(
+            let circuit = C::new(
                 plan.files_per_step,
                 plan.file_tree_depth,
                 plan.aggregated_tree_depth,
@@ -358,7 +353,7 @@ fn execute_proving_loop(
             params.aggregated_tree_depth
         );
         let prove_result =
-            recursive_snark.prove_step(&params.pp, &circuit_step, &circuit_secondary);
+            recursive_snark.prove_step(&params.pp, &circuit_step);
         trace!(
             "prove_step returned: {:?}{}",
             prove_result.is_ok(),

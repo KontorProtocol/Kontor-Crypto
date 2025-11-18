@@ -89,7 +89,7 @@ Notes:
 
 ## Important SNARK API Semantics
 
-This project uses `arecibo`/Nova, which has a deliberate API quirk:
+This project uses `nova-snark`/Nova, which has a deliberate API quirk:
 
 -   `RecursiveSNARK::new(...)` synthesizes step 0.
 -   You must call `prove_step(...)` exactly `N` times for a batch with `N` iterations; the first call is a no-op that advances the internal counter, and only calls 2..N synthesize.

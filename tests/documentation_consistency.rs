@@ -59,7 +59,7 @@ fn test_circuit_arity_matches_public_inputs() {
     .expect("Failed to generate witness");
 
     // The circuit's arity() method should return BASE_CIRCUIT_ARITY + files_per_step
-    use arecibo::traits::circuit::StepCircuit;
+    use nova_snark::traits::circuit::StepCircuit;
     use kontor_crypto::circuit::PorCircuit;
 
     let files_per_step = 1;
@@ -317,7 +317,7 @@ fn test_domain_tags_are_unique() {
 fn test_option1_proof_format_version_awareness() {
     // Test that documents the proof format change from Option 1 implementation
     // This serves as a version marker and compatibility test
-    use arecibo::traits::circuit::StepCircuit;
+    use nova_snark::traits::circuit::StepCircuit;
     use kontor_crypto::{api, config};
 
     println!("Testing Option 1 proof format version awareness");

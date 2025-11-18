@@ -6,8 +6,8 @@
 //! 3. Public leaves match private witnesses
 //! 4. Padding slots output zero
 
-use arecibo::traits::circuit::StepCircuit;
-use bellpepper_core::test_cs::TestConstraintSystem;
+use nova_snark::traits::circuit::StepCircuit;
+use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 use ff::Field;
 use kontor_crypto::{
     api::{self, Challenge, FieldElement},

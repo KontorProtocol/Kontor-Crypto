@@ -3,9 +3,11 @@
 //! This module contains the main synthesize function that implements the
 //! Step Circuit logic for Proof-of-Retrievability verification.
 
-use bellpepper_core::{
-    boolean::{AllocatedBit, Boolean},
-    num::AllocatedNum,
+use nova_snark::frontend::{
+    gadgets::{
+        boolean::{AllocatedBit, Boolean},
+        num::AllocatedNum,
+    },
     ConstraintSystem, SynthesisError,
 };
 use ff::PrimeField;
