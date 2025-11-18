@@ -9,7 +9,6 @@ use super::{
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
 use ff::Field;
-use nova_snark::traits::Engine;
 use tracing::{debug, info_span};
 
 /// Verifies a proof against one or more challenges.
