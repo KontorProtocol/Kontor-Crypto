@@ -9,12 +9,11 @@ use super::{
     witness::generate_circuit_witness,
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
+use ff::Field;
 use nova_snark::{
     nova::{CompressedSNARK, RecursiveSNARK},
     provider::{PallasEngine, VestaEngine},
-    traits::Engine,
 };
-use ff::Field;
 use std::collections::BTreeMap;
 use tracing::{debug, debug_span, info_span, trace};
 
@@ -194,8 +193,6 @@ fn initialize_recursive_snark(
     let z0_primary = plan.build_z0_primary();
     debug!("PROVER z0_primary: {:?}", z0_primary);
 
-    let _z0_secondary = vec![<E2 as Engine>::Scalar::ZERO];
-
     // Create the circuit for new() with witness from first challenge
     let circuit_first = C::new(
         plan.files_per_step,
@@ -241,12 +238,8 @@ fn initialize_recursive_snark(
 
     let recursive_snark = {
         let _span = debug_span!("RecursiveSNARK::new").entered();
-        NovaProof::new(
-            &params.pp,
-            &circuit_first,
-            &z0_primary,
-        )
-        .map_err(|e| KontorPoRError::Snark(format!("Initial SNARK creation failed: {e:?}")))?
+        NovaProof::new(&params.pp, &circuit_first, &z0_primary)
+            .map_err(|e| KontorPoRError::Snark(format!("Initial SNARK creation failed: {e:?}")))?
     };
 
     trace!("NovaProof::new completed successfully");
@@ -352,8 +345,7 @@ fn execute_proving_loop(
             params.file_tree_depth,
             params.aggregated_tree_depth
         );
-        let prove_result =
-            recursive_snark.prove_step(&params.pp, &circuit_step);
+        let prove_result = recursive_snark.prove_step(&params.pp, &circuit_step);
         trace!(
             "prove_step returned: {:?}{}",
             prove_result.is_ok(),

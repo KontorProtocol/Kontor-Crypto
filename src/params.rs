@@ -24,7 +24,6 @@ type EE2 = ipa_pc::EvaluationEngine<E2>;
 type S1 = RelaxedR1CSSNARK<E1, EE1>;
 type S2 = RelaxedR1CSSNARK<E2, EE2>;
 type F1 = <E1 as Engine>::Scalar;
-// Nova 0.41.0 uses a single circuit type C instead of C1/C2
 type C = PorCircuit<F1>;
 
 /// Cache key for storing parameters. Parameters depend on the complete circuit shape.
@@ -127,14 +126,8 @@ fn generate_params_for_shape(
     );
 
     // Generate public params
-    let pp = PublicParams::<E1, E2, C>::setup(
-        &circuit_primary,
-        &*S1::ck_floor(),
-        &*S2::ck_floor(),
-    )
-    .map_err(|e| {
-        KontorPoRError::Snark(format!("Failed to setup public params: {:?}", e))
-    })?;
+    let pp = PublicParams::<E1, E2, C>::setup(&circuit_primary, &*S1::ck_floor(), &*S2::ck_floor())
+        .map_err(|e| KontorPoRError::Snark(format!("Failed to setup public params: {:?}", e)))?;
 
     // Generate compressed SNARK keys
     let (pk, vk) = CompressedSNARK::setup(&pp).map_err(|e| {
@@ -142,10 +135,10 @@ fn generate_params_for_shape(
     })?;
 
     Ok(PorParams {
-        pp: Arc::new(pp),  // Wrap in Arc for efficient sharing
+        pp: Arc::new(pp),
         keys: crate::api::KeyPair {
-            pk: Arc::new(pk),  // Wrap in Arc
-            vk: Arc::new(vk),  // Wrap in Arc
+            pk: Arc::new(pk),
+            vk: Arc::new(vk),
         },
         file_tree_depth,
         max_supported_depth: file_tree_depth,

@@ -2,11 +2,11 @@
 //! This module is only compiled in debug builds to help detect
 //! circuit structure variations that would break Nova's folding.
 
+use ff::PrimeField;
 use nova_snark::{
     frontend::{gadgets::num::AllocatedNum, Circuit, ConstraintSystem, SynthesisError},
     traits::circuit::StepCircuit,
 };
-use ff::PrimeField;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
@@ -97,9 +97,15 @@ impl<F: PrimeField, CS: ConstraintSystem<F>> ConstraintSystem<F> for Fingerprint
     where
         A: FnOnce() -> AR,
         AR: Into<String>,
-        LA: FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
-        LB: FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
-        LC: FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
+        LA: FnOnce(
+            nova_snark::frontend::LinearCombination<F>,
+        ) -> nova_snark::frontend::LinearCombination<F>,
+        LB: FnOnce(
+            nova_snark::frontend::LinearCombination<F>,
+        ) -> nova_snark::frontend::LinearCombination<F>,
+        LC: FnOnce(
+            nova_snark::frontend::LinearCombination<F>,
+        ) -> nova_snark::frontend::LinearCombination<F>,
     {
         self.fingerprint.num_constraints += 1;
 
@@ -250,9 +256,7 @@ pub fn fingerprint_shape<F: PrimeField>(circ: &impl StepCircuit<F>) -> usize {
 mod tests {
     use super::*;
     use nova_snark::{
-        frontend::util_cs::test_cs::TestConstraintSystem,
-        provider::PallasEngine,
-        traits::Engine,
+        frontend::util_cs::test_cs::TestConstraintSystem, provider::PallasEngine, traits::Engine,
     };
     type Fp = <PallasEngine as Engine>::Scalar;
 

@@ -6,17 +6,13 @@
 
 use crate::FieldElement;
 use generic_array::typenum::U2;
-use neptune::{
-    sponge::{
-        api::{IOPattern, SpongeAPI, SpongeOp},
-        vanilla::{Mode::Simplex, Sponge, SpongeTrait},
-    },
-    Strength,
+use nova_snark::frontend::gadgets::poseidon::{
+    IOPattern, PoseidonConstants, Simplex, Sponge, SpongeAPI, SpongeOp, SpongeTrait, Strength,
 };
 use once_cell::sync::Lazy;
 
 /// Cached Poseidon constants for performance
-static POSEIDON_CONSTANTS: Lazy<neptune::poseidon::PoseidonConstants<FieldElement, U2>> =
+static POSEIDON_CONSTANTS: Lazy<PoseidonConstants<FieldElement, U2>> =
     Lazy::new(|| Sponge::<FieldElement, U2>::api_constants(Strength::Standard));
 
 /// Cached IO pattern for 2-input, 1-output Poseidon hashing

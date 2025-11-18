@@ -8,7 +8,6 @@ use super::{
     types::{Challenge, FieldElement, Proof},
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
-use nova_snark::traits::Engine;
 use ff::Field;
 use tracing::{debug, info_span};
 
@@ -111,8 +110,6 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     let z0_primary = plan.build_z0_primary();
     debug!("VERIFIER z0_primary: {:?}", z0_primary);
 
-    let _z0_secondary = vec![<nova_snark::provider::VestaEngine as Engine>::Scalar::ZERO];
-
     // In our implementation:
     // - RecursiveSNARK::new() executes step 0
     // - We call prove_step num_challenges times, but the first call is a no-op
@@ -151,10 +148,9 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         );
     }
 
-    let result =
-        proof
-            .compressed_snark
-            .verify(&params.keys.vk, num_iterations, &z0_primary);
+    let result = proof
+        .compressed_snark
+        .verify(&params.keys.vk, num_iterations, &z0_primary);
 
     match result {
         Ok(_) => Ok(true),

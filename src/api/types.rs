@@ -7,13 +7,13 @@
 //! - Proof: Final succinct proof object
 //! - PorParams: Cryptographic parameters
 
+use bincode::Options;
 use nova_snark::{
     nova::{CompressedSNARK, ProverKey, PublicParams, VerifierKey},
     provider::{ipa_pc, PallasEngine, VestaEngine},
     spartan::snark::RelaxedR1CSSNARK,
     traits::Engine,
 };
-use bincode::Options;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -30,7 +30,6 @@ type S2 = RelaxedR1CSSNARK<E2, EE2>;
 /// A type alias for the scalar field of the primary curve.
 pub type FieldElement = <E1 as Engine>::Scalar;
 
-// Nova 0.41.0 uses a single circuit type C instead of C1/C2
 type C = crate::circuit::PorCircuit<FieldElement>;
 
 /// Deterministic identity for a Challenge.
@@ -164,8 +163,6 @@ impl Proof {
 
 // --- Public API Structs ---
 
-/// Internal holder for the complex key types from nova-snark
-/// Wrapped in Arc because nova-snark's key types don't implement Clone
 #[derive(Clone)]
 pub struct KeyPair {
     pub(crate) pk: Arc<ProverKey<E1, E2, C, S1, S2>>,
@@ -174,7 +171,6 @@ pub struct KeyPair {
 
 /// Holds the universal, reusable cryptographic parameters for the PoR scheme.
 /// This struct is opaque and does not expose the complex internal types.
-/// PublicParams is wrapped in Arc because nova-snark doesn't implement Clone for it.
 pub struct PorParams {
     pub(crate) pp: Arc<PublicParams<E1, E2, C>>,
     pub(crate) keys: KeyPair,
@@ -189,8 +185,8 @@ pub struct PorParams {
 impl Clone for PorParams {
     fn clone(&self) -> Self {
         Self {
-            pp: Arc::clone(&self.pp),  // Cheap: just increments reference count
-            keys: self.keys.clone(),   // KeyPair already implements Clone with Arc fields
+            pp: Arc::clone(&self.pp),
+            keys: self.keys.clone(),
             file_tree_depth: self.file_tree_depth,
             max_supported_depth: self.max_supported_depth,
             aggregated_tree_depth: self.aggregated_tree_depth,

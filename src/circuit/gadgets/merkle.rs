@@ -3,12 +3,12 @@
 //! This module provides gated Merkle path verification for both file trees
 //! and aggregation trees within the Nova circuit.
 
+use ff::PrimeField;
+use ff::PrimeFieldBits;
 use nova_snark::frontend::{
     gadgets::{boolean::Boolean, num::AllocatedNum},
     ConstraintSystem, SynthesisError,
 };
-use ff::PrimeField;
-use ff::PrimeFieldBits;
 
 use super::hash::{conditional_select, poseidon_hash_tagged_gadget};
 use crate::commitment::domain_tags;

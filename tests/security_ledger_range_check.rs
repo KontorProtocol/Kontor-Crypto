@@ -3,15 +3,13 @@
 //! This test ensures that the circuit properly enforces that ledger indices
 //! are within the valid range [0, 2^aggregated_tree_depth).
 
-use nova_snark::traits::circuit::StepCircuit;
-use nova_snark::frontend::{
-    gadgets::num::AllocatedNum,
-    util_cs::test_cs::TestConstraintSystem,
-    ConstraintSystem,
-};
 use ff::Field;
 use kontor_crypto::circuit::{FileProofWitness, PorCircuit};
 use kontor_crypto::merkle::F as FieldElement;
+use nova_snark::frontend::{
+    gadgets::num::AllocatedNum, util_cs::test_cs::TestConstraintSystem, ConstraintSystem,
+};
+use nova_snark::traits::circuit::StepCircuit;
 
 mod common;
 use common::fixtures::{create_circuit_public_inputs, create_padding_witness, create_witness};
