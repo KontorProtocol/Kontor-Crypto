@@ -1,13 +1,14 @@
-//! Poseidon hash utilities for API and circuit.
+//! Shared commitment calculation logic for API and circuit.
 //!
-//! This module provides domain-separated Poseidon hashing functions used throughout
-//! the system. It ensures that hash calculations are identical between the external
-//! API and internal circuit constraints, preventing divergence bugs.
+//! This module ensures that commitment calculations are identical between
+//! the external API and the internal circuit constraints, preventing
+//! divergence bugs.
 
 use crate::FieldElement;
 use generic_array::typenum::U2;
 use nova_snark::frontend::gadgets::poseidon::{
-    IOPattern, PoseidonConstants, Simplex, Sponge, SpongeAPI, SpongeOp, SpongeTrait, Strength,
+    IOPattern, SpongeOp, Strength, Simplex,
+    Sponge, SpongeAPI, SpongeTrait, PoseidonConstants,
 };
 use once_cell::sync::Lazy;
 
@@ -16,12 +17,8 @@ static POSEIDON_CONSTANTS: Lazy<PoseidonConstants<FieldElement, U2>> =
     Lazy::new(|| Sponge::<FieldElement, U2>::api_constants(Strength::Standard));
 
 /// Cached IO pattern for 2-input, 1-output Poseidon hashing
-static IO_PATTERN_2: Lazy<IOPattern> =
+static IO_PATTERN: Lazy<IOPattern> =
     Lazy::new(|| IOPattern(vec![SpongeOp::Absorb(2), SpongeOp::Squeeze(1)]));
-
-/// Cached IO pattern for 3-input, 1-output Poseidon hashing
-static IO_PATTERN_3: Lazy<IOPattern> =
-    Lazy::new(|| IOPattern(vec![SpongeOp::Absorb(3), SpongeOp::Squeeze(1)]));
 
 /// Domain separation tag values
 /// These are distinct integers used to prevent hash collisions across different contexts
@@ -82,7 +79,7 @@ pub mod domain_tags {
 pub fn poseidon_hash2(left: FieldElement, right: FieldElement) -> FieldElement {
     let mut sponge = Sponge::<FieldElement, U2>::new_with_constants(&POSEIDON_CONSTANTS, Simplex);
     let mut acc = ();
-    sponge.start(IO_PATTERN_2.clone(), None, &mut acc);
+    sponge.start(IO_PATTERN.clone(), None, &mut acc);
     SpongeAPI::absorb(&mut sponge, 2, &[left, right], &mut acc);
     let output = SpongeAPI::squeeze(&mut sponge, 1, &mut acc);
     sponge
@@ -93,18 +90,10 @@ pub fn poseidon_hash2(left: FieldElement, right: FieldElement) -> FieldElement {
 }
 
 /// Domain-separated Poseidon hash with 3 inputs (tag + 2 data elements)
-/// Optimized to use a single hash operation instead of two
 pub fn poseidon_hash_tagged(tag: FieldElement, x: FieldElement, y: FieldElement) -> FieldElement {
-    let mut sponge = Sponge::<FieldElement, U2>::new_with_constants(&POSEIDON_CONSTANTS, Simplex);
-    let mut acc = ();
-    sponge.start(IO_PATTERN_3.clone(), None, &mut acc);
-    SpongeAPI::absorb(&mut sponge, 3, &[tag, x, y], &mut acc);
-    let output = SpongeAPI::squeeze(&mut sponge, 1, &mut acc);
-    sponge
-        .finish(&mut acc)
-        .expect("Poseidon sponge finish should not fail");
-
-    output[0]
+    // First hash tag with x, then hash result with y for consistent 2-arity
+    let h1 = poseidon_hash2(tag, x);
+    poseidon_hash2(h1, y)
 }
 
 /// Calculate the root commitment (rc) for a file.
@@ -114,6 +103,14 @@ pub fn poseidon_hash_tagged(tag: FieldElement, x: FieldElement, y: FieldElement)
 /// preventing depth spoofing attacks.
 pub fn calculate_root_commitment(root: FieldElement, depth: FieldElement) -> FieldElement {
     poseidon_hash_tagged(domain_tags::root_commitment(), root, depth)
+}
+
+/// Update state in the hash chain: state_new = Poseidon(TAG_STATE, state_old, leaf)
+///
+/// This creates a cryptographic chain linking proof steps together,
+/// preventing replay and reordering attacks.
+pub fn evolve_state(current_state: FieldElement, leaf: FieldElement) -> FieldElement {
+    poseidon_hash_tagged(domain_tags::state_update(), current_state, leaf)
 }
 
 #[cfg(test)]
