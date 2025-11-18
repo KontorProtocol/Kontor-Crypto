@@ -177,7 +177,9 @@ impl TestSetup {
 }
 
 /// Creates a complete test scenario from configuration.
-pub fn setup_test_scenario(config: &TestConfig) -> Result<TestSetup, kontor_crypto::KontorPoRError> {
+pub fn setup_test_scenario(
+    config: &TestConfig,
+) -> Result<TestSetup, kontor_crypto::KontorPoRError> {
     // 1. Create files from specs
     let mut files = BTreeMap::new();
     let mut metadatas = Vec::new();
