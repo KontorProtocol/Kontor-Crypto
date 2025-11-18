@@ -18,8 +18,10 @@ pub mod witness;
 // Re-export key types for backward compatibility
 pub use witness::{CircuitWitness, FileProofWitness};
 
-use arecibo::traits::circuit::StepCircuit;
-use bellpepper_core::{num::AllocatedNum, ConstraintSystem, SynthesisError};
+use nova_snark::{
+    frontend::{gadgets::num::AllocatedNum, ConstraintSystem, SynthesisError},
+    traits::circuit::StepCircuit,
+};
 use ff::PrimeField;
 use ff::PrimeFieldBits;
 use std::marker::PhantomData;

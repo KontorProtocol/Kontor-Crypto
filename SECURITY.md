@@ -48,7 +48,7 @@ Files are chunked into fixed 31-byte symbols (max field element size for Pallas 
 
 **Poseidon Hash** (`neptune`): collision resistance, preimage resistance, random oracle in domain-separated contexts.
 
-**Nova/Arecibo SNARKs** (`arecibo` v0.1.1): soundness, completeness, knowledge soundness.
+**Nova SNARKs** (`nova-snark` v0.41.0): soundness, completeness, knowledge soundness.
 
 **Pallas/Vesta Curves** (`pasta_curves`): discrete log hardness, cycle properties.
 
@@ -128,7 +128,7 @@ Parameters generated on-demand, deterministically:
 
 2. **Circuit witness** (`src/params.rs::generate_params_for_shape()`): dummy challenges/ledger matching shape, `generate_circuit_witness()`, no real file data.
 
-3. **Nova setup** (lines 132-137): `PublicParams::setup()` with IPA commitment (`ipa_pc`), Pallas/Vesta cycle, floor keys.
+3. **Nova setup** (lines 132-137): `PublicParams::setup()` with IPA commitment (`ipa_pc`), Pallas/Vesta cycle, floor keys from `nova-snark`.
 
 4. **Key generation** (lines 139-142): `CompressedSNARK::setup(&pp)` produces `(ProverKey, VerifierKey)`.
 
@@ -150,7 +150,7 @@ Verifier generates parameters from challenge shape independently. If prover used
 
 | Dependency | Version | Role | Audit Status |
 |------------|---------|------|--------------|
-| `arecibo` | 0.1.1 | Nova SNARK | ? |
+| `nova-snark` | 0.41.0 | Nova SNARK | Microsoft Research |
 | `neptune` | 13.0.0 | Poseidon hash | ? |
 | `reed-solomon-erasure` | 6.0.0 | Erasure coding | ? |
 | `pasta_curves` | 0.5.1 | Elliptic curves | ? |

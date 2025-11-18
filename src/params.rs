@@ -5,15 +5,15 @@
 //! Parameters are uniquely determined by (files_per_step, file_tree_depth, aggregated_tree_depth).
 
 use crate::{api::PorParams, circuit::PorCircuit, ledger::FileLedger, KontorPoRError, Result};
-use arecibo::{
+use nova_snark::{
+    nova::{CompressedSNARK, PublicParams},
     provider::{ipa_pc, PallasEngine, VestaEngine},
     spartan::snark::RelaxedR1CSSNARK,
-    traits::{circuit::TrivialCircuit, snark::RelaxedR1CSSNARKTrait, Engine},
-    CompressedSNARK, PublicParams,
+    traits::{snark::RelaxedR1CSSNARKTrait, Engine},
 };
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
 // Type aliases for readability
@@ -24,9 +24,8 @@ type EE2 = ipa_pc::EvaluationEngine<E2>;
 type S1 = RelaxedR1CSSNARK<E1, EE1>;
 type S2 = RelaxedR1CSSNARK<E2, EE2>;
 type F1 = <E1 as Engine>::Scalar;
-type F2 = <E2 as Engine>::Scalar;
-type C1 = PorCircuit<F1>;
-type C2 = TrivialCircuit<F2>;
+// Nova 0.41.0 uses a single circuit type C instead of C1/C2
+type C = PorCircuit<F1>;
 
 /// Cache key for storing parameters. Parameters depend on the complete circuit shape.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -120,21 +119,22 @@ fn generate_params_for_shape(
     )?;
 
     // Create the circuit with the generated witness
-    let circuit_primary = C1::new(
+    let circuit_primary = C::new(
         files_per_step,
         file_tree_depth,
         aggregated_tree_depth,
         Some(circuit_witness.witnesses().to_vec()),
     );
-    let circuit_secondary = C2::default();
 
     // Generate public params
-    let pp = PublicParams::<E1, E2, C1, C2>::setup(
+    let pp = PublicParams::<E1, E2, C>::setup(
         &circuit_primary,
-        &circuit_secondary,
         &*S1::ck_floor(),
         &*S2::ck_floor(),
-    );
+    )
+    .map_err(|e| {
+        KontorPoRError::Snark(format!("Failed to setup public params: {:?}", e))
+    })?;
 
     // Generate compressed SNARK keys
     let (pk, vk) = CompressedSNARK::setup(&pp).map_err(|e| {
@@ -142,8 +142,11 @@ fn generate_params_for_shape(
     })?;
 
     Ok(PorParams {
-        pp,
-        keys: crate::api::KeyPair { pk, vk },
+        pp: Arc::new(pp),  // Wrap in Arc for efficient sharing
+        keys: crate::api::KeyPair {
+            pk: Arc::new(pk),  // Wrap in Arc
+            vk: Arc::new(vk),  // Wrap in Arc
+        },
         file_tree_depth,
         max_supported_depth: file_tree_depth,
         aggregated_tree_depth,

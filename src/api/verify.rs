@@ -8,7 +8,7 @@ use super::{
     types::{Challenge, FieldElement, Proof},
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
-use arecibo::traits::Engine;
+use nova_snark::traits::Engine;
 use ff::Field;
 use tracing::{debug, info_span};
 
@@ -111,7 +111,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     let z0_primary = plan.build_z0_primary();
     debug!("VERIFIER z0_primary: {:?}", z0_primary);
 
-    let z0_secondary = vec![<arecibo::provider::VestaEngine as Engine>::Scalar::ZERO];
+    let _z0_secondary = vec![<nova_snark::provider::VestaEngine as Engine>::Scalar::ZERO];
 
     // In our implementation:
     // - RecursiveSNARK::new() executes step 0
@@ -154,11 +154,11 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     let result =
         proof
             .compressed_snark
-            .verify(&params.keys.vk, num_iterations, &z0_primary, &z0_secondary);
+            .verify(&params.keys.vk, num_iterations, &z0_primary);
 
     match result {
         Ok(_) => Ok(true),
-        Err(arecibo::errors::NovaError::ProofVerifyError) => Ok(false),
+        Err(nova_snark::errors::NovaError::ProofVerifyError { reason: _ }) => Ok(false),
         Err(e) => Err(KontorPoRError::Snark(format!(
             "An unexpected error occurred during verification: {e:?}"
         ))),

@@ -3,19 +3,21 @@
 //! This module contains Poseidon hash implementations and conditional selection logic
 //! used within the Nova circuit.
 
-use bellpepper_core::{boolean::Boolean, num::AllocatedNum, ConstraintSystem, SynthesisError};
+use nova_snark::frontend::{
+    gadgets::{
+        boolean::Boolean,
+        num::AllocatedNum,
+        poseidon::{
+            Elt, Strength,
+            SpongeAPI, SpongeCircuit, IOPattern, SpongeOp,
+            Sponge, SpongeTrait, Simplex,
+        },
+    },
+    ConstraintSystem, SynthesisError,
+};
 use ff::PrimeField;
 use ff::PrimeFieldBits;
 use generic_array::typenum::U2;
-use neptune::{
-    circuit2::Elt,
-    sponge::{
-        api::{IOPattern, SpongeAPI, SpongeOp},
-        circuit::SpongeCircuit,
-        vanilla::{Mode::Simplex, Sponge, SpongeTrait},
-    },
-    Strength,
-};
 use once_cell::sync::Lazy;
 
 /// Cached IO pattern for circuit Poseidon hashing

@@ -19,15 +19,15 @@ use rand::{RngCore, SeedableRng};
 use std::collections::BTreeMap;
 
 // Circuit test support
-use bellpepper_core::{num::AllocatedNum, ConstraintSystem};
+use nova_snark::frontend::{gadgets::num::AllocatedNum, ConstraintSystem};
 use ff::PrimeField;
 use kontor_crypto::circuit::FileProofWitness;
 
 // Arecibo type aliases for circuit tests
-use arecibo::{
+use nova_snark::{
     provider::{ipa_pc, PallasEngine, VestaEngine},
     spartan::snark::RelaxedR1CSSNARK,
-    traits::{circuit::TrivialCircuit, Engine},
+    traits::Engine,
 };
 
 pub type E1 = PallasEngine;
@@ -38,7 +38,6 @@ pub type S1 = RelaxedR1CSSNARK<E1, EE1>;
 pub type S2 = RelaxedR1CSSNARK<E2, EE2>;
 pub type F1 = <E1 as Engine>::Scalar;
 pub type F2 = <E2 as Engine>::Scalar;
-pub type C2 = TrivialCircuit<F2>;
 
 /// Specification for a test file.
 #[derive(Debug, Clone)]

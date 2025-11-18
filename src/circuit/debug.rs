@@ -2,9 +2,10 @@
 //! This module is only compiled in debug builds to help detect
 //! circuit structure variations that would break Nova's folding.
 
-use arecibo::traits::circuit::StepCircuit;
-use bellpepper_core::Circuit;
-use bellpepper_core::{num::AllocatedNum, ConstraintSystem, SynthesisError};
+use nova_snark::{
+    frontend::{gadgets::num::AllocatedNum, Circuit, ConstraintSystem, SynthesisError},
+    traits::circuit::StepCircuit,
+};
 use ff::PrimeField;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -60,7 +61,7 @@ impl<F: PrimeField, CS: ConstraintSystem<F>> ConstraintSystem<F> for Fingerprint
         &mut self,
         annotation: A,
         f: FN,
-    ) -> Result<bellpepper_core::Variable, SynthesisError>
+    ) -> Result<nova_snark::frontend::Variable, SynthesisError>
     where
         FN: FnOnce() -> Result<F, SynthesisError>,
         A: FnOnce() -> AR,
@@ -78,7 +79,7 @@ impl<F: PrimeField, CS: ConstraintSystem<F>> ConstraintSystem<F> for Fingerprint
         &mut self,
         annotation: A,
         f: FN,
-    ) -> Result<bellpepper_core::Variable, SynthesisError>
+    ) -> Result<nova_snark::frontend::Variable, SynthesisError>
     where
         FN: FnOnce() -> Result<F, SynthesisError>,
         A: FnOnce() -> AR,
@@ -96,9 +97,9 @@ impl<F: PrimeField, CS: ConstraintSystem<F>> ConstraintSystem<F> for Fingerprint
     where
         A: FnOnce() -> AR,
         AR: Into<String>,
-        LA: FnOnce(bellpepper_core::LinearCombination<F>) -> bellpepper_core::LinearCombination<F>,
-        LB: FnOnce(bellpepper_core::LinearCombination<F>) -> bellpepper_core::LinearCombination<F>,
-        LC: FnOnce(bellpepper_core::LinearCombination<F>) -> bellpepper_core::LinearCombination<F>,
+        LA: FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
+        LB: FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
+        LC: FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
     {
         self.fingerprint.num_constraints += 1;
 
@@ -175,7 +176,7 @@ pub fn validate_circuit_structure(
 pub fn fingerprint_circuit<F: PrimeField, C: Circuit<F> + Clone>(
     circuit: &C,
 ) -> Result<CircuitFingerprint, SynthesisError> {
-    use bellpepper_core::test_cs::TestConstraintSystem;
+    use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 
     let cs = TestConstraintSystem::<F>::new();
     let mut fp_cs = FingerprintCS::new(cs);
@@ -226,9 +227,10 @@ pub fn debug_fingerprint_diff(
 }
 
 /// Simple shape fingerprint for quick uniformity checking
-pub fn fingerprint_shape<F: PrimeField>(circ: &impl StepCircuit<F>) -> (usize, usize, usize) {
-    use bellpepper_core::test_cs::TestConstraintSystem;
-    use bellpepper_core::Comparable;
+/// Returns the number of constraints, which is sufficient for uniformity checking
+/// Note: Nova's TestConstraintSystem doesn't expose num_inputs() or aux() methods
+pub fn fingerprint_shape<F: PrimeField>(circ: &impl StepCircuit<F>) -> usize {
+    use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 
     let mut cs = TestConstraintSystem::<F>::new();
 
@@ -241,15 +243,17 @@ pub fn fingerprint_shape<F: PrimeField>(circ: &impl StepCircuit<F>) -> (usize, u
     }
     let _ = circ.synthesize(&mut cs, &z_in).unwrap();
 
-    (cs.num_constraints(), cs.num_inputs(), cs.aux().len())
+    cs.num_constraints()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arecibo::provider::PallasEngine;
-    use arecibo::traits::Engine;
-    use bellpepper_core::test_cs::TestConstraintSystem;
+    use nova_snark::{
+        frontend::util_cs::test_cs::TestConstraintSystem,
+        provider::PallasEngine,
+        traits::Engine,
+    };
     type Fp = <PallasEngine as Engine>::Scalar;
 
     #[test]

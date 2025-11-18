@@ -3,7 +3,10 @@
 //! This module provides gated Merkle path verification for both file trees
 //! and aggregation trees within the Nova circuit.
 
-use bellpepper_core::{boolean::Boolean, num::AllocatedNum, ConstraintSystem, SynthesisError};
+use nova_snark::frontend::{
+    gadgets::{boolean::Boolean, num::AllocatedNum},
+    ConstraintSystem, SynthesisError,
+};
 use ff::PrimeField;
 use ff::PrimeFieldBits;
 

@@ -3,8 +3,12 @@
 //! These tests verify that the circuit gadgets produce bit-for-bit identical results
 //! to their off-circuit counterparts. Any divergence here is a critical security issue.
 
-use arecibo::traits::circuit::StepCircuit;
-use bellpepper_core::{num::AllocatedNum, test_cs::TestConstraintSystem, ConstraintSystem};
+use nova_snark::traits::circuit::StepCircuit;
+use nova_snark::frontend::{
+    gadgets::num::AllocatedNum,
+    util_cs::test_cs::TestConstraintSystem,
+    ConstraintSystem,
+};
 use ff::{Field, PrimeField};
 use kontor_crypto::{
     api::FieldElement,

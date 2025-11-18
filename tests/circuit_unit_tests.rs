@@ -4,17 +4,19 @@ use kontor_crypto::config;
 use kontor_crypto::merkle::{build_tree, get_padded_proof_for_leaf};
 
 mod common;
-use arecibo::{
+use nova_snark::{
+    nova::{PublicParams, RecursiveSNARK},
     traits::{circuit::StepCircuit, snark::RelaxedR1CSSNARKTrait},
-    PublicParams, RecursiveSNARK,
 };
-use bellpepper_core::{
-    boolean::{AllocatedBit, Boolean},
-    num::AllocatedNum,
-    test_cs::TestConstraintSystem,
+use nova_snark::frontend::{
+    gadgets::{
+        boolean::{AllocatedBit, Boolean},
+        num::AllocatedNum,
+    },
+    util_cs::test_cs::TestConstraintSystem,
     ConstraintSystem,
 };
-use common::fixtures::{create_circuit_public_inputs, C2, E1, E2, F1, F2, S1, S2};
+use common::fixtures::{create_circuit_public_inputs, E1, E2, F1, F2, S1, S2};
 use ff::Field;
 
 #[test]
@@ -46,13 +48,12 @@ fn test_por_circuit_basic() {
     // Phase 3: Use proper shape derivation to ensure minimum depth 1
     let (files_per_step, file_tree_depth) = config::derive_shape(1, depth);
     let circuit = PorCircuit::new(files_per_step, file_tree_depth, 0, Some(vec![witness]));
-    let circuit_secondary = C2::default();
-    let pp = PublicParams::<E1, E2, PorCircuit<F1>, C2>::setup(
+    let pp = PublicParams::<E1, E2, PorCircuit<F1>>::setup(
         &circuit,
-        &circuit_secondary,
         &*S1::ck_floor(),
         &*S2::ck_floor(),
-    );
+    )
+    .expect("Failed to setup public params");
     // New schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
     let z0_primary = vec![
         root,                   // [0] agg_root
@@ -62,13 +63,11 @@ fn test_por_circuit_basic() {
         random_seed,            // [4] seed_0
         F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
     ];
-    let z0_secondary = vec![F2::ZERO];
+    let _z0_secondary = vec![F2::ZERO];
     let result = RecursiveSNARK::new(
         &pp,
         &circuit,
-        &circuit_secondary,
         &z0_primary,
-        &z0_secondary,
     );
     assert!(
         result.is_ok(),
@@ -136,7 +135,7 @@ fn test_multi_file_constructor() {
 
 #[test]
 fn test_por_circuit_invalid_sibling() {
-    use bellpepper_core::test_cs::TestConstraintSystem;
+    use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
     let data = vec![vec![1u8], vec![2u8], vec![3u8], vec![4u8]];
     let (tree, root) = build_tree(&data).expect("Failed to build tree for test");
     let depth = 2;
@@ -241,13 +240,12 @@ fn test_por_circuit_zero_depth() {
     // Phase 3: Use proper shape derivation to ensure minimum depth 1
     let (files_per_step, file_tree_depth) = config::derive_shape(1, depth);
     let circuit = PorCircuit::new(files_per_step, file_tree_depth, 0, Some(vec![witness]));
-    let circuit_secondary = C2::default();
-    let pp = PublicParams::<E1, E2, PorCircuit<F1>, C2>::setup(
+    let pp = PublicParams::<E1, E2, PorCircuit<F1>>::setup(
         &circuit,
-        &circuit_secondary,
         &*S1::ck_floor(),
         &*S2::ck_floor(),
-    );
+    )
+    .expect("Failed to setup public params");
     // Circuit now expects dynamic public inputs based on files_per_step
     // New schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
     let z0_primary = vec![
@@ -258,13 +256,11 @@ fn test_por_circuit_zero_depth() {
         random_seed,            // [4] seed_0
         F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
     ];
-    let z0_secondary = vec![F2::ZERO];
+    let _z0_secondary = vec![F2::ZERO];
     let result = RecursiveSNARK::new(
         &pp,
         &circuit,
-        &circuit_secondary,
         &z0_primary,
-        &z0_secondary,
     );
     assert!(result.is_ok(), "Zero depth circuit should work");
 }
@@ -310,13 +306,12 @@ fn test_por_circuit_accumulator_update() {
     let (files_per_step, file_tree_depth) = config::derive_shape(1, depth);
     let circuit = PorCircuit::new(files_per_step, file_tree_depth, 0, Some(vec![witness]));
 
-    let circuit_secondary = C2::default();
-    let pp = PublicParams::<E1, E2, PorCircuit<F1>, C2>::setup(
+    let pp = PublicParams::<E1, E2, PorCircuit<F1>>::setup(
         &circuit,
-        &circuit_secondary,
         &*S1::ck_floor(),
         &*S2::ck_floor(),
-    );
+    )
+    .expect("Failed to setup public params");
     // New schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
     let z0_primary = vec![
         root,                   // [0] agg_root
@@ -326,20 +321,18 @@ fn test_por_circuit_accumulator_update() {
         random_seed,            // [4] seed_0
         F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
     ];
-    let z0_secondary = vec![F2::ZERO];
+    let _z0_secondary = vec![F2::ZERO];
 
     let mut recursive_snark = RecursiveSNARK::new(
         &pp,
         &circuit,
-        &circuit_secondary,
         &z0_primary,
-        &z0_secondary,
     )
     .expect("Failed to create RecursiveSNARK");
     recursive_snark
-        .prove_step(&pp, &circuit, &circuit_secondary)
+        .prove_step(&pp, &circuit)
         .expect("Failed to prove step");
-    let result = recursive_snark.verify(&pp, 1, &z0_primary, &z0_secondary);
+    let result = recursive_snark.verify(&pp, 1, &z0_primary);
     if let Err(ref e) = result {
         debug!("Verification failed: {:?}", e);
         debug!("Depth: {}, Leaf index: {}", depth, leaf_index);
@@ -378,14 +371,13 @@ fn test_por_circuit_wrong_root() {
     // Phase 3: Use proper shape derivation to ensure minimum depth 1
     let (files_per_step, file_tree_depth) = config::derive_shape(1, depth);
     let circuit = PorCircuit::new(files_per_step, file_tree_depth, 0, Some(vec![witness]));
-    let circuit_secondary = C2::default();
 
-    let pp = PublicParams::<E1, E2, PorCircuit<F1>, C2>::setup(
+    let pp = PublicParams::<E1, E2, PorCircuit<F1>>::setup(
         &circuit,
-        &circuit_secondary,
         &*S1::ck_floor(),
         &*S2::ck_floor(),
-    );
+    )
+    .expect("Failed to setup public params");
 
     // Phase 3: No more meta commitment - security from public depth binding
     // Phase 3: New schema [agg_root, state_in, seed, ledger_indices, depths, leaves]
@@ -397,13 +389,11 @@ fn test_por_circuit_wrong_root() {
         F1::from(depth as u64), // [4] depth_0 (actual depth for file 0)
         F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
     ];
-    let z0_secondary = vec![F2::ZERO];
+    let _z0_secondary = vec![F2::ZERO];
     let recursive_snark = RecursiveSNARK::new(
         &pp,
         &circuit,
-        &circuit_secondary,
         &z0_primary_correct,
-        &z0_secondary,
     )
     .expect("Should create RecursiveSNARK with correct root");
     let z0_primary_wrong = vec![
@@ -414,7 +404,7 @@ fn test_por_circuit_wrong_root() {
         F1::from(depth as u64), // [4] depth_0 (actual depth for file 0)
         F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
     ];
-    let result = recursive_snark.verify(&pp, 1, &z0_primary_wrong, &z0_secondary);
+    let result = recursive_snark.verify(&pp, 1, &z0_primary_wrong);
     assert!(result.is_err(), "Verification with wrong root should fail");
 }
 
@@ -452,7 +442,7 @@ fn test_conditional_select() {
 
 #[test]
 fn test_constraint_count() {
-    use bellpepper_core::test_cs::TestConstraintSystem;
+    use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
     for depth in [0, 1, 2, 3] {
         let data = vec![vec![1u8]; 1 << depth];
         let (tree, root) = build_tree(&data).expect("Failed to build tree for test");

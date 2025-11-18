@@ -8,7 +8,7 @@
 
 This project implements a Proof-of-Retrievability (PoR) system designed to provide economically enforceable guarantees that Storage Nodes are actually storing the data they have committed to. It is a core component for decentralized storage metaprotocols where a network of Indexers (Verifiers) must continuously audit Storage Nodes (Provers).
 
-The system uses [Nova](https://eprint.iacr.org/2021/370) recursive SNARKs via the [`arecibo`](https://github.com/microsoft/arecibo) library to generate constant-size (~10 kB) cryptographic proofs that a prover possesses a specific set of data. These proofs are efficient to verify (~30ms), making it feasible to enforce storage guarantees at scale.
+The system uses [Nova](https://eprint.iacr.org/2021/370) recursive SNARKs via Microsoft's [`nova-snark`](https://github.com/microsoft/Nova) library to generate constant-size (~10 kB) cryptographic proofs that a prover possesses a specific set of data. These proofs are efficient to verify (~30ms), making it feasible to enforce storage guarantees at scale.
 
 ## Core Capabilities
 

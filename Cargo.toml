@@ -20,8 +20,9 @@ exclude = [
 [dependencies]
 # --- Core SNARK and Proof System Dependencies ---
 
-# Use the arecibo crate from crates.io
-arecibo = { version = "0.1.1" }
+# Use Microsoft's nova-snark crate from crates.io
+# Note: default-features = false disables the `asm` feature which doesn't work on ARM
+nova-snark = { version = "0.41.0", default-features = false }
 bellpepper-core = { version = "0.4.0", default-features = false }
 
 # --- Hashing and Merkle Tree Dependencies ---
