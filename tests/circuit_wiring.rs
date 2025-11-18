@@ -3,12 +3,6 @@
 //! These tests verify that the circuit gadgets produce bit-for-bit identical results
 //! to their off-circuit counterparts. Any divergence here is a critical security issue.
 
-use nova_snark::traits::circuit::StepCircuit;
-use nova_snark::frontend::{
-    gadgets::num::AllocatedNum,
-    util_cs::test_cs::TestConstraintSystem,
-    ConstraintSystem,
-};
 use ff::{Field, PrimeField};
 use kontor_crypto::{
     api::FieldElement,
@@ -16,6 +10,10 @@ use kontor_crypto::{
     commitment::{domain_tags, poseidon_hash_tagged},
     utils::derive_index_from_bits,
 };
+use nova_snark::frontend::{
+    gadgets::num::AllocatedNum, util_cs::test_cs::TestConstraintSystem, ConstraintSystem,
+};
+use nova_snark::traits::circuit::StepCircuit;
 
 mod common;
 use common::{create_single_file_ledger, fixtures::create_circuit_public_inputs};

@@ -3,14 +3,14 @@
 //! This test verifies that in single-file mode, the circuit enforces
 //! that the public depth matches the actual file depth.
 
-use nova_snark::traits::circuit::StepCircuit;
-use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 use ff::Field;
 use kontor_crypto::{
     api::FieldElement,
     circuit::CircuitWitness,
     circuit::{FileProofWitness, PorCircuit},
 };
+use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
+use nova_snark::traits::circuit::StepCircuit;
 
 mod common;
 use common::fixtures::create_circuit_public_inputs;

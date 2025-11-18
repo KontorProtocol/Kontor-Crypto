@@ -18,12 +18,12 @@ pub mod witness;
 // Re-export key types for backward compatibility
 pub use witness::{CircuitWitness, FileProofWitness};
 
+use ff::PrimeField;
+use ff::PrimeFieldBits;
 use nova_snark::{
     frontend::{gadgets::num::AllocatedNum, ConstraintSystem, SynthesisError},
     traits::circuit::StepCircuit,
 };
-use ff::PrimeField;
-use ff::PrimeFieldBits;
 use std::marker::PhantomData;
 
 use crate::config;

@@ -3,6 +3,8 @@
 //! This module contains the main synthesize function that implements the
 //! Step Circuit logic for Proof-of-Retrievability verification.
 
+use ff::PrimeField;
+use ff::PrimeFieldBits;
 use nova_snark::frontend::{
     gadgets::{
         boolean::{AllocatedBit, Boolean},
@@ -10,8 +12,6 @@ use nova_snark::frontend::{
     },
     ConstraintSystem, SynthesisError,
 };
-use ff::PrimeField;
-use ff::PrimeFieldBits;
 #[cfg(debug_assertions)]
 use tracing::debug;
 

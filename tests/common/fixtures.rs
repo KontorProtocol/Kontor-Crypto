@@ -19,9 +19,9 @@ use rand::{RngCore, SeedableRng};
 use std::collections::BTreeMap;
 
 // Circuit test support
-use nova_snark::frontend::{gadgets::num::AllocatedNum, ConstraintSystem};
 use ff::PrimeField;
 use kontor_crypto::circuit::FileProofWitness;
+use nova_snark::frontend::{gadgets::num::AllocatedNum, ConstraintSystem};
 
 // Arecibo type aliases for circuit tests
 use nova_snark::{

@@ -1,7 +1,5 @@
 //! Security tests for malicious prover behavior.
 
-use nova_snark::traits::circuit::StepCircuit;
-use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 use ff::Field;
 use kontor_crypto::{
     api::{self, generate_circuit_witness, FieldElement, PorSystem},
@@ -9,6 +7,8 @@ use kontor_crypto::{
     config,
     merkle::F,
 };
+use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
+use nova_snark::traits::circuit::StepCircuit;
 
 mod common;
 use common::{

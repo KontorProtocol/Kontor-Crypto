@@ -155,7 +155,6 @@ Verifier generates parameters from challenge shape independently. If prover used
 | `reed-solomon-erasure` | 6.0.0 | Erasure coding | ? |
 | `pasta_curves` | 0.5.1 | Elliptic curves | ? |
 | `ff` | 0.13.1 | Finite field arithmetic | ? |
-| `bellpepper-core` | 0.4.0 | R1CS constraints | ? |
 
 # Pre-Audit Checklist
 
