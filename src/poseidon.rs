@@ -7,8 +7,7 @@
 use crate::FieldElement;
 use generic_array::typenum::U2;
 use nova_snark::frontend::gadgets::poseidon::{
-    IOPattern, SpongeOp, Strength, Simplex,
-    Sponge, SpongeAPI, SpongeTrait, PoseidonConstants,
+    IOPattern, PoseidonConstants, Simplex, Sponge, SpongeAPI, SpongeOp, SpongeTrait, Strength,
 };
 use once_cell::sync::Lazy;
 
