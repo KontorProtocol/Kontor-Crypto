@@ -2,7 +2,7 @@
 
 use ff::{Field, PrimeField};
 use kontor_crypto::{
-    api::FieldElement, commitment::domain_tags, config, utils::derive_index_from_bits,
+    api::FieldElement, config, poseidon::domain_tags, utils::derive_index_from_bits,
 };
 
 mod common;
@@ -102,7 +102,7 @@ fn test_challenge_derivation_uses_bit_extraction_not_modulo() {
     let state = FieldElement::from(67890u64);
 
     let challenge_hash =
-        kontor_crypto::commitment::poseidon_hash_tagged(domain_tags::challenge(), seed, state);
+        kontor_crypto::poseidon::poseidon_hash_tagged(domain_tags::challenge(), seed, state);
 
     // Test at various depths
     for depth in [0, 1, 4, 8, 10] {
@@ -176,7 +176,7 @@ fn test_no_modulo_in_challenge_derivation() {
 
     // Try multiple seeds to show the pattern
     for test_seed in 0u64..1000 {
-        let hash = kontor_crypto::commitment::poseidon_hash_tagged(
+        let hash = kontor_crypto::poseidon::poseidon_hash_tagged(
             domain_tags::challenge(),
             FieldElement::from(test_seed),
             FieldElement::from(0u64),

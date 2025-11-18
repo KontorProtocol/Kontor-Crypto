@@ -1,7 +1,7 @@
 use kontor_crypto::circuit::{FileProofWitness, PorCircuit};
-use kontor_crypto::commitment::{domain_tags, poseidon_hash_tagged};
 use kontor_crypto::config;
 use kontor_crypto::merkle::{build_tree, get_padded_proof_for_leaf};
+use kontor_crypto::poseidon::{domain_tags, poseidon_hash_tagged};
 
 mod common;
 use common::fixtures::{create_circuit_public_inputs, E1, E2, F1, S1, S2};
@@ -259,8 +259,8 @@ fn test_por_circuit_accumulator_update() {
     let random_seed = F1::from(0u64);
     let initial_acc = F1::from(100u64);
     let leaf_index = kontor_crypto::utils::derive_index_from_bits(
-        kontor_crypto::commitment::poseidon_hash_tagged(
-            kontor_crypto::commitment::domain_tags::challenge(),
+        kontor_crypto::poseidon::poseidon_hash_tagged(
+            kontor_crypto::poseidon::domain_tags::challenge(),
             random_seed,
             initial_acc,
         ),
@@ -379,7 +379,7 @@ fn test_por_circuit_wrong_root() {
 #[test]
 fn test_conditional_select() {
     // Direct test of the conditional_select function
-    use kontor_crypto::circuit::gadgets::hash::conditional_select;
+    use kontor_crypto::circuit::gadgets::select::conditional_select;
 
     let mut cs = TestConstraintSystem::<F1>::new();
 
@@ -417,8 +417,8 @@ fn test_constraint_count() {
         let random_seed = F1::from(0u64);
         let acc_in = F1::ZERO; // Initial accumulator
         let leaf_index = kontor_crypto::utils::derive_index_from_bits(
-            kontor_crypto::commitment::poseidon_hash_tagged(
-                kontor_crypto::commitment::domain_tags::challenge(),
+            kontor_crypto::poseidon::poseidon_hash_tagged(
+                kontor_crypto::poseidon::domain_tags::challenge(),
                 random_seed,
                 acc_in,
             ),

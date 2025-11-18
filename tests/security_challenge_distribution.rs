@@ -3,7 +3,7 @@
 use ff::Field;
 use kontor_crypto::{
     api::FieldElement,
-    commitment::{domain_tags, poseidon_hash_tagged},
+    poseidon::{domain_tags, poseidon_hash_tagged},
     utils::{derive_index_from_bits, derive_index_unbiased},
 };
 use rand::{rngs::StdRng, SeedableRng};

@@ -46,7 +46,7 @@ Files are chunked into fixed 31-byte symbols (max field element size for Pallas 
 
 ## Cryptographic Assumptions
 
-**Poseidon Hash** (`neptune`): collision resistance, preimage resistance, random oracle in domain-separated contexts.
+**Poseidon Hash** (via `nova-snark`): collision resistance, preimage resistance, random oracle in domain-separated contexts.
 
 **Nova SNARKs** (`nova-snark` v0.41.0): soundness, completeness, knowledge soundness.
 
@@ -150,11 +150,9 @@ Verifier generates parameters from challenge shape independently. If prover used
 
 | Dependency | Version | Role | Audit Status |
 |------------|---------|------|--------------|
-| `nova-snark` | 0.41.0 | Nova SNARK | Microsoft Research |
-| `neptune` | 13.0.0 | Poseidon hash | ? |
+| `nova-snark` | 0.41.0 | Nova SNARK & Poseidon hash | Microsoft Research |
 | `reed-solomon-erasure` | 6.0.0 | Erasure coding | ? |
-| `pasta_curves` | 0.5.1 | Elliptic curves | ? |
-| `ff` | 0.13.1 | Finite field arithmetic | ? |
+| `ff` | 0.13 | Finite field arithmetic | ? |
 
 # Pre-Audit Checklist
 

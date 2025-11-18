@@ -9,8 +9,8 @@
 use ff::Field;
 use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},
-    commitment::{self},
     ledger::FileLedger,
+    poseidon::{self as poseidon},
 };
 use std::collections::BTreeMap;
 
@@ -172,7 +172,7 @@ fn test_commitment_calculations_are_domain_separated() {
     // Phase 3: Meta commitments no longer used - security comes from public depth binding
     let meta_commitment = FieldElement::from(42u64); // Dummy value for test
 
-    let rc_commitment = commitment::calculate_root_commitment(roots[0], FieldElement::from(1u64));
+    let rc_commitment = poseidon::calculate_root_commitment(roots[0], FieldElement::from(1u64));
 
     // These should be different due to different values (not domain separation anymore)
     assert_ne!(

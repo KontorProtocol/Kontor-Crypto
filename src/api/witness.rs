@@ -6,9 +6,9 @@
 use super::types::{Challenge, FieldElement, PreparedFile};
 use crate::{
     circuit::{CircuitWitness, FileProofWitness},
-    commitment::{domain_tags, poseidon_hash_tagged},
     config, get_padded_proof_for_leaf,
     ledger::FileLedger,
+    poseidon::{domain_tags, poseidon_hash_tagged},
     KontorPoRError, Result,
 };
 use ff::Field;

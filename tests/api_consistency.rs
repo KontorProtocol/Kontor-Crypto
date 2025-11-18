@@ -1,7 +1,7 @@
 //! Tests for api.rs - state evolution, commitment matching, and ledger requirements
 use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},
-    commitment::{domain_tags, poseidon_hash_tagged},
+    poseidon::{domain_tags, poseidon_hash_tagged},
 };
 use std::collections::BTreeMap;
 

@@ -71,7 +71,7 @@ impl Plan {
 
         // 3. Compute ledger indices
         let mut ledger_indices = vec![0usize; files_per_step];
-        use crate::commitment::calculate_root_commitment;
+        use crate::poseidon::calculate_root_commitment;
 
         for (i, challenge) in sorted_challenges.iter().enumerate() {
             let file_depth = crate::api::tree_depth_from_metadata(&challenge.file_metadata);

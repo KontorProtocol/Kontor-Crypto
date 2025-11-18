@@ -10,8 +10,9 @@ use nova_snark::frontend::{
     ConstraintSystem, SynthesisError,
 };
 
-use super::hash::{conditional_select, poseidon_hash_tagged_gadget};
-use crate::commitment::domain_tags;
+use super::poseidon::poseidon_hash_tagged_gadget;
+use super::select::conditional_select;
+use crate::poseidon::domain_tags;
 
 /// Generic Merkle path verification with gating support for uniform circuit structure.
 /// This unified function handles both file tree and aggregation tree verification.
