@@ -90,7 +90,7 @@ impl FileLedger {
         file_root: F,
         file_depth: usize,
     ) -> Result<(), KontorPoRError> {
-        use crate::commitment::calculate_root_commitment;
+        use crate::poseidon::calculate_root_commitment;
 
         let rc = calculate_root_commitment(file_root, F::from(file_depth as u64));
         let entry = FileEntry {

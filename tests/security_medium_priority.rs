@@ -10,8 +10,9 @@
 use ff::PrimeField;
 use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},
-    commitment::{domain_tags, poseidon_hash_tagged},
-    merkle, FileLedger,
+    merkle,
+    poseidon::{domain_tags, poseidon_hash_tagged},
+    FileLedger,
 };
 use std::collections::BTreeMap;
 

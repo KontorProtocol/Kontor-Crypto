@@ -7,7 +7,7 @@ use ff::{Field, PrimeField};
 use kontor_crypto::{
     api::FieldElement,
     circuit::{FileProofWitness, PorCircuit},
-    commitment::{domain_tags, poseidon_hash_tagged},
+    poseidon::{domain_tags, poseidon_hash_tagged},
     utils::derive_index_from_bits,
 };
 use nova_snark::frontend::{

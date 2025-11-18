@@ -81,13 +81,13 @@
 pub mod api;
 pub mod circuit;
 pub mod circuit_safety;
-pub mod commitment;
 pub mod config;
 pub mod erasure;
 pub mod error;
 pub mod ledger;
 pub mod merkle;
 pub mod params;
+pub mod poseidon;
 pub mod utils;
 
 // Re-export commonly used types and functions for convenience

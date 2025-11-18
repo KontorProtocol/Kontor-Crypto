@@ -1,7 +1,7 @@
 //! Stateless helper functions for the Kontor PoR library
 
 use crate::api::FieldElement;
-use crate::commitment::{domain_tags, poseidon_hash_tagged};
+use crate::poseidon::{domain_tags, poseidon_hash_tagged};
 use ff::PrimeField;
 
 /// Convert up to 31 little-endian bytes into a field element using the

@@ -300,7 +300,7 @@ impl Challenge {
 
     /// Compute the deterministic ID for this challenge
     pub fn id(&self) -> ChallengeID {
-        use crate::commitment::domain_tags;
+        use crate::poseidon::domain_tags;
         use ff::PrimeField;
 
         let mut hasher = Sha256::new();

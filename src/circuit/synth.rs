@@ -16,12 +16,13 @@ use nova_snark::frontend::{
 use tracing::debug;
 
 use super::gadgets::{
-    hash::{conditional_select, poseidon_hash_tagged_gadget},
     merkle::{verify_aggregation_path_gated, verify_merkle_path_gated},
+    poseidon::poseidon_hash_tagged_gadget,
+    select::conditional_select,
 };
 use super::witness::{CircuitWitness, FileProofWitness};
-use crate::commitment::domain_tags;
 use crate::config;
+use crate::poseidon::domain_tags;
 
 /// Main circuit synthesis function for the Nova PoR circuit
 pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSystem<F>>(

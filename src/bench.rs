@@ -4,9 +4,9 @@
 
 use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},
-    build_tree,
-    commitment::{domain_tags, poseidon_hash_tagged},
-    config, get_padded_proof_for_leaf, params, FileLedger,
+    build_tree, config, get_padded_proof_for_leaf, params,
+    poseidon::{domain_tags, poseidon_hash_tagged},
+    FileLedger,
 };
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use std::collections::BTreeMap;

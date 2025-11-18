@@ -10,18 +10,18 @@ use nova_snark::traits::Engine;
 use serde::{Deserialize, Serialize};
 
 use super::KontorPoRError;
-use crate::commitment::domain_tags;
-use crate::commitment::poseidon_hash_tagged;
 use crate::config;
+use crate::poseidon::domain_tags;
+use crate::poseidon::poseidon_hash_tagged;
 use crate::utils::bytes31_to_field_le;
 
 /// A type alias for the scalar field of the Pallas curve.
 pub type F = <PallasEngine as Engine>::Scalar;
 
 /// Hashes two field elements using Poseidon.
-/// This is now a wrapper around the centralized implementation in commitment.rs.
+/// This is now a wrapper around the centralized implementation in poseidon.rs.
 pub fn poseidon_hash_pair(left: F, right: F) -> F {
-    crate::commitment::poseidon_hash2(left, right)
+    crate::poseidon::poseidon_hash2(left, right)
 }
 
 /// Domain-separated hash for Merkle tree nodes
