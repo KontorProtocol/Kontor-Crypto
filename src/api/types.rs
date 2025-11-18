@@ -67,7 +67,7 @@ impl Proof {
     ///
     /// Returns the serialized proof as bytes, or an error if serialization fails.
     pub fn to_bytes(&self) -> crate::Result<Vec<u8>> {
-        use crate::NovaPoRError;
+        use crate::KontorPoRError;
 
         let mut result = Vec::new();
 
@@ -82,7 +82,7 @@ impl Proof {
             .with_little_endian()
             .reject_trailing_bytes();
         let proof_bytes = options.serialize(self).map_err(|e| {
-            NovaPoRError::Serialization(format!("Failed to serialize proof: {}", e))
+            KontorPoRError::Serialization(format!("Failed to serialize proof: {}", e))
         })?;
 
         // Write length and data
@@ -106,10 +106,10 @@ impl Proof {
     ///
     /// Returns the deserialized Proof, or an error if deserialization fails.
     pub fn from_bytes(bytes: &[u8]) -> crate::Result<Self> {
-        use crate::NovaPoRError;
+        use crate::KontorPoRError;
 
         if bytes.len() < proof_format::HEADER_SIZE {
-            return Err(NovaPoRError::Serialization(
+            return Err(KontorPoRError::Serialization(
                 "Proof bytes too short for header".to_string(),
             ));
         }
@@ -117,7 +117,7 @@ impl Proof {
         // Check magic bytes
         let magic = &bytes[0..4];
         if magic != proof_format::MAGIC {
-            return Err(NovaPoRError::Serialization(
+            return Err(KontorPoRError::Serialization(
                 "Invalid magic bytes in proof".to_string(),
             ));
         }
@@ -125,7 +125,7 @@ impl Proof {
         // Check version
         let version = u16::from_le_bytes([bytes[4], bytes[5]]);
         if version != proof_format::VERSION {
-            return Err(NovaPoRError::Serialization(format!(
+            return Err(KontorPoRError::Serialization(format!(
                 "Unsupported proof format version: {}",
                 version
             )));
@@ -136,13 +136,13 @@ impl Proof {
 
         let expected_len = proof_format::HEADER_SIZE + length;
         if bytes.len() < expected_len {
-            return Err(NovaPoRError::Serialization(
+            return Err(KontorPoRError::Serialization(
                 "Proof bytes truncated".to_string(),
             ));
         }
 
         if bytes.len() > expected_len {
-            return Err(NovaPoRError::Serialization(
+            return Err(KontorPoRError::Serialization(
                 "Proof bytes contain trailing data".to_string(),
             ));
         }
@@ -154,7 +154,7 @@ impl Proof {
             .with_little_endian()
             .reject_trailing_bytes();
         let proof = options.deserialize(proof_bytes).map_err(|e| {
-            NovaPoRError::Serialization(format!("Failed to deserialize proof: {}", e))
+            KontorPoRError::Serialization(format!("Failed to deserialize proof: {}", e))
         })?;
 
         Ok(proof)

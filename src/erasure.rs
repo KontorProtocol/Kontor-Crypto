@@ -29,10 +29,10 @@
 //! let num_codewords = 1;  // For small files
 //! let reconstructed = decode_file_symbols(&mut damaged_symbols, num_codewords, data.len())?;
 //! assert_eq!(reconstructed, data);
-//! # Ok::<(), kontor_crypto::NovaPoRError>(())
+//! # Ok::<(), kontor_crypto::KontorPoRError>(())
 //! ```
 
-use crate::{config, NovaPoRError, Result};
+use crate::{config, KontorPoRError, Result};
 use reed_solomon_erasure::galois_8::ReedSolomon;
 
 /// Encodes a file into 31-byte symbols using multi-codeword Reed-Solomon.
@@ -58,11 +58,11 @@ use reed_solomon_erasure::galois_8::ReedSolomon;
 /// let data = b"Hello, world!";
 /// let symbols = encode_file_symbols(data)?;
 /// // Each symbol is 31 bytes, symbols.len() will be a multiple of 255
-/// # Ok::<(), kontor_crypto::NovaPoRError>(())
+/// # Ok::<(), kontor_crypto::KontorPoRError>(())
 /// ```
 pub fn encode_file_symbols(data: &[u8]) -> Result<Vec<Vec<u8>>> {
     if data.is_empty() {
-        return Err(NovaPoRError::EmptyData {
+        return Err(KontorPoRError::EmptyData {
             operation: "encode_file_symbols".to_string(),
         });
     }
@@ -81,7 +81,7 @@ pub fn encode_file_symbols(data: &[u8]) -> Result<Vec<Vec<u8>>> {
         config::DATA_SYMBOLS_PER_CODEWORD,
         config::PARITY_SYMBOLS_PER_CODEWORD,
     )
-    .map_err(|e| NovaPoRError::Cryptographic(format!("Reed-Solomon setup failed: {e}")))?;
+    .map_err(|e| KontorPoRError::Cryptographic(format!("Reed-Solomon setup failed: {e}")))?;
 
     // Encode each codeword
     let mut all_symbols = Vec::new();
@@ -102,7 +102,7 @@ pub fn encode_file_symbols(data: &[u8]) -> Result<Vec<Vec<u8>>> {
 
         // RS encode this codeword
         rs.encode(&mut codeword)
-            .map_err(|e| NovaPoRError::Cryptographic(format!("RS encode failed: {e}")))?;
+            .map_err(|e| KontorPoRError::Cryptographic(format!("RS encode failed: {e}")))?;
 
         all_symbols.extend(codeword);
     }
@@ -141,7 +141,7 @@ pub fn encode_file_symbols(data: &[u8]) -> Result<Vec<Vec<u8>>> {
 ///
 /// let reconstructed = decode_file_symbols(&mut damaged, num_codewords, data.len())?;
 /// assert_eq!(reconstructed, data);
-/// # Ok::<(), kontor_crypto::NovaPoRError>(())
+/// # Ok::<(), kontor_crypto::KontorPoRError>(())
 /// ```
 pub fn decode_file_symbols(
     symbols: &mut [Option<Vec<u8>>],
@@ -152,7 +152,7 @@ pub fn decode_file_symbols(
         config::DATA_SYMBOLS_PER_CODEWORD,
         config::PARITY_SYMBOLS_PER_CODEWORD,
     )
-    .map_err(|e| NovaPoRError::Cryptographic(format!("Reed-Solomon setup failed: {e}")))?;
+    .map_err(|e| KontorPoRError::Cryptographic(format!("Reed-Solomon setup failed: {e}")))?;
 
     let mut reconstructed = Vec::new();
 
@@ -165,7 +165,7 @@ pub fn decode_file_symbols(
 
         // Reconstruct this codeword
         rs.reconstruct(&mut codeword_symbols).map_err(|e| {
-            NovaPoRError::Cryptographic(format!("RS decode failed for codeword {}: {e}", cw_idx))
+            KontorPoRError::Cryptographic(format!("RS decode failed for codeword {}: {e}", cw_idx))
         })?;
 
         // Extract data symbols (first 231)

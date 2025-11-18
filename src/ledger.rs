@@ -16,7 +16,7 @@
 //! that `get_canonical_index_for_rc()` returns the correct tree position.
 
 use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTree, F};
-use crate::NovaPoRError;
+use crate::KontorPoRError;
 use ff::Field;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -89,7 +89,7 @@ impl FileLedger {
         file_id: String,
         file_root: F,
         file_depth: usize,
-    ) -> Result<(), NovaPoRError> {
+    ) -> Result<(), KontorPoRError> {
         use crate::commitment::calculate_root_commitment;
 
         let rc = calculate_root_commitment(file_root, F::from(file_depth as u64));
@@ -106,7 +106,7 @@ impl FileLedger {
     /// Rebuilds the aggregated Merkle tree from rc values (root commitments).
     /// The tree is built from rc = Poseidon(TAG_RC, root, depth) for each file,
     /// padded to the next power of two to ensure a fixed depth.
-    fn rebuild_tree(&mut self) -> Result<(), NovaPoRError> {
+    fn rebuild_tree(&mut self) -> Result<(), KontorPoRError> {
         // Collect rc values in sorted key order (BTreeMap is deterministic)
         let rc_values: Vec<F> = self.files.values().map(|entry| entry.rc).collect();
 
@@ -132,7 +132,7 @@ impl FileLedger {
     }
 
     /// Saves the `FileLedger` to the specified path using bincode serialization.
-    pub fn save(&self, path: &Path) -> Result<(), NovaPoRError> {
+    pub fn save(&self, path: &Path) -> Result<(), KontorPoRError> {
         let data = LedgerData {
             version: crate::config::LEDGER_FORMAT_VERSION,
             files: self.files.clone(),
@@ -140,11 +140,11 @@ impl FileLedger {
         };
 
         let encoded = bincode::serialize(&data).map_err(|e| {
-            NovaPoRError::Serialization(format!("Failed to serialize ledger: {}", e))
+            KontorPoRError::Serialization(format!("Failed to serialize ledger: {}", e))
         })?;
 
         if encoded.len() > crate::config::MAX_LEDGER_SIZE_BYTES {
-            return Err(NovaPoRError::InvalidInput(format!(
+            return Err(KontorPoRError::InvalidInput(format!(
                 "Serialized ledger size {} bytes exceeds maximum {} bytes",
                 encoded.len(),
                 crate::config::MAX_LEDGER_SIZE_BYTES
@@ -152,7 +152,7 @@ impl FileLedger {
         }
 
         fs::write(path, encoded).map_err(|e| {
-            NovaPoRError::IO(format!(
+            KontorPoRError::IO(format!(
                 "Failed to write ledger to {}: {}",
                 path.display(),
                 e
@@ -161,9 +161,9 @@ impl FileLedger {
     }
 
     /// Loads a `FileLedger` from the specified path with validation.
-    pub fn load(path: &Path) -> Result<Self, NovaPoRError> {
+    pub fn load(path: &Path) -> Result<Self, KontorPoRError> {
         let encoded = fs::read(path).map_err(|e| {
-            NovaPoRError::IO(format!(
+            KontorPoRError::IO(format!(
                 "Failed to read ledger from {}: {}",
                 path.display(),
                 e
@@ -171,7 +171,7 @@ impl FileLedger {
         })?;
 
         if encoded.len() > crate::config::MAX_LEDGER_SIZE_BYTES {
-            return Err(NovaPoRError::InvalidInput(format!(
+            return Err(KontorPoRError::InvalidInput(format!(
                 "Ledger file size {} bytes exceeds maximum {} bytes",
                 encoded.len(),
                 crate::config::MAX_LEDGER_SIZE_BYTES
@@ -179,11 +179,11 @@ impl FileLedger {
         }
 
         let data: LedgerData = bincode::deserialize(&encoded).map_err(|e| {
-            NovaPoRError::Serialization(format!("Failed to deserialize ledger: {}", e))
+            KontorPoRError::Serialization(format!("Failed to deserialize ledger: {}", e))
         })?;
 
         if data.version != crate::config::LEDGER_FORMAT_VERSION {
-            return Err(NovaPoRError::InvalidInput(format!(
+            return Err(KontorPoRError::InvalidInput(format!(
                 "Ledger format version {} is not compatible with current version {}",
                 data.version,
                 crate::config::LEDGER_FORMAT_VERSION
@@ -197,7 +197,7 @@ impl FileLedger {
         ledger.rebuild_tree()?;
 
         if ledger.tree.root() != data.root {
-            return Err(NovaPoRError::LedgerValidation {
+            return Err(KontorPoRError::LedgerValidation {
                 reason: "computed root does not match stored root".to_string(),
             });
         }

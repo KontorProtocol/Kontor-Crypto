@@ -9,7 +9,7 @@ use crate::{
     commitment::{domain_tags, poseidon_hash_tagged},
     config, get_padded_proof_for_leaf,
     ledger::FileLedger,
-    NovaPoRError, Result,
+    KontorPoRError, Result,
 };
 use ff::Field;
 use std::collections::BTreeMap;
@@ -80,7 +80,7 @@ pub fn generate_circuit_witness(
     if let Some(files) = files {
         for (file_idx, challenge) in sorted_challenges.iter().enumerate() {
             let file = files.get(&challenge.file_metadata.file_id).ok_or_else(|| {
-                NovaPoRError::InvalidInput(format!(
+                KontorPoRError::InvalidInput(format!(
                     "File {} not found",
                     challenge.file_metadata.file_id
                 ))
@@ -197,7 +197,7 @@ fn create_single_file_witness(
         // Multi-file case: get actual aggregation proof
         ledger
             .get_aggregation_proof(&challenge.file_metadata.file_id)
-            .ok_or_else(|| NovaPoRError::InvalidInput("File not found in ledger".to_string()))?
+            .ok_or_else(|| KontorPoRError::InvalidInput("File not found in ledger".to_string()))?
     } else {
         // Single-file case: empty aggregation proof
         crate::merkle::CircuitMerkleProof {

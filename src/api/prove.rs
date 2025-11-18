@@ -8,7 +8,7 @@ use super::{
     types::{Challenge, FieldElement, PorParams, PreparedFile, Proof},
     witness::generate_circuit_witness,
 };
-use crate::{config, ledger::FileLedger, NovaPoRError, Result};
+use crate::{config, ledger::FileLedger, KontorPoRError, Result};
 use arecibo::{
     provider::{PallasEngine, VestaEngine},
     traits::{circuit::TrivialCircuit, Engine},
@@ -64,7 +64,7 @@ pub fn prove(
 
     let _compress_span = info_span!("CompressedSNARK::prove").entered();
     let compressed_snark = CompressedSNARK::prove(&params.pp, &params.keys.pk, &recursive_snark)
-        .map_err(|e| NovaPoRError::Snark(format!("Proof compression failed: {e:?}")))?;
+        .map_err(|e| KontorPoRError::Snark(format!("Proof compression failed: {e:?}")))?;
 
     // Collect challenge IDs in order
     let challenge_ids: Vec<super::types::ChallengeID> = challenges.iter().map(|c| c.id()).collect();
@@ -82,14 +82,14 @@ fn setup_proving_environment(
     ledger: &FileLedger,
 ) -> Result<(Plan, PorParams, usize)> {
     if challenges.is_empty() {
-        return Err(NovaPoRError::InvalidInput(
+        return Err(KontorPoRError::InvalidInput(
             "prove: Must provide at least one challenge to generate a proof".to_string(),
         ));
     }
 
     // Practical limit for number of files (can be adjusted based on needs)
     if challenges.len() > config::PRACTICAL_MAX_FILES {
-        return Err(NovaPoRError::TooManyFiles {
+        return Err(KontorPoRError::TooManyFiles {
             got: challenges.len(),
             max: config::PRACTICAL_MAX_FILES,
         });
@@ -99,14 +99,14 @@ fn setup_proving_environment(
     let num_challenges = challenges[0].num_challenges;
 
     if num_challenges == 0 || num_challenges > config::MAX_NUM_CHALLENGES {
-        return Err(NovaPoRError::InvalidChallengeCount {
+        return Err(KontorPoRError::InvalidChallengeCount {
             count: num_challenges,
         });
     }
 
     for challenge in challenges.iter() {
         if challenge.num_challenges != num_challenges {
-            return Err(NovaPoRError::ChallengeMismatch {
+            return Err(KontorPoRError::ChallengeMismatch {
                 field: "num_challenges".to_string(),
             });
         }
@@ -115,13 +115,13 @@ fn setup_proving_environment(
     // Validate all files
     for challenge in challenges.iter() {
         let file = files.get(&challenge.file_metadata.file_id).ok_or_else(|| {
-            NovaPoRError::FileNotFound {
+            KontorPoRError::FileNotFound {
                 file_id: challenge.file_metadata.file_id.clone(),
             }
         })?;
 
         if file.tree.root() != challenge.file_metadata.root {
-            return Err(NovaPoRError::MetadataMismatch);
+            return Err(KontorPoRError::MetadataMismatch);
         }
     }
 
@@ -250,7 +250,7 @@ fn initialize_recursive_snark(
             &z0_primary,
             &z0_secondary,
         )
-        .map_err(|e| NovaPoRError::Snark(format!("Initial SNARK creation failed: {e:?}")))?
+        .map_err(|e| KontorPoRError::Snark(format!("Initial SNARK creation failed: {e:?}")))?
     };
 
     trace!("NovaProof::new completed successfully");
@@ -369,7 +369,7 @@ fn execute_proving_loop(
             }
         );
         prove_result.map_err(|e| {
-            NovaPoRError::Snark(format!("Prove step {} failed: {e:?}", challenge_num))
+            KontorPoRError::Snark(format!("Prove step {} failed: {e:?}", challenge_num))
         })?;
 
         // Report progress after each successful step (excluding the no-op)

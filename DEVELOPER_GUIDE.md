@@ -48,7 +48,7 @@ cargo run --release --bin bench
 
 ## Errors and Failure Modes
 
-Key error variants surfaced at API boundaries (see `NovaPoRError`):
+Key error variants surfaced at API boundaries (see `KontorPoRError`):
 
 -   `InvalidInput`, `InvalidChallengeCount`, `ChallengeMismatch` (e.g., non-uniform `num_challenges` across the batch).
 -   `FileNotFound`, `FileNotInLedger`, `MetadataMismatch`.

@@ -7,7 +7,7 @@ use super::{
     plan::Plan,
     types::{Challenge, FieldElement, Proof},
 };
-use crate::{config, ledger::FileLedger, NovaPoRError, Result};
+use crate::{config, ledger::FileLedger, KontorPoRError, Result};
 use arecibo::traits::Engine;
 use ff::Field;
 use tracing::{debug, info_span};
@@ -51,7 +51,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     .entered();
 
     if challenges.is_empty() {
-        return Err(NovaPoRError::InvalidInput(
+        return Err(KontorPoRError::InvalidInput(
             "Must provide at least one challenge".to_string(),
         ));
     }
@@ -62,7 +62,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // Basic validation
     let num_challenges = challenges[0].num_challenges;
     if num_challenges == 0 || num_challenges > config::MAX_NUM_CHALLENGES {
-        return Err(NovaPoRError::InvalidChallengeCount {
+        return Err(KontorPoRError::InvalidChallengeCount {
             count: num_challenges,
         });
     }
@@ -82,7 +82,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // Verify all challenges have the same num_challenges and seed
     for challenge in challenges.iter() {
         if challenge.num_challenges != num_challenges {
-            return Err(NovaPoRError::InvalidInput(
+            return Err(KontorPoRError::InvalidInput(
                 "All challenges must have the same num_challenges for verification".to_string(),
             ));
         }
@@ -92,7 +92,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     for challenge in challenges {
         let file_depth = crate::api::tree_depth_from_metadata(&challenge.file_metadata);
         if file_depth > plan.file_tree_depth {
-            return Err(NovaPoRError::InvalidInput(format!(
+            return Err(KontorPoRError::InvalidInput(format!(
                 "File {} depth {} exceeds circuit shape depth {} - circuit cannot handle this file",
                 challenge.file_metadata.file_id, file_depth, plan.file_tree_depth
             )));
@@ -159,7 +159,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     match result {
         Ok(_) => Ok(true),
         Err(arecibo::errors::NovaError::ProofVerifyError) => Ok(false),
-        Err(e) => Err(NovaPoRError::Snark(format!(
+        Err(e) => Err(KontorPoRError::Snark(format!(
             "An unexpected error occurred during verification: {e:?}"
         ))),
     }
