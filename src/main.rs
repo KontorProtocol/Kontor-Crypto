@@ -101,23 +101,11 @@ fn main() {
     display_challenge_info(&challenges);
     info!("");
 
-    // Phase 3: Baseline Measurement (single-file proof for comparison)
-    info!("[3/5] Baseline Measurement");
-    let num_symbols_per_challenge = challenges.first().map(|c| c.num_challenges).unwrap_or(100);
-    info!(
-        "  Generating single-file proof ({} symbols) for comparison...",
-        num_symbols_per_challenge
-    );
-    let single_proof_size = measure_single_proof_size(&node_files[0], &ledger, num_symbols_per_challenge);
-    info!("  ✓ Single-file proof size: {:.1} KB", single_proof_size as f64 / 1024.0);
+    // Phase 3: Proof Generation
+    info!("[3/4] Proof Generation");
     info!("");
     
-    // Phase 4: Proof Generation
-    info!("[4/5] Multi-File Proof Generation");
-    info!("  Strategy: Aggregated proof covering all challenges");
-    info!("");
-    
-    let proof_metrics = generate_proof(&node_files, &challenges, &ledger, cli.profile_memory);
+    let (proof_metrics, proof) = generate_proof(&node_files, &challenges, &ledger, cli.profile_memory);
     
     info!("{}", proof_metrics.format_table());
     info!("");
@@ -147,13 +135,13 @@ fn main() {
     // Phase 5: Verification
     if !cli.no_verify {
         info!("[5/5] Verification");
-        let verify_metrics = verify_proof(&node_files, &challenges, &ledger);
+        let verify_metrics = verify_proof(&proof, &challenges, &ledger);
         info!("  ✓ {}", verify_metrics.format());
         info!("");
     }
 
-    // Economic Analysis
-    display_economic_analysis(&proof_metrics, single_proof_size);
+    // Proof Economics
+    display_economic_analysis(&proof_metrics);
 }
 
 /// Setup realistic network with heterogeneous file sizes
@@ -368,9 +356,10 @@ fn display_challenge_info(challenges: &[Challenge]) {
     info!("  ✓ Received {} challenges:", challenges.len());
     for challenge in challenges {
         let expiration = challenge.block_height + 2016; // W_proof from protocol
+        // Show file ID prefix to identify which file is being challenged
         info!(
-            "    • {} at block {} (expires: {})",
-            &challenge.file_metadata.file_id[..12],
+            "    • File {} at block {} (expires: {})",
+            &challenge.file_metadata.file_id[..8],
             challenge.block_height,
             expiration
         );
@@ -389,7 +378,7 @@ fn generate_proof(
     challenges: &[Challenge],
     ledger: &FileLedger,
     profile_memory: bool,
-) -> ProofMetrics {
+) -> (ProofMetrics, api::Proof) {
     let _span = info_span!("proof_generation").entered();
     
     if profile_memory {
@@ -443,37 +432,37 @@ fn generate_proof(
     // Note: We don't break down witness/proving/compression phases separately
     // because we'd need to instrument the internal prove() function.
     // The total proving time is what matters for economic analysis.
-    ProofMetrics {
-        total_duration,
-        param_gen_duration: param_duration,
-        witness_gen_duration: Duration::from_secs(0), // Not separately measured
-        proving_duration,
-        compression_duration: Duration::from_secs(0), // Not separately measured
-        proof_size_bytes: proof_bytes,
-        num_files: challenges.len(),
-        num_challenges_per_file: challenges.first().map(|c| c.num_challenges).unwrap_or(0),
-        total_steps: challenges.first().map(|c| c.num_challenges).unwrap_or(0),
-        aggregated_tree_depth,
-        max_file_tree_depth: file_tree_depth,
-        memory_peak_mb,
-    }
+    (
+        ProofMetrics {
+            total_duration,
+            param_gen_duration: param_duration,
+            witness_gen_duration: Duration::from_secs(0), // Not separately measured
+            proving_duration,
+            compression_duration: Duration::from_secs(0), // Not separately measured
+            proof_size_bytes: proof_bytes,
+            num_files: challenges.len(),
+            num_challenges_per_file: challenges.first().map(|c| c.num_challenges).unwrap_or(0),
+            total_steps: challenges.first().map(|c| c.num_challenges).unwrap_or(0),
+            aggregated_tree_depth,
+            max_file_tree_depth: file_tree_depth,
+            memory_peak_mb,
+        },
+        proof,
+    )
 }
 
 /// Verify proof and collect metrics
 fn verify_proof(
-    _node_files: &[StoredFile],
+    proof: &api::Proof,
     challenges: &[Challenge],
     ledger: &FileLedger,
 ) -> VerificationMetrics {
     let _span = info_span!("verification").entered();
     
-    // Generate proof first (reusing from previous phase in real scenario)
     let system = PorSystem::new(ledger);
-    let files_vec: Vec<&_> = _node_files.iter().map(|f| &f.prepared).collect();
-    let proof = system.prove(files_vec, challenges).unwrap();
     
     let start = Instant::now();
-    let result = system.verify(&proof, challenges).unwrap();
+    let result = system.verify(proof, challenges).unwrap();
     let duration = start.elapsed();
     
     if !result {
@@ -488,29 +477,11 @@ fn verify_proof(
     }
 }
 
-/// Measure single-file proof size for baseline comparison
-fn measure_single_proof_size(file: &StoredFile, ledger: &FileLedger, num_symbols: usize) -> usize {
-    let seed = FieldElement::from(config::TEST_RANDOM_SEED);
-    let challenge = Challenge::new(
-        file.metadata.clone(),
-        1000,
-        num_symbols, // Use same as multi-file challenges for fair comparison
-        seed,
-        String::from("node_1"),
-    );
-    
-    let system = PorSystem::new(ledger);
-    let proof = system.prove(vec![&file.prepared], &[challenge]).unwrap();
-    
-    bincode::serialize(&proof)
-        .map(|bytes| bytes.len())
-        .unwrap_or(0)
-}
 
-/// Display economic analysis of aggregation benefits
-fn display_economic_analysis(metrics: &ProofMetrics, single_proof_size: usize) {
+/// Display proof economics
+fn display_economic_analysis(metrics: &ProofMetrics) {
     info!("═══════════════════════════════════════════════════════════════");
-    info!("AGGREGATION ECONOMICS");
+    info!("PROOF ECONOMICS");
     info!("═══════════════════════════════════════════════════════════════");
     info!("");
     
@@ -520,38 +491,22 @@ fn display_economic_analysis(metrics: &ProofMetrics, single_proof_size: usize) {
         metrics.num_files,
     );
     
-    let hypothetical_size = single_proof_size * metrics.num_files;
-    let hypothetical_cost = config::BTC_TX_FEE_USD_DEFAULT * metrics.num_files as f64;
-    
-    info!("Individual Proofs (baseline):");
+    info!("Aggregated Proof:");
     info!(
-        "  • {} separate proofs × {:.1} KB = {:.1} KB total",
-        metrics.num_files,
-        single_proof_size as f64 / 1024.0,
-        hypothetical_size as f64 / 1024.0
-    );
-    info!(
-        "  • {} Bitcoin transactions × ${:.2} = ${:.2}",
-        metrics.num_files,
-        config::BTC_TX_FEE_USD_DEFAULT,
-        hypothetical_cost
-    );
-    info!("");
-    
-    info!("Aggregated Proof (optimized):");
-    info!(
-        "  • 1 combined proof = {:.1} KB",
+        "  • Proof size: {:.1} KB",
         econ.proof_size_kb
     );
     info!(
-        "  • 1 Bitcoin transaction = ${:.2}",
+        "  • Covers {} file challenges ({} symbols each)",
+        metrics.num_files,
+        metrics.num_challenges_per_file
+    );
+    info!(
+        "  • Bitcoin transaction fee: ${:.2}",
         econ.btc_tx_fee_usd
     );
-    info!("");
-
     info!(
-        "  • Amortized cost per challenge: ${:.2} → ${:.2}",
-        hypothetical_cost / metrics.num_files as f64,
+        "  • Cost per file challenge: ${:.2}",
         econ.amortized_cost_per_challenge
     );
     info!("");
