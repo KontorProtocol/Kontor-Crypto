@@ -23,37 +23,18 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       
-      - name: Cache cargo-codspeed binary
-        uses: actions/cache@v4
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
         with:
-          path: ~/.cargo/bin/cargo-codspeed
-          key: ${{ runner.os }}-cargo-codspeed-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-codspeed-
-        
-      - name: Cache cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-bench-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bench-
-      
-      - name: Install cargo-codspeed
-        run: |
-          if ! command -v cargo-codspeed &> /dev/null; then
-            cargo install cargo-codspeed --locked
-          fi
+          cache-on-failure: true
+          shared-key: "benchmarks"
       
       - name: Run benchmarks with CodSpeed
         uses: CodSpeedHQ/action@v4
         with:
           mode: simulation
           run: |
+            cargo install cargo-codspeed --locked
             cargo codspeed build
             cargo codspeed run
 
