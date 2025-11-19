@@ -1,6 +1,6 @@
 //! Proving benchmarks for single-file and multi-file aggregation
 
-use codspeed_criterion_compat::{criterion_group, criterion_main};
+use codspeed_criterion_compat::criterion_group;
 use criterion::{black_box, BenchmarkId, Criterion, SamplingMode};
 use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},

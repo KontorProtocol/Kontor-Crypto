@@ -1,6 +1,6 @@
 //! Primitive operation benchmarks (Poseidon, Merkle, erasure coding)
 
-use codspeed_criterion_compat::{criterion_group, criterion_main};
+use codspeed_criterion_compat::criterion_group;
 use criterion::{black_box, BenchmarkId, Criterion};
 use kontor_crypto::{
     build_tree, config, get_padded_proof_for_leaf,
