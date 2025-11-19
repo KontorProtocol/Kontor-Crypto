@@ -17,11 +17,11 @@ fn generate_test_data(size: usize, seed: u64) -> Vec<u8> {
 fn bench_e2e_workflow(c: &mut Criterion) {
     let mut group = c.benchmark_group("e2e_workflow");
     group.sampling_mode(SamplingMode::Flat);
-    group.sample_size(10);
+    group.sample_size(3);
 
-    // Test full workflow for small and medium files
-    for (size_kb, label) in [(10, "10KB"), (100, "100KB")] {
-        for num_challenges in [2, 5, 10] {
+    // Test extremes: small file only (large files too slow for e2e)
+    for (size_kb, label) in [(10, "10KB")] {
+        for num_challenges in [2, 50] {
             group.bench_with_input(
                 BenchmarkId::new(label, num_challenges),
                 &(size_kb, num_challenges),

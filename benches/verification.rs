@@ -16,13 +16,12 @@ fn generate_test_data(size: usize, seed: u64) -> Vec<u8> {
 
 fn bench_verify(c: &mut Criterion) {
     let mut group = c.benchmark_group("verification");
-    group.sample_size(10);
+    group.sample_size(3);
 
     // Verification should be constant time regardless of challenge count
-    // but test to confirm
     let file_size_kb = 16;
 
-    for num_challenges in [2, 5, 10, 50] {
+    for num_challenges in [2, 50] {
         let data = generate_test_data(file_size_kb * 1024, 42);
         let (prepared_file, metadata) = api::prepare_file(&data, "verify.dat").unwrap();
 
@@ -68,13 +67,13 @@ fn bench_verify(c: &mut Criterion) {
 
 fn bench_verify_multi_file(c: &mut Criterion) {
     let mut group = c.benchmark_group("verification_multi_file");
-    group.sample_size(10);
+    group.sample_size(3);
 
-    // Verify constant-time across different file counts
+    // Test extremes: single file vs many files
     let file_size_kb = 16;
     let num_challenges_per_file = 5;
 
-    for num_files in [1, 2, 4, 8] {
+    for num_files in [1, 8] {
         let mut prepared_files = Vec::new();
         let mut metadatas = Vec::new();
         let mut ledger = FileLedger::new();

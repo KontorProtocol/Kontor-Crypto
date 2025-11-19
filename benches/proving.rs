@@ -17,15 +17,11 @@ fn generate_test_data(size: usize, seed: u64) -> Vec<u8> {
 fn bench_prove_single_file(c: &mut Criterion) {
     let mut group = c.benchmark_group("prove_single_file");
     group.sampling_mode(SamplingMode::Flat);
-    group.sample_size(10); // Fewer samples for expensive operations
+    group.sample_size(3);
 
-    // Protocol file sizes: 10KB, 100KB, 1MB (skip 10MB for benchmark speed)
-    // TODO: let file_sizes = [(10, "10KB"), (100, "100KB"), (1024, "1MB")];
-    let file_sizes = [(10, "10KB"), (100, "100KB")];
-
-    // Challenge counts: 2, 5, 10, 50 (skip 100 for speed)
-    // TODO: let challenge_counts = [2, 5, 10, 50];
-    let challenge_counts = [2, 5];
+    // Test extremes: small and large files
+    let file_sizes = [(10, "10KB"), (1024, "1MB")];
+    let challenge_counts = [2, 50];
 
     for (size_kb, size_label) in file_sizes {
         for num_challenges in challenge_counts {
@@ -75,13 +71,12 @@ fn bench_prove_single_file(c: &mut Criterion) {
 fn bench_prove_multi_file_aggregation(c: &mut Criterion) {
     let mut group = c.benchmark_group("multi_file_aggregation");
     group.sampling_mode(SamplingMode::Flat);
-    group.sample_size(10);
+    group.sample_size(3);
 
-    // Test aggregation across different file counts
-    // TODO: let file_counts = [1, 2, 4, 8];
-    let file_counts = [1, 2, 4];
+    // Test extremes: single file vs many files
+    let file_counts = [1, 8];
     let num_challenges_per_file = 5;
-    let file_size_kb = 16; // Small files for speed
+    let file_size_kb = 16;
 
     for num_files in file_counts {
         // Prepare multiple files
