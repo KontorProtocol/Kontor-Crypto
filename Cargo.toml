@@ -43,6 +43,7 @@ thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
 tracing-tree = "0.3"
+peak_alloc = { version = "0.2", optional = true }
 
 # --- Erasure Coding Dependencies ---
 
@@ -53,9 +54,11 @@ reed-solomon-erasure = "6.0"
 clap = { version = "4.5.10", features = ["derive"] }
 rand = "0.8.5"
 statrs = "0.18.0"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]
 default = []
+memory-profiling = ["peak_alloc"]
 
 # Documentation configuration for docs.rs
 [package.metadata.docs.rs]
@@ -75,3 +78,7 @@ opt-level = 3
 [[bin]]
 name = "bench"
 path = "src/bench.rs"
+
+[[bench]]
+name = "criterion_benchmarks"
+harness = false

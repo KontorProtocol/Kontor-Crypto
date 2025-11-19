@@ -37,7 +37,10 @@ pub fn prove(
         "prove",
         num_challenges = challenges.len(),
         num_files = files.len(),
-        has_ledger = true
+        has_ledger = true,
+        files_per_step = tracing::field::Empty,
+        file_tree_depth = tracing::field::Empty,
+        aggregated_tree_depth = tracing::field::Empty,
     )
     .entered();
 
@@ -137,6 +140,11 @@ fn setup_proving_environment(
         "prove() - Using shape: files_per_step={}, file_tree_depth={}, aggregated_tree_depth={}",
         plan.files_per_step, plan.file_tree_depth, plan.aggregated_tree_depth
     );
+    
+    // Record shape metrics in span for extraction
+    tracing::Span::current().record("files_per_step", plan.files_per_step);
+    tracing::Span::current().record("file_tree_depth", plan.file_tree_depth);
+    tracing::Span::current().record("aggregated_tree_depth", plan.aggregated_tree_depth);
 
     if plan.aggregated_tree_depth == 0 {
         debug!("[DEBUG] prove() - Single-file proof:");

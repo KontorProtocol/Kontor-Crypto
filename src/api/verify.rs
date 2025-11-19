@@ -45,7 +45,9 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     let _span = info_span!(
         "verify",
         num_challenges = challenges.len(),
-        has_ledger = true
+        has_ledger = true,
+        num_iterations = tracing::field::Empty,
+        files_per_step = tracing::field::Empty,
     )
     .entered();
 
@@ -115,6 +117,10 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // - We call prove_step num_challenges times, but the first call is a no-op
     // - So we have num_challenges total synthesized steps (0 through num_challenges-1)
     let num_iterations = plan.sorted_challenges[0].num_challenges;
+    
+    // Record metrics in span
+    tracing::Span::current().record("num_iterations", num_iterations);
+    tracing::Span::current().record("files_per_step", plan.files_per_step);
 
     if plan.aggregated_tree_depth == 0 {
         debug!("verify() - Single-file verification:");

@@ -264,3 +264,20 @@ pub const BENCHMARK_TREE_DEPTH: usize = 8;
 
 /// Benchmark seed for deterministic results
 pub const BENCHMARK_SEED: u64 = 12345;
+
+// --- Economic Constants ---
+
+/// Default Bitcoin transaction fee assumption for cost analysis (in USD)
+pub const BTC_TX_FEE_USD_DEFAULT: f64 = 0.50;
+
+/// Average proof size for single-file proofs (in bytes, approximate)
+pub const SINGLE_PROOF_SIZE_BYTES: usize = 10240; // ~10 KB
+
+/// Blocks per hour (Bitcoin averages ~6 blocks/hour)
+pub const BLOCKS_PER_HOUR: usize = 6;
+
+/// Blocks per day
+pub const BLOCKS_PER_DAY: usize = BLOCKS_PER_HOUR * 24; // 144
+
+/// Challenge window spacing for realistic simulation (blocks between challenges)
+pub const CHALLENGE_SPACING_BLOCKS: u64 = 50;

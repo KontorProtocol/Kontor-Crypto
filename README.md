@@ -93,6 +93,79 @@ assert!(is_valid, "Proof verification failed!");
 println!("Proof successfully generated and verified with Nova PoR API.");
 ```
 
+## Performance Benchmarking
+
+The project includes two complementary performance measurement tools:
+
+### Storage Node Simulator
+
+Run a realistic simulation of storage node operations with heterogeneous file sizes and multi-file proof aggregation:
+
+```bash
+# Default: small demo (100 files in ledger, node stores 10, 5 challenges)
+cargo run --release
+
+# Realistic scenario with many files
+cargo run --release -- --files-stored-by-node 50
+
+# Large-scale test with memory profiling
+cargo run --release --features memory-profiling -- \
+  --total-files-in-ledger 1000 \
+  --files-stored-by-node 100 \
+  --challenges-to-simulate 20 \
+  --profile-memory
+
+# Options:
+#   --total-files-in-ledger N      Network size (default: 100)
+#   --files-stored-by-node N       Files this node stores (default: 10)
+#   --challenges-to-simulate N     Challenges to batch (default: 5)
+#   --file-size-distribution TYPE  "uniform", "mixed", or "large-heavy" (default: mixed)
+#   --no-verify                    Skip verification phase
+#   --profile-memory               Track peak memory usage
+#   -v, -vv                        Increase verbosity (debug/trace)
+```
+
+The simulator showcases:
+- Heterogeneous file sizes (10KB - 100MB) matching protocol specifications
+- Staggered challenge arrival over time (different block heights and seeds)
+- Multi-file proof aggregation (constant ~10KB proof size regardless of file count)
+- Bitcoin transaction fee economics (batching multiple challenges into one proof)
+
+### Criterion Benchmark Suite
+
+Run regression-tracking benchmarks with statistical analysis:
+
+```bash
+# Run all benchmarks
+cargo bench
+
+# Run specific benchmark group
+cargo bench prove_single_file
+cargo bench multi_file_aggregation
+cargo bench verification
+
+# View HTML reports
+open target/criterion/report/index.html
+```
+
+Benchmark groups:
+- **Primitives**: Poseidon hashing, Merkle tree operations, erasure coding
+- **File Preparation**: Encoding across protocol file sizes (10KB - 100MB)
+- **Single-File Proving**: Various file sizes × challenge counts
+- **Multi-File Aggregation**: 1, 2, 4, 8, 16 files (demonstrates constant proof size)
+- **Verification**: Constant-time verification across file counts
+- **E2E Workflows**: Complete prepare → prove → verify cycles
+
+All benchmarks align with protocol parameters from the specification (file sizes, challenge counts, tree depths).
+
+### Legacy Benchmark Tool
+
+The original simple benchmark tool remains available:
+
+```bash
+cargo run --release --bin bench
+```
+
 ## Documentation
 
 -   **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
