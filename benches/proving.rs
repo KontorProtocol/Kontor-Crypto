@@ -1,7 +1,7 @@
 //! Proving benchmarks for single-file and multi-file aggregation
 
 use codspeed_criterion_compat::{criterion_group, criterion_main};
-use criterion::{black_box, Criterion, BenchmarkId, SamplingMode};
+use criterion::{black_box, BenchmarkId, Criterion, SamplingMode};
 use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},
     config, FileLedger,
@@ -19,20 +19,20 @@ fn bench_prove_single_file(c: &mut Criterion) {
     let mut group = c.benchmark_group("prove_single_file");
     group.sampling_mode(SamplingMode::Flat);
     group.sample_size(10); // Fewer samples for expensive operations
-    
+
     // Protocol file sizes: 10KB, 100KB, 1MB (skip 10MB for benchmark speed)
     // TODO: let file_sizes = [(10, "10KB"), (100, "100KB"), (1024, "1MB")];
     let file_sizes = [(10, "10KB"), (100, "100KB")];
-    
+
     // Challenge counts: 2, 5, 10, 50 (skip 100 for speed)
     // TODO: let challenge_counts = [2, 5, 10, 50];
     let challenge_counts = [2, 5];
-    
+
     for (size_kb, size_label) in file_sizes {
         for num_challenges in challenge_counts {
             let data = generate_test_data(size_kb * 1024, 42);
             let (prepared_file, metadata) = api::prepare_file(&data, "bench.dat").unwrap();
-            
+
             let mut ledger = FileLedger::new();
             ledger
                 .add_file(
@@ -41,7 +41,7 @@ fn bench_prove_single_file(c: &mut Criterion) {
                     api::tree_depth_from_metadata(&metadata),
                 )
                 .unwrap();
-            
+
             let seed = FieldElement::from(config::TEST_RANDOM_SEED);
             let challenge = Challenge::new(
                 metadata.clone(),
@@ -50,22 +50,26 @@ fn bench_prove_single_file(c: &mut Criterion) {
                 seed,
                 String::from("bench_prover"),
             );
-            
+
             let challenges = vec![challenge];
             let system = PorSystem::new(&ledger);
-            
+
             group.bench_with_input(
                 BenchmarkId::new(size_label, num_challenges),
                 &(system, prepared_file, challenges),
                 |bencher, (system, prepared_file, challenges)| {
                     bencher.iter(|| {
-                        black_box(system.prove(vec![prepared_file], black_box(challenges)).unwrap())
+                        black_box(
+                            system
+                                .prove(vec![prepared_file], black_box(challenges))
+                                .unwrap(),
+                        )
                     });
                 },
             );
         }
     }
-    
+
     group.finish();
 }
 
@@ -73,23 +77,24 @@ fn bench_prove_multi_file_aggregation(c: &mut Criterion) {
     let mut group = c.benchmark_group("multi_file_aggregation");
     group.sampling_mode(SamplingMode::Flat);
     group.sample_size(10);
-    
+
     // Test aggregation across different file counts
     // TODO: let file_counts = [1, 2, 4, 8];
     let file_counts = [1, 2, 4];
     let num_challenges_per_file = 5;
     let file_size_kb = 16; // Small files for speed
-    
+
     for num_files in file_counts {
         // Prepare multiple files
         let mut prepared_files = Vec::new();
         let mut metadatas = Vec::new();
         let mut ledger = FileLedger::new();
-        
+
         for i in 0..num_files {
             let data = generate_test_data(file_size_kb * 1024, 42 + i as u64);
-            let (prepared, metadata) = api::prepare_file(&data, &format!("file_{}.dat", i)).unwrap();
-            
+            let (prepared, metadata) =
+                api::prepare_file(&data, &format!("file_{}.dat", i)).unwrap();
+
             ledger
                 .add_file(
                     metadata.file_id.clone(),
@@ -97,11 +102,11 @@ fn bench_prove_multi_file_aggregation(c: &mut Criterion) {
                     api::tree_depth_from_metadata(&metadata),
                 )
                 .unwrap();
-            
+
             prepared_files.push(prepared);
             metadatas.push(metadata);
         }
-        
+
         // Create challenges for all files
         let mut challenges = Vec::new();
         for metadata in &metadatas {
@@ -114,21 +119,25 @@ fn bench_prove_multi_file_aggregation(c: &mut Criterion) {
                 String::from("bench_prover"),
             ));
         }
-        
+
         let system = PorSystem::new(&ledger);
         let files_vec: Vec<&_> = prepared_files.iter().collect();
-        
+
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("{}_files", num_files)),
             &(system, files_vec, challenges),
             |bencher, (system, files, challenges)| {
                 bencher.iter(|| {
-                    black_box(system.prove(black_box(files.clone()), black_box(challenges)).unwrap())
+                    black_box(
+                        system
+                            .prove(black_box(files.clone()), black_box(challenges))
+                            .unwrap(),
+                    )
                 });
             },
         );
     }
-    
+
     group.finish();
 }
 
@@ -137,4 +146,3 @@ criterion_group!(
     bench_prove_single_file,
     bench_prove_multi_file_aggregation
 );
-

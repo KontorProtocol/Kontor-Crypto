@@ -64,52 +64,52 @@ impl ProofMetrics {
         output.push_str("  ┌─────────────────────────────────────────────────────┐\n");
         output.push_str("  │ Component              │ Duration  │ Memory Usage   │\n");
         output.push_str("  ├────────────────────────┼───────────┼────────────────┤\n");
-        
+
         let param_label = if self.param_cache_hit {
             "Parameter Load (cached)"
         } else {
             "Parameter Generation  "
         };
-        
+
         let param_memory = if let Some(mb) = self.param_gen_memory_mb {
             format!("{} MB", mb)
         } else {
             "N/A".to_string()
         };
-        
+
         output.push_str(&format!(
             "  │ {} │ {:>7.1}s │ {:>14} │\n",
             param_label,
             self.param_gen_duration.as_secs_f64(),
             param_memory
         ));
-        
+
         let proving_memory = if let Some(mb) = self.proving_memory_mb {
             format!("{} MB", mb)
         } else {
             "".to_string()
         };
-        
+
         output.push_str(&format!(
             "  │ Proof Generation       │ {:>7.1}s │ {:>14} │\n",
             self.proving_duration.as_secs_f64(),
             proving_memory
         ));
-        
+
         output.push_str("  ├────────────────────────┼───────────┼────────────────┤\n");
-        
+
         let peak_memory = if let Some(mb) = self.memory_peak_mb {
             format!("{} MB", mb)
         } else {
             "N/A".to_string()
         };
-        
+
         output.push_str(&format!(
             "  │ Total                  │ {:>7.1}s │ {:>9} (peak) │\n",
             self.total_duration.as_secs_f64(),
             peak_memory
         ));
-        
+
         output.push_str("  └─────────────────────────────────────────────────────┘\n");
         output
     }
@@ -118,7 +118,7 @@ impl ProofMetrics {
     pub fn proof_size_kb(&self) -> f64 {
         self.proof_size_bytes as f64 / 1024.0
     }
-    
+
     /// Calculate circuit cost (C_IVC = 100 × depth from protocol spec)
     pub fn circuit_cost(&self) -> usize {
         use crate::config::CIRCUIT_COST_PER_DEPTH;
@@ -241,7 +241,9 @@ impl ChallengeInfo {
     pub fn format(&self) -> String {
         format!(
             "{} at block {} (expires: {})",
-            &self.file_id[..8], self.block_height, self.expiration_block
+            &self.file_id[..8],
+            self.block_height,
+            self.expiration_block
         )
     }
 }
@@ -264,11 +266,11 @@ impl FileSizeCategory {
     pub fn sample_size(&self, rng_seed: u64) -> usize {
         use std::collections::hash_map::RandomState;
         use std::hash::{BuildHasher, Hash, Hasher};
-        
+
         let mut hasher = RandomState::new().build_hasher();
         rng_seed.hash(&mut hasher);
         let hash = hasher.finish();
-        
+
         match self {
             FileSizeCategory::Small => 10 * 1024 + (hash % (40 * 1024)) as usize,
             FileSizeCategory::Medium => 50 * 1024 + (hash % (450 * 1024)) as usize,
@@ -326,4 +328,3 @@ mod tests {
         assert!(medium >= 50 * 1024 && medium < 500 * 1024);
     }
 }
-

@@ -104,9 +104,10 @@ fn main() {
     // Phase 3: Proof Generation
     info!("[3/4] Proof Generation");
     info!("");
-    
-    let (proof_metrics, proof) = generate_proof(&node_files, &challenges, &ledger, cli.profile_memory);
-    
+
+    let (proof_metrics, proof) =
+        generate_proof(&node_files, &challenges, &ledger, cli.profile_memory);
+
     info!("{}", proof_metrics.format_table());
     info!("");
     info!(
@@ -120,7 +121,7 @@ fn main() {
         proof_metrics.num_files * proof_metrics.num_challenges_per_file
     );
     info!("");
-    
+
     info!("  Circuit Details:");
     info!(
         "    • File slots: {} ({} used + {} padding)",
@@ -142,12 +143,9 @@ fn main() {
         config::CIRCUIT_COST_PER_DEPTH,
         proof_metrics.max_file_tree_depth
     );
-    info!(
-        "    • IVC steps: {} per file",
-        proof_metrics.total_steps
-    );
+    info!("    • IVC steps: {} per file", proof_metrics.total_steps);
     info!("");
-    
+
     // Show per-file coverage
     info!("  Per-File Coverage:");
     for challenge in challenges.iter() {
@@ -187,7 +185,7 @@ fn setup_network(
     distribution: &str,
 ) -> (FileLedger, Vec<StoredFile>) {
     let _span = info_span!("network_setup").entered();
-    
+
     // Determine file size distribution
     let categories = match distribution {
         "uniform" => vec![FileSizeCategory::Medium; total_files],
@@ -225,16 +223,17 @@ fn setup_network(
     let mut node_files = Vec::new();
     let mut category_counts = [0usize; 4]; // Small, Medium, Large, XLarge
     let mut rng = StdRng::seed_from_u64(config::TEST_RANDOM_SEED);
-    
+
     for i in 0..files_stored {
         let category = categories[i];
         let size = category.sample_size(i as u64);
-        
+
         let mut data = vec![0u8; size];
         rng.fill_bytes(&mut data);
-        
-        let (prepared, metadata) = api::prepare_file(&data, &format!("node_file_{}.dat", i)).unwrap();
-        
+
+        let (prepared, metadata) =
+            api::prepare_file(&data, &format!("node_file_{}.dat", i)).unwrap();
+
         let idx = match category {
             FileSizeCategory::Small => 0,
             FileSizeCategory::Medium => 1,
@@ -242,7 +241,7 @@ fn setup_network(
             FileSizeCategory::XLarge => 3,
         };
         category_counts[idx] += 1;
-        
+
         node_files.push(StoredFile {
             prepared,
             metadata,
@@ -252,7 +251,7 @@ fn setup_network(
 
     // Build ledger with ALL files in network (node files + other files)
     let mut ledger = FileLedger::new();
-    
+
     // Add node's files first
     for file in &node_files {
         ledger
@@ -263,15 +262,15 @@ fn setup_network(
             )
             .unwrap();
     }
-    
+
     // Add additional files to simulate full network (that this node doesn't store)
     for i in files_stored..total_files {
         let category = categories[i];
         let size = category.sample_size(i as u64);
-        
+
         let mut data = vec![0u8; size];
         rng.fill_bytes(&mut data);
-        
+
         let (_, metadata) = api::prepare_file(&data, &format!("network_file_{}.dat", i)).unwrap();
         ledger
             .add_file(
@@ -290,9 +289,12 @@ fn setup_network(
     let min_depth = depths.iter().min().copied().unwrap_or(0);
     let _max_depth = depths.iter().max().copied().unwrap_or(0);
 
-    info!("  ✓ Created ledger with {} files (depths {}-22)", total_files, min_depth);
+    info!(
+        "  ✓ Created ledger with {} files (depths {}-22)",
+        total_files, min_depth
+    );
     info!("  ✓ Node stores {} files:", files_stored);
-    
+
     if category_counts[0] > 0 {
         let (d_min, d_max) = FileSizeCategory::Small.depth_range();
         info!(
@@ -340,28 +342,28 @@ fn setup_network(
 /// Simulate challenges arriving over time with staggered block heights
 fn simulate_challenges(node_files: &[StoredFile], num_challenges: usize) -> Vec<Challenge> {
     let _span = info_span!("challenge_simulation").entered();
-    
+
     // Use protocol challenge frequency for realistic spacing
     // 12 challenges/year per file = ~1 every 30 days = ~4,380 blocks
     // For simulation, use shorter spacing
     let spacing = config::CHALLENGE_SPACING_BLOCKS;
     let base_block = 1000u64;
-    
+
     let mut challenges = Vec::new();
     let mut rng = StdRng::seed_from_u64(config::TEST_RANDOM_SEED);
-    
+
     for i in 0..num_challenges {
         let file = &node_files[i];
         let block_height = base_block + (i as u64 * spacing);
-        
+
         // Derive deterministic seed from block hash simulation
         let mut block_hash_seed = [0u8; 32];
         rng.fill_bytes(&mut block_hash_seed);
         let seed = FieldElement::from(u64::from_le_bytes(block_hash_seed[..8].try_into().unwrap()));
-        
+
         // Protocol default: s_chal = 100 symbols per challenge
         let num_symbols_to_prove = 100;
-        
+
         let challenge = Challenge::new(
             file.metadata.clone(),
             block_height,
@@ -369,10 +371,10 @@ fn simulate_challenges(node_files: &[StoredFile], num_challenges: usize) -> Vec<
             seed,
             String::from("node_1"),
         );
-        
+
         challenges.push(challenge);
     }
-    
+
     challenges
 }
 
@@ -381,14 +383,14 @@ fn display_challenge_info(challenges: &[Challenge]) {
     if challenges.is_empty() {
         return;
     }
-    
+
     let first_block = challenges.first().unwrap().block_height;
     let last_block = challenges.last().unwrap().block_height;
     let span_blocks = last_block - first_block;
-    
+
     // Convert block span to approximate hours (6 blocks/hour)
     let span_hours = span_blocks / config::BLOCKS_PER_HOUR as u64;
-    
+
     info!(
         "  ✓ Randomly selected {} of the node's stored files to challenge",
         challenges.len()
@@ -396,7 +398,7 @@ fn display_challenge_info(challenges: &[Challenge]) {
     info!("  ✓ Received {} challenges:", challenges.len());
     for challenge in challenges {
         let expiration = challenge.block_height + 2016; // W_proof from protocol
-        // Show file ID prefix to identify which file is being challenged
+                                                        // Show file ID prefix to identify which file is being challenged
         info!(
             "    • File {} at block {} (expires: {})",
             &challenge.file_metadata.file_id[..8],
@@ -404,7 +406,7 @@ fn display_challenge_info(challenges: &[Challenge]) {
             expiration
         );
     }
-    
+
     info!(
         "  ✓ Challenges span {} blocks (~{} hours) [simulated; protocol: ~4,380 blocks/challenge]",
         span_blocks, span_hours
@@ -420,20 +422,20 @@ fn generate_proof(
     profile_memory: bool,
 ) -> (ProofMetrics, api::Proof) {
     let _span = info_span!("proof_generation").entered();
-    
+
     if profile_memory {
         kontor_crypto::metrics::reset_peak_memory();
     }
-    
+
     let total_start = Instant::now();
-    
+
     // Phase 1: Parameter Generation
     let param_start = Instant::now();
-    
+
     if profile_memory {
         kontor_crypto::metrics::reset_peak_memory();
     }
-    
+
     let max_file_depth = challenges
         .iter()
         .map(|c| api::tree_depth_from_metadata(&c.file_metadata))
@@ -445,7 +447,7 @@ fn generate_proof(
     } else {
         0
     };
-    
+
     let cache_size_before = kontor_crypto::params::memory_cache_size();
     let _params = kontor_crypto::params::load_or_generate_params(
         files_per_step,
@@ -455,44 +457,44 @@ fn generate_proof(
     .unwrap();
     let cache_size_after = kontor_crypto::params::memory_cache_size();
     let param_cache_hit = cache_size_after == cache_size_before;
-    
+
     let param_duration = param_start.elapsed();
     let param_memory_mb = if profile_memory {
         Some(kontor_crypto::metrics::get_peak_memory_mb())
     } else {
         None
     };
-    
+
     // Phase 2: Proof Generation (witness generation happens inside)
     if profile_memory {
         kontor_crypto::metrics::reset_peak_memory();
     }
-    
+
     let proving_start = Instant::now();
     let system = PorSystem::new(ledger);
     let files_vec: Vec<&_> = node_files.iter().map(|f| &f.prepared).collect();
     let proof = system.prove(files_vec, challenges).unwrap();
     let proving_duration = proving_start.elapsed();
-    
+
     let proving_memory_mb = if profile_memory {
         Some(kontor_crypto::metrics::get_peak_memory_mb())
     } else {
         None
     };
-    
+
     // Get proof size
     let proof_bytes = bincode::serialize(&proof)
         .map(|bytes| bytes.len())
         .unwrap_or(0);
-    
+
     let total_duration = total_start.elapsed();
-    
+
     let total_memory_mb = if profile_memory {
         param_memory_mb.max(proving_memory_mb)
     } else {
         None
     };
-    
+
     (
         ProofMetrics {
             total_duration,
@@ -523,18 +525,18 @@ fn verify_proof(
     ledger: &FileLedger,
 ) -> VerificationMetrics {
     let _span = info_span!("verification").entered();
-    
+
     let system = PorSystem::new(ledger);
-    
+
     let start = Instant::now();
     let result = system.verify(proof, challenges).unwrap();
     let duration = start.elapsed();
-    
+
     if !result {
         error!("  ✗ Verification failed!");
         std::process::exit(1);
     }
-    
+
     VerificationMetrics {
         duration,
         num_files: challenges.len(),
@@ -542,34 +544,26 @@ fn verify_proof(
     }
 }
 
-
 /// Display proof economics
 fn display_economic_analysis(metrics: &ProofMetrics) {
     info!("═══════════════════════════════════════════════════════════════");
     info!("PROOF ECONOMICS");
     info!("═══════════════════════════════════════════════════════════════");
     info!("");
-    
+
     let econ = EconomicMetrics::new(
         metrics.proof_size_bytes,
         config::BTC_TX_FEE_USD_DEFAULT,
         metrics.num_files,
     );
-    
+
     info!("Aggregated Proof:");
-    info!(
-        "  • Proof size: {:.1} KB",
-        econ.proof_size_kb
-    );
+    info!("  • Proof size: {:.1} KB", econ.proof_size_kb);
     info!(
         "  • Covers {} file challenges ({} symbols each)",
-        metrics.num_files,
-        metrics.num_challenges_per_file
+        metrics.num_files, metrics.num_challenges_per_file
     );
-    info!(
-        "  • Bitcoin transaction fee: ${:.2}",
-        econ.btc_tx_fee_usd
-    );
+    info!("  • Bitcoin transaction fee: ${:.2}", econ.btc_tx_fee_usd);
     info!(
         "  • Cost per file challenge: ${:.2}",
         econ.amortized_cost_per_challenge

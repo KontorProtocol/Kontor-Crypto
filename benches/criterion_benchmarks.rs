@@ -6,11 +6,11 @@
 
 use codspeed_criterion_compat::criterion_main;
 
-mod primitives;
+mod e2e_scenarios;
 mod file_preparation;
+mod primitives;
 mod proving;
 mod verification;
-mod e2e_scenarios;
 
 criterion_main! {
     primitives::benches,
@@ -19,4 +19,3 @@ criterion_main! {
     verification::benches,
     e2e_scenarios::benches,
 }
-
