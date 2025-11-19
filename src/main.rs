@@ -119,22 +119,58 @@ fn main() {
         proof_metrics.num_challenges_per_file,
         proof_metrics.num_files * proof_metrics.num_challenges_per_file
     );
+    info!("");
+    
+    info!("  Circuit Details:");
     info!(
-        "  ✓ Circuit shape: {}×{} files, depth {}, agg_depth {}",
+        "    • File slots: {} ({} used + {} padding)",
+        proof_metrics.files_per_step,
         proof_metrics.num_files,
-        1, // Always 1 iteration through files
-        proof_metrics.max_file_tree_depth,
+        proof_metrics.files_per_step - proof_metrics.num_files
+    );
+    info!(
+        "    • Max tree depth: {}",
+        proof_metrics.max_file_tree_depth
+    );
+    info!(
+        "    • Aggregated tree depth: {}",
         proof_metrics.aggregated_tree_depth
     );
     info!(
-        "  ✓ IVC steps: {} (= symbols proven per file)",
+        "    • Circuit cost: {} constraints ({} × depth {})",
+        proof_metrics.circuit_cost(),
+        config::CIRCUIT_COST_PER_DEPTH,
+        proof_metrics.max_file_tree_depth
+    );
+    info!(
+        "    • IVC steps: {} per file",
         proof_metrics.total_steps
     );
     info!("");
+    
+    // Show per-file coverage
+    info!("  Per-File Coverage:");
+    for challenge in challenges.iter() {
+        let total_symbols = challenge.file_metadata.total_symbols();
+        let tested_symbols = challenge.num_challenges;
+        let coverage_pct = if total_symbols > 0 {
+            (tested_symbols as f64 / total_symbols as f64) * 100.0
+        } else {
+            0.0
+        };
+        info!(
+            "    • File {}: {}/{} symbols tested ({:.1}%)",
+            &challenge.file_metadata.file_id[..8],
+            tested_symbols,
+            total_symbols,
+            coverage_pct
+        );
+    }
+    info!("");
 
-    // Phase 5: Verification
+    // Phase 4: Verification
     if !cli.no_verify {
-        info!("[5/5] Verification");
+        info!("[4/4] Verification");
         let verify_metrics = verify_proof(&proof, &challenges, &ledger);
         info!("  ✓ {}", verify_metrics.format());
         info!("");
@@ -353,6 +389,10 @@ fn display_challenge_info(challenges: &[Challenge]) {
     // Convert block span to approximate hours (6 blocks/hour)
     let span_hours = span_blocks / config::BLOCKS_PER_HOUR as u64;
     
+    info!(
+        "  ✓ Randomly selected {} of the node's stored files to challenge",
+        challenges.len()
+    );
     info!("  ✓ Received {} challenges:", challenges.len());
     for challenge in challenges {
         let expiration = challenge.block_height + 2016; // W_proof from protocol
@@ -366,7 +406,7 @@ fn display_challenge_info(challenges: &[Challenge]) {
     }
     
     info!(
-        "  ✓ Challenges span {} blocks (~{} hours)",
+        "  ✓ Challenges span {} blocks (~{} hours) [simulated; protocol: ~4,380 blocks/challenge]",
         span_blocks, span_hours
     );
     info!("  ✓ All within 2016-block proof window → batching opportunity");
@@ -389,6 +429,11 @@ fn generate_proof(
     
     // Phase 1: Parameter Generation
     let param_start = Instant::now();
+    
+    if profile_memory {
+        kontor_crypto::metrics::reset_peak_memory();
+    }
+    
     let max_file_depth = challenges
         .iter()
         .map(|c| api::tree_depth_from_metadata(&c.file_metadata))
@@ -401,20 +446,39 @@ fn generate_proof(
         0
     };
     
+    let cache_size_before = kontor_crypto::params::memory_cache_size();
     let _params = kontor_crypto::params::load_or_generate_params(
         files_per_step,
         file_tree_depth,
         aggregated_tree_depth,
     )
     .unwrap();
+    let cache_size_after = kontor_crypto::params::memory_cache_size();
+    let param_cache_hit = cache_size_after == cache_size_before;
+    
     let param_duration = param_start.elapsed();
+    let param_memory_mb = if profile_memory {
+        Some(kontor_crypto::metrics::get_peak_memory_mb())
+    } else {
+        None
+    };
     
     // Phase 2: Proof Generation (witness generation happens inside)
+    if profile_memory {
+        kontor_crypto::metrics::reset_peak_memory();
+    }
+    
     let proving_start = Instant::now();
     let system = PorSystem::new(ledger);
     let files_vec: Vec<&_> = node_files.iter().map(|f| &f.prepared).collect();
     let proof = system.prove(files_vec, challenges).unwrap();
     let proving_duration = proving_start.elapsed();
+    
+    let proving_memory_mb = if profile_memory {
+        Some(kontor_crypto::metrics::get_peak_memory_mb())
+    } else {
+        None
+    };
     
     // Get proof size
     let proof_bytes = bincode::serialize(&proof)
@@ -423,15 +487,12 @@ fn generate_proof(
     
     let total_duration = total_start.elapsed();
     
-    let memory_peak_mb = if profile_memory {
-        Some(kontor_crypto::metrics::get_peak_memory_mb())
+    let total_memory_mb = if profile_memory {
+        param_memory_mb.max(proving_memory_mb)
     } else {
         None
     };
     
-    // Note: We don't break down witness/proving/compression phases separately
-    // because we'd need to instrument the internal prove() function.
-    // The total proving time is what matters for economic analysis.
     (
         ProofMetrics {
             total_duration,
@@ -445,7 +506,11 @@ fn generate_proof(
             total_steps: challenges.first().map(|c| c.num_challenges).unwrap_or(0),
             aggregated_tree_depth,
             max_file_tree_depth: file_tree_depth,
-            memory_peak_mb,
+            memory_peak_mb: total_memory_mb,
+            files_per_step,
+            param_cache_hit,
+            param_gen_memory_mb: param_memory_mb,
+            proving_memory_mb,
         },
         proof,
     )

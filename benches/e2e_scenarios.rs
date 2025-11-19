@@ -21,8 +21,7 @@ fn bench_e2e_workflow(c: &mut Criterion) {
     
     // Test full workflow for small and medium files
     for (size_kb, label) in [(10, "10KB"), (100, "100KB")] {
-        // TODO: for num_challenges in [2, 5, 10] {
-        for num_challenges in [2, 5] {
+        for num_challenges in [2, 5, 10] {
             group.bench_with_input(
                 BenchmarkId::new(label, num_challenges),
                 &(size_kb, num_challenges),

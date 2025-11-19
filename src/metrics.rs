@@ -15,7 +15,7 @@ static PEAK_ALLOC: PeakAlloc = PeakAlloc;
 /// Get current peak memory usage in MB (requires memory-profiling feature)
 #[cfg(feature = "memory-profiling")]
 pub fn get_peak_memory_mb() -> usize {
-    PEAK_ALLOC.peak_usage_as_mb()
+    PEAK_ALLOC.peak_usage_as_mb() as usize
 }
 
 /// Get current peak memory usage in MB (no-op without memory-profiling feature)
@@ -51,6 +51,10 @@ pub struct ProofMetrics {
     pub aggregated_tree_depth: usize,
     pub max_file_tree_depth: usize,
     pub memory_peak_mb: Option<usize>,
+    pub files_per_step: usize,
+    pub param_cache_hit: bool,
+    pub param_gen_memory_mb: Option<usize>,
+    pub proving_memory_mb: Option<usize>,
 }
 
 impl ProofMetrics {
@@ -61,24 +65,49 @@ impl ProofMetrics {
         output.push_str("  │ Component              │ Duration  │ Memory Usage   │\n");
         output.push_str("  ├────────────────────────┼───────────┼────────────────┤\n");
         
+        let param_label = if self.param_cache_hit {
+            "Parameter Load (cached)"
+        } else {
+            "Parameter Generation  "
+        };
+        
+        let param_memory = if let Some(mb) = self.param_gen_memory_mb {
+            format!("{} MB", mb)
+        } else {
+            "N/A".to_string()
+        };
+        
         output.push_str(&format!(
-            "  │ Parameter Generation   │ {:>7.1}s │ {:>14} │\n",
+            "  │ {} │ {:>7.1}s │ {:>14} │\n",
+            param_label,
             self.param_gen_duration.as_secs_f64(),
-            self.memory_peak_mb.map(|mb| format!("{} MB", mb)).unwrap_or_else(|| "N/A".to_string())
+            param_memory
         ));
+        
+        let proving_memory = if let Some(mb) = self.proving_memory_mb {
+            format!("{} MB", mb)
+        } else {
+            "".to_string()
+        };
         
         output.push_str(&format!(
             "  │ Proof Generation       │ {:>7.1}s │ {:>14} │\n",
             self.proving_duration.as_secs_f64(),
-            ""
+            proving_memory
         ));
         
         output.push_str("  ├────────────────────────┼───────────┼────────────────┤\n");
         
+        let peak_memory = if let Some(mb) = self.memory_peak_mb {
+            format!("{} MB", mb)
+        } else {
+            "N/A".to_string()
+        };
+        
         output.push_str(&format!(
             "  │ Total                  │ {:>7.1}s │ {:>9} (peak) │\n",
             self.total_duration.as_secs_f64(),
-            self.memory_peak_mb.map(|mb| format!("{} MB", mb)).unwrap_or_else(|| "N/A".to_string())
+            peak_memory
         ));
         
         output.push_str("  └─────────────────────────────────────────────────────┘\n");
@@ -88,6 +117,12 @@ impl ProofMetrics {
     /// Get proof size in KB
     pub fn proof_size_kb(&self) -> f64 {
         self.proof_size_bytes as f64 / 1024.0
+    }
+    
+    /// Calculate circuit cost (C_IVC = 100 × depth from protocol spec)
+    pub fn circuit_cost(&self) -> usize {
+        use crate::config::CIRCUIT_COST_PER_DEPTH;
+        CIRCUIT_COST_PER_DEPTH * self.max_file_tree_depth
     }
 }
 

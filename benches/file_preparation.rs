@@ -19,8 +19,8 @@ fn bench_prepare_file(c: &mut Criterion) {
     let sizes = [
         (10, "10KB"),
         (100, "100KB"),
-        // TODO: (1024, "1MB"),
-        // TODO: (10240, "10MB"),
+        (1024, "1MB"),
+        (10240, "10MB"),
     ];
     
     for (size_kb, label) in sizes {
