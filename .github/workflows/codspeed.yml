@@ -14,7 +14,7 @@ permissions:
 jobs:
   benchmarks:
     name: Run performance benchmarks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x86-8cpu
     timeout-minutes: 90
     
     steps:
