@@ -68,20 +68,8 @@ impl ProofMetrics {
         ));
         
         output.push_str(&format!(
-            "  │ Witness Generation     │ {:>7.1}s │ {:>14} │\n",
-            self.witness_gen_duration.as_secs_f64(),
-            ""
-        ));
-        
-        output.push_str(&format!(
-            "  │ Recursive Proving      │ {:>7.1}s │ {:>14} │\n",
+            "  │ Proof Generation       │ {:>7.1}s │ {:>14} │\n",
             self.proving_duration.as_secs_f64(),
-            ""
-        ));
-        
-        output.push_str(&format!(
-            "  │ Proof Compression      │ {:>7.1}s │ {:>14} │\n",
-            self.compression_duration.as_secs_f64(),
             ""
         ));
         
@@ -115,7 +103,7 @@ impl VerificationMetrics {
     /// Format as human-readable string
     pub fn format(&self) -> String {
         format!(
-            "Verified {} files × {} challenges in {:.0}ms",
+            "Verified {} file challenges ({} symbols each) in {:.0}ms",
             self.num_files,
             self.num_challenges_per_file,
             self.duration.as_secs_f64() * 1000.0

@@ -17,7 +17,7 @@ use kontor_crypto::{
     FileLedger,
 };
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{error, info, info_span};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -103,8 +103,12 @@ fn main() {
 
     // Phase 3: Baseline Measurement (single-file proof for comparison)
     info!("[3/5] Baseline Measurement");
-    info!("  Generating single-file proof for comparison...");
-    let single_proof_size = measure_single_proof_size(&node_files[0], &ledger);
+    let num_symbols_per_challenge = challenges.first().map(|c| c.num_challenges).unwrap_or(100);
+    info!(
+        "  Generating single-file proof ({} symbols) for comparison...",
+        num_symbols_per_challenge
+    );
+    let single_proof_size = measure_single_proof_size(&node_files[0], &ledger, num_symbols_per_challenge);
     info!("  ✓ Single-file proof size: {:.1} KB", single_proof_size as f64 / 1024.0);
     info!("");
     
@@ -122,10 +126,21 @@ fn main() {
         proof_metrics.proof_size_kb()
     );
     info!(
-        "  ✓ Covers {} files × {} symbols = {} total challenges",
+        "  ✓ Covers {} file challenges ({} symbols each, {} total symbols proven)",
         proof_metrics.num_files,
         proof_metrics.num_challenges_per_file,
         proof_metrics.num_files * proof_metrics.num_challenges_per_file
+    );
+    info!(
+        "  ✓ Circuit shape: {}×{} files, depth {}, agg_depth {}",
+        proof_metrics.num_files,
+        1, // Always 1 iteration through files
+        proof_metrics.max_file_tree_depth,
+        proof_metrics.aggregated_tree_depth
+    );
+    info!(
+        "  ✓ IVC steps: {} (= symbols proven per file)",
+        proof_metrics.total_steps
     );
     info!("");
 
@@ -320,13 +335,13 @@ fn simulate_challenges(node_files: &[StoredFile], num_challenges: usize) -> Vec<
         rng.fill_bytes(&mut block_hash_seed);
         let seed = FieldElement::from(u64::from_le_bytes(block_hash_seed[..8].try_into().unwrap()));
         
-        // Protocol default: 100 symbols per challenge
-        let num_symbols = 100;
+        // Protocol default: s_chal = 100 symbols per challenge
+        let num_symbols_to_prove = 100;
         
         let challenge = Challenge::new(
             file.metadata.clone(),
             block_height,
-            num_symbols,
+            num_symbols_to_prove,
             seed,
             String::from("node_1"),
         );
@@ -419,26 +434,21 @@ fn generate_proof(
     
     let total_duration = total_start.elapsed();
     
-    // Estimate phase breakdown:
-    // - Witness generation: ~5% of proving time
-    // - Recursive proving: ~90% of proving time
-    // - Compression: ~5% of proving time
-    let witness_duration = proving_duration / 20; // ~5%
-    let compression_duration = proving_duration / 20; // ~5%
-    let recursive_duration = proving_duration.saturating_sub(witness_duration + compression_duration);
-    
     let memory_peak_mb = if profile_memory {
         Some(kontor_crypto::metrics::get_peak_memory_mb())
     } else {
         None
     };
     
+    // Note: We don't break down witness/proving/compression phases separately
+    // because we'd need to instrument the internal prove() function.
+    // The total proving time is what matters for economic analysis.
     ProofMetrics {
         total_duration,
         param_gen_duration: param_duration,
-        witness_gen_duration: witness_duration,
-        proving_duration: recursive_duration,
-        compression_duration,
+        witness_gen_duration: Duration::from_secs(0), // Not separately measured
+        proving_duration,
+        compression_duration: Duration::from_secs(0), // Not separately measured
         proof_size_bytes: proof_bytes,
         num_files: challenges.len(),
         num_challenges_per_file: challenges.first().map(|c| c.num_challenges).unwrap_or(0),
@@ -479,12 +489,12 @@ fn verify_proof(
 }
 
 /// Measure single-file proof size for baseline comparison
-fn measure_single_proof_size(file: &StoredFile, ledger: &FileLedger) -> usize {
+fn measure_single_proof_size(file: &StoredFile, ledger: &FileLedger, num_symbols: usize) -> usize {
     let seed = FieldElement::from(config::TEST_RANDOM_SEED);
     let challenge = Challenge::new(
         file.metadata.clone(),
         1000,
-        2, // Use small challenge count for speed (proof size is similar regardless)
+        num_symbols, // Use same as multi-file challenges for fair comparison
         seed,
         String::from("node_1"),
     );
@@ -538,23 +548,7 @@ fn display_economic_analysis(metrics: &ProofMetrics, single_proof_size: usize) {
         econ.btc_tx_fee_usd
     );
     info!("");
-    
-    let size_savings = hypothetical_size as f64 - metrics.proof_size_bytes as f64;
-    let cost_savings = hypothetical_cost - econ.btc_tx_fee_usd;
-    let size_savings_pct = (size_savings / hypothetical_size as f64) * 100.0;
-    let cost_savings_pct = (cost_savings / hypothetical_cost) * 100.0;
-    
-    info!("Savings:");
-    info!(
-        "  • Proof size: -{:.1}% ({:.1} KB saved)",
-        size_savings_pct,
-        size_savings / 1024.0
-    );
-    info!(
-        "  • Transaction cost: -{:.1}% (${:.2} saved)",
-        cost_savings_pct,
-        cost_savings
-    );
+
     info!(
         "  • Amortized cost per challenge: ${:.2} → ${:.2}",
         hypothetical_cost / metrics.num_files as f64,
