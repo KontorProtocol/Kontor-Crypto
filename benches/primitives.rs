@@ -1,7 +1,6 @@
 //! Primitive operation benchmarks (Poseidon, Merkle, erasure coding)
 
-use codspeed_criterion_compat::criterion_group;
-use criterion::{black_box, BenchmarkId, Criterion};
+use codspeed_criterion_compat::{black_box, criterion_group, BenchmarkId, Criterion};
 use kontor_crypto::{
     build_tree, config, get_padded_proof_for_leaf,
     poseidon::{domain_tags, poseidon_hash_tagged},
@@ -87,8 +86,8 @@ fn bench_erasure_coding(c: &mut Criterion) {
         let num_codewords = symbols.len() / config::TOTAL_SYMBOLS_PER_CODEWORD;
         let mut damaged: Vec<Option<Vec<u8>>> = symbols.into_iter().map(Some).collect();
         // Remove 10 symbols (within tolerance)
-        for i in 0..10 {
-            damaged[i] = None;
+        for item in damaged.iter_mut().take(10) {
+            *item = None;
         }
 
         group.bench_with_input(

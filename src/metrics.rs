@@ -265,11 +265,9 @@ impl FileSizeCategory {
     /// Get a size within this category's range
     pub fn sample_size(&self, rng_seed: u64) -> usize {
         use std::collections::hash_map::RandomState;
-        use std::hash::{BuildHasher, Hash, Hasher};
+        use std::hash::BuildHasher;
 
-        let mut hasher = RandomState::new().build_hasher();
-        rng_seed.hash(&mut hasher);
-        let hash = hasher.finish();
+        let hash = RandomState::new().hash_one(rng_seed);
 
         match self {
             FileSizeCategory::Small => 10 * 1024 + (hash % (40 * 1024)) as usize,
@@ -322,9 +320,9 @@ mod tests {
     #[test]
     fn test_file_size_categories() {
         let small = FileSizeCategory::Small.sample_size(42);
-        assert!(small >= 10 * 1024 && small < 50 * 1024);
+        assert!((10 * 1024..50 * 1024).contains(&small));
 
         let medium = FileSizeCategory::Medium.sample_size(42);
-        assert!(medium >= 50 * 1024 && medium < 500 * 1024);
+        assert!((50 * 1024..500 * 1024).contains(&medium));
     }
 }

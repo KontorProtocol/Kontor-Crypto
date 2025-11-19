@@ -224,8 +224,7 @@ fn setup_network(
     let mut category_counts = [0usize; 4]; // Small, Medium, Large, XLarge
     let mut rng = StdRng::seed_from_u64(config::TEST_RANDOM_SEED);
 
-    for i in 0..files_stored {
-        let category = categories[i];
+    for (i, &category) in categories.iter().enumerate().take(files_stored) {
         let size = category.sample_size(i as u64);
 
         let mut data = vec![0u8; size];
@@ -264,8 +263,12 @@ fn setup_network(
     }
 
     // Add additional files to simulate full network (that this node doesn't store)
-    for i in files_stored..total_files {
-        let category = categories[i];
+    for (i, &category) in categories
+        .iter()
+        .enumerate()
+        .take(total_files)
+        .skip(files_stored)
+    {
         let size = category.sample_size(i as u64);
 
         let mut data = vec![0u8; size];
@@ -352,8 +355,7 @@ fn simulate_challenges(node_files: &[StoredFile], num_challenges: usize) -> Vec<
     let mut challenges = Vec::new();
     let mut rng = StdRng::seed_from_u64(config::TEST_RANDOM_SEED);
 
-    for i in 0..num_challenges {
-        let file = &node_files[i];
+    for (i, file) in node_files.iter().enumerate().take(num_challenges) {
         let block_height = base_block + (i as u64 * spacing);
 
         // Derive deterministic seed from block hash simulation

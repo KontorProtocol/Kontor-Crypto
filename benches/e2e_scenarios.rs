@@ -1,7 +1,6 @@
 //! End-to-end workflow benchmarks
 
-use codspeed_criterion_compat::criterion_group;
-use criterion::{black_box, BenchmarkId, Criterion, SamplingMode};
+use codspeed_criterion_compat::{black_box, criterion_group, BenchmarkId, Criterion, SamplingMode};
 use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},
     config, params, FileLedger,
