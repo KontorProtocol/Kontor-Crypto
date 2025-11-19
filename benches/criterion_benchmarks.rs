@@ -2,8 +2,9 @@
 //!
 //! This file coordinates all benchmark modules and registers them with criterion.
 //! Run with: cargo bench
+//! Run with CodSpeed: cargo codspeed run
 
-use criterion::criterion_main;
+use codspeed_criterion_compat::criterion_main;
 
 mod primitives;
 mod file_preparation;

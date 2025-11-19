@@ -1,6 +1,7 @@
 //! File preparation benchmarks across protocol-specified file sizes
 
-use criterion::{black_box, criterion_group, Criterion, BenchmarkId};
+use codspeed_criterion_compat::{criterion_group, criterion_main};
+use criterion::{black_box, Criterion, BenchmarkId};
 use kontor_crypto::api;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 

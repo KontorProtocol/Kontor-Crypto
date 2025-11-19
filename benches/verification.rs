@@ -1,6 +1,7 @@
 //! Verification benchmarks across different file counts and challenge sizes
 
-use criterion::{black_box, criterion_group, Criterion, BenchmarkId};
+use codspeed_criterion_compat::{criterion_group, criterion_main};
+use criterion::{black_box, Criterion, BenchmarkId};
 use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},
     config, FileLedger,
