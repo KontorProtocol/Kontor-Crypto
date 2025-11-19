@@ -131,40 +131,40 @@ The simulator showcases:
 - Multi-file proof aggregation (constant ~10KB proof size regardless of file count)
 - Bitcoin transaction fee economics (batching multiple challenges into one proof)
 
-### Criterion Benchmark Suite
+### Benchmark Suite
 
-Run regression-tracking benchmarks with statistical analysis:
+Run performance benchmarks with statistical analysis and CI integration via CodSpeed:
 
 ```bash
-# Run all benchmarks
+# Run all benchmarks locally
 cargo bench
 
 # Run specific benchmark group
+cargo bench primitives
+cargo bench file_preparation
 cargo bench prove_single_file
 cargo bench multi_file_aggregation
 cargo bench verification
+cargo bench e2e_workflow
 
-# View HTML reports
+# View HTML reports (generated locally)
 open target/criterion/report/index.html
+
+# For CI/CD integration with CodSpeed (optional):
+cargo install cargo-codspeed --locked
+cargo codspeed build
+cargo codspeed run
 ```
 
 Benchmark groups:
 - **Primitives**: Poseidon hashing, Merkle tree operations, erasure coding
 - **File Preparation**: Encoding across protocol file sizes (10KB - 100MB)
 - **Single-File Proving**: Various file sizes × challenge counts
-- **Multi-File Aggregation**: 1, 2, 4, 8, 16 files (demonstrates constant proof size)
+- **Multi-File Aggregation**: 1, 2, 4, 8 files (demonstrates constant proof size)
 - **Verification**: Constant-time verification across file counts
 - **E2E Workflows**: Complete prepare → prove → verify cycles
 
 All benchmarks align with protocol parameters from the specification (file sizes, challenge counts, tree depths).
-
-### Legacy Benchmark Tool
-
-The original simple benchmark tool remains available:
-
-```bash
-cargo run --release --bin bench
-```
 
 ## Documentation
 

@@ -35,9 +35,18 @@ cargo nextest run
 
 ## Running Benchmarks
 
-Microbenchmarks and a small end-to-end flow are available via the `bench` binary:
+Run the full benchmark suite with Criterion:
 ```bash
-cargo run --release --bin bench
+# Run all benchmarks
+cargo bench
+
+# Run specific benchmark groups
+cargo bench primitives
+cargo bench proving
+cargo bench verification
+
+# View HTML reports
+open target/criterion/report/index.html
 ```
 
 ## Performance Characteristics
