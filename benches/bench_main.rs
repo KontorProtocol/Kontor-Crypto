@@ -52,7 +52,7 @@ mod primitives {
             });
     }
 
-    #[divan::bench(args = [10, 1024])] // 10KB, 1MB
+    #[divan::bench(args = [10, 1024, 102400])] // 10KB, 1MB, 100MB
     fn erasure_encode(bencher: Bencher, size_kb: usize) {
         bencher
             .with_inputs(|| generate_test_data(size_kb * 1024, 42))
@@ -66,7 +66,7 @@ mod primitives {
 
 #[divan::bench(
     sample_count = 10,
-    args = [10, 1024] // 10KB, 1MB
+    args = [10, 1024, 102400] // 10KB, 1MB, 100MB
 )]
 fn file_preparation(bencher: Bencher, size_kb: usize) {
     bencher
@@ -84,56 +84,21 @@ mod proving {
 
     #[divan::bench(
         args = [
-            (10, 2),    // 10KB, 2 challenges
-            (1024, 2),  // 1MB, 2 challenges
-            (10, 50),   // 10KB, 50 challenges
-            (1024, 50)  // 1MB, 50 challenges
+            (10, 1, 100),       // 10KB, 1 file, 100 challenges
+            (1024, 1, 100),     // 1MB, 1 file, 100 challenges
+            (102400, 1, 100),   // 100MB, 1 file, 100 challenges
+            (1024, 2, 100),       // Multi-file: 2 files
+            (1024, 8, 100)        // Multi-file: 8 files
         ]
     )]
-    fn single_file(bencher: Bencher, args: (usize, usize)) {
-        let (size_kb, num_challenges) = args;
+    fn prove(bencher: Bencher, args: (usize, usize, usize)) {
+        let (size_kb, num_files, num_challenges) = args;
 
-        bencher
-            .with_inputs(|| {
-                let data = generate_test_data(size_kb * 1024, 42);
-                let (prepared_file, metadata) = api::prepare_file(&data, "bench.dat").unwrap();
-
-                let mut ledger = FileLedger::new();
-                ledger
-                    .add_file(
-                        metadata.file_id.clone(),
-                        metadata.root,
-                        api::tree_depth_from_metadata(&metadata),
-                    )
-                    .unwrap();
-
-                let challenge = Challenge::new(
-                    metadata,
-                    1000,
-                    num_challenges,
-                    FieldElement::from(config::TEST_RANDOM_SEED),
-                    String::from("bench_prover"),
-                );
-
-                (ledger, vec![prepared_file], vec![challenge])
-            })
-            .bench_values(|(ledger, files, challenges)| {
-                let system = PorSystem::new(&ledger);
-                let files_ref: Vec<&_> = files.iter().collect();
-                system
-                    .prove(black_box(files_ref), black_box(&challenges))
-                    .unwrap();
-            });
-    }
-
-    #[divan::bench(args = [2, 8])] // 2 files, 8 files
-    fn multi_file_aggregation(bencher: Bencher, num_files: usize) {
         bencher
             .with_inputs(|| {
                 let mut prepared_files = Vec::new();
                 let mut challenges = Vec::new();
                 let mut ledger = FileLedger::new();
-                let size_kb = 16;
 
                 for i in 0..num_files {
                     let data = generate_test_data(size_kb * 1024, 42 + i as u64);
@@ -151,7 +116,7 @@ mod proving {
                     let challenge = Challenge::new(
                         metadata,
                         1000,
-                        2, // Minimal challenges
+                        num_challenges,
                         FieldElement::from(config::TEST_RANDOM_SEED),
                         String::from("bench"),
                     );
