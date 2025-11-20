@@ -20,6 +20,12 @@ The system uses [Nova](https://eprint.iacr.org/2021/370) recursive SNARKs via Mi
 -   Support dynamic circuit parameters with in-memory caching.
 -   Reconstruct original files from partial symbol availability (≥90% per codeword).
 
+## Performance Characteristics
+
+-   **Proof Size:** ~10 kB (constant across challenge count and file set within a shape).
+-   **Verification Time:** ~30 ms for compressed SNARK verification.
+-   **Proving Time:** Approximately linear in the number of recursive steps.
+
 ## API Reference
 
 The high-level API centers on a `PorSystem` object, which consolidates setup, proving, and verification concerns.
@@ -93,13 +99,11 @@ assert!(is_valid, "Proof verification failed!");
 println!("Proof successfully generated and verified with Nova PoR API.");
 ```
 
-## Performance Benchmarking
+## CLI & Simulation
 
-The project includes two complementary performance measurement tools:
+The project includes a CLI that serves as a **Storage Node Simulator** to demonstrate the system at scale. It simulates storage node operations with heterogeneous file sizes, staggered challenges, and multi-file proof aggregation.
 
-### Storage Node Simulator
-
-Run a realistic simulation of storage node operations with heterogeneous file sizes and multi-file proof aggregation:
+### Usage
 
 ```bash
 # Default: small demo (100 files in ledger, node stores 10, 5 challenges)
@@ -114,24 +118,19 @@ cargo run --release --features memory-profiling -- \
   --files-stored-by-node 100 \
   --challenges-to-simulate 20 \
   --profile-memory
-
-# Options:
-#   --total-files-in-ledger N      Network size (default: 100)
-#   --files-stored-by-node N       Files this node stores (default: 10)
-#   --challenges-to-simulate N     Challenges to batch (default: 5)
-#   --file-size-distribution TYPE  "uniform", "mixed", or "large-heavy" (default: mixed)
-#   --no-verify                    Skip verification phase
-#   --profile-memory               Track peak memory usage
-#   -v, -vv                        Increase verbosity (debug/trace)
 ```
 
-The simulator showcases:
-- Heterogeneous file sizes (10KB - 100MB) matching protocol specifications
-- Staggered challenge arrival over time (different block heights and seeds)
-- Multi-file proof aggregation (constant ~10KB proof size regardless of file count)
-- Bitcoin transaction fee economics (batching multiple challenges into one proof)
+### Flags
 
-### Benchmark Suite
+-   `--total-files-in-ledger <N>`: Network size (default: 100).
+-   `--files-stored-by-node <N>`: Files this node stores (default: 10).
+-   `--challenges-to-simulate <N>`: Challenges to batch (default: 5).
+-   `--file-size-distribution <TYPE>`: "uniform", "mixed", or "large-heavy" (default: mixed).
+-   `--no-verify`: Skip verification phase.
+-   `--profile-memory`: Track peak memory usage.
+-   `-v`, `-vv`: Increase verbosity (debug/trace).
+
+## Benchmark Suite
 
 Run performance benchmarks with statistical analysis and CI integration via CodSpeed:
 
@@ -139,19 +138,13 @@ Run performance benchmarks with statistical analysis and CI integration via CodS
 # Run all benchmarks locally
 cargo bench
 
-# Run specific benchmark group
-cargo bench primitives
-cargo bench file_preparation
-cargo bench proving
-cargo bench verification
-
 # For CI/CD integration with CodSpeed (optional):
 cargo install cargo-codspeed --locked
 cargo codspeed build
 cargo codspeed run
 ```
 
-Benchmark groups:
+**Benchmark Groups:**
 - **Primitives**: Poseidon hashing, Merkle tree operations, erasure coding
 - **File Preparation**: Encoding across protocol file sizes (10KB - 100MB)
 - **Single-File Proving**: Various file sizes × challenge counts
@@ -161,8 +154,33 @@ Benchmark groups:
 
 All benchmarks align with protocol parameters from the specification (file sizes, challenge counts, tree depths).
 
+## Development
+
+### Test Suite
+
+Run the extensive unit and integration test suite:
+```bash
+cargo install cargo-nextest
+cargo nextest run
+```
+
+### Git Hooks
+
+Enable the pre-push hook to automatically run formatting, clippy, tests, and security audits:
+```bash
+git config core.hooksPath .githooks
+```
+
+### Errors and Failure Modes
+
+Key error variants surfaced at API boundaries (see `KontorPoRError`):
+
+-   `InvalidInput`, `InvalidChallengeCount`, `ChallengeMismatch` (e.g., non-uniform `num_challenges` across the batch).
+-   `FileNotFound`, `FileNotInLedger`, `MetadataMismatch`.
+-   `MerkleTree`, `Circuit`, `Snark`.
+-   `Serialization`, `IO`.
+
 ## Documentation
 
 -   **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
 -   **[Technical Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design
--   **[Developer Guide](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/DEVELOPER_GUIDE.md)** - CLI usage, testing, and benchmarking
