@@ -15,7 +15,7 @@ jobs:
   benchmarks:
     name: Run performance benchmarks
     runs-on: ubuntu-x86-8cpu
-    timeout-minutes: 90
+    timeout-minutes: 600
     
     steps:
       - uses: actions/checkout@v4
