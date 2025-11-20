@@ -97,7 +97,7 @@ mod proving {
             .with_inputs(|| {
                 let data = generate_test_data(size_kb * 1024, 42);
                 let (prepared_file, metadata) = api::prepare_file(&data, "bench.dat").unwrap();
-                
+
                 let mut ledger = FileLedger::new();
                 ledger
                     .add_file(
@@ -106,7 +106,7 @@ mod proving {
                         api::tree_depth_from_metadata(&metadata),
                     )
                     .unwrap();
-                
+
                 let challenge = Challenge::new(
                     metadata,
                     1000,
@@ -114,13 +114,15 @@ mod proving {
                     FieldElement::from(config::TEST_RANDOM_SEED),
                     String::from("bench_prover"),
                 );
-                
+
                 (ledger, vec![prepared_file], vec![challenge])
             })
             .bench_values(|(ledger, files, challenges)| {
                 let system = PorSystem::new(&ledger);
                 let files_ref: Vec<&_> = files.iter().collect();
-                system.prove(black_box(files_ref), black_box(&challenges)).unwrap();
+                system
+                    .prove(black_box(files_ref), black_box(&challenges))
+                    .unwrap();
             });
     }
 
@@ -135,32 +137,37 @@ mod proving {
 
                 for i in 0..num_files {
                     let data = generate_test_data(size_kb * 1024, 42 + i as u64);
-                    let (prepared, metadata) = api::prepare_file(&data, &format!("f{}", i)).unwrap();
-                    
-                    ledger.add_file(
-                        metadata.file_id.clone(), 
-                        metadata.root, 
-                        api::tree_depth_from_metadata(&metadata)
-                    ).unwrap();
+                    let (prepared, metadata) =
+                        api::prepare_file(&data, &format!("f{}", i)).unwrap();
+
+                    ledger
+                        .add_file(
+                            metadata.file_id.clone(),
+                            metadata.root,
+                            api::tree_depth_from_metadata(&metadata),
+                        )
+                        .unwrap();
 
                     let challenge = Challenge::new(
-                        metadata, 
-                        1000, 
+                        metadata,
+                        1000,
                         2, // Minimal challenges
                         FieldElement::from(config::TEST_RANDOM_SEED),
-                        String::from("bench")
+                        String::from("bench"),
                     );
 
                     prepared_files.push(prepared);
                     challenges.push(challenge);
                 }
-                
+
                 (ledger, prepared_files, challenges)
             })
             .bench_values(|(ledger, files, challenges)| {
                 let system = PorSystem::new(&ledger);
                 let files_ref: Vec<&_> = files.iter().collect();
-                system.prove(black_box(files_ref), black_box(&challenges)).unwrap();
+                system
+                    .prove(black_box(files_ref), black_box(&challenges))
+                    .unwrap();
             });
     }
 }
@@ -178,28 +185,34 @@ mod verification {
                 let data = generate_test_data(16 * 1024, 42);
                 let (prepared, metadata) = api::prepare_file(&data, "v.dat").unwrap();
                 let mut ledger = FileLedger::new();
-                ledger.add_file(
-                    metadata.file_id.clone(), 
-                    metadata.root, 
-                    api::tree_depth_from_metadata(&metadata)
-                ).unwrap();
+                ledger
+                    .add_file(
+                        metadata.file_id.clone(),
+                        metadata.root,
+                        api::tree_depth_from_metadata(&metadata),
+                    )
+                    .unwrap();
 
                 let challenge = Challenge::new(
-                    metadata, 1000, num_challenges, 
-                    FieldElement::from(config::TEST_RANDOM_SEED), "v".into()
+                    metadata,
+                    1000,
+                    num_challenges,
+                    FieldElement::from(config::TEST_RANDOM_SEED),
+                    "v".into(),
                 );
-                
+
                 let system = PorSystem::new(&ledger);
                 let proof = system.prove(vec![&prepared], &[challenge.clone()]).unwrap();
-                
+
                 // We can't return system because it borrows ledger.
                 // Instead, return (ledger, proof, challenges) and recreate system in bench
                 (ledger, proof, vec![challenge])
             })
             .bench_values(|(ledger, proof, challenges)| {
                 let system = PorSystem::new(&ledger);
-                system.verify(black_box(&proof), black_box(&challenges)).unwrap();
+                system
+                    .verify(black_box(&proof), black_box(&challenges))
+                    .unwrap();
             });
     }
 }
-
