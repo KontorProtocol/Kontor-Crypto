@@ -142,13 +142,8 @@ cargo bench
 # Run specific benchmark group
 cargo bench primitives
 cargo bench file_preparation
-cargo bench prove_single_file
-cargo bench multi_file_aggregation
+cargo bench proving
 cargo bench verification
-cargo bench e2e_workflow
-
-# View HTML reports (generated locally)
-open target/criterion/report/index.html
 
 # For CI/CD integration with CodSpeed (optional):
 cargo install cargo-codspeed --locked

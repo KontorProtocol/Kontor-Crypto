@@ -35,7 +35,7 @@ cargo nextest run
 
 ## Running Benchmarks
 
-Run the full benchmark suite with Criterion:
+Run the full benchmark suite with Divan:
 ```bash
 # Run all benchmarks
 cargo bench
@@ -44,9 +44,6 @@ cargo bench
 cargo bench primitives
 cargo bench proving
 cargo bench verification
-
-# View HTML reports
-open target/criterion/report/index.html
 ```
 
 ## Performance Characteristics

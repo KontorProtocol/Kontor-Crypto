@@ -55,7 +55,7 @@ reed-solomon-erasure = "6.0"
 clap = { version = "4.5.10", features = ["derive"] }
 rand = "0.8.5"
 statrs = "0.18.0"
-codspeed-criterion-compat = "2.0"
+divan = "0.1.14"
 
 [features]
 default = []
@@ -77,5 +77,5 @@ opt-level = 3
 opt-level = 3
 
 [[bench]]
-name = "criterion_benchmarks"
+name = "bench_main"
 harness = false
