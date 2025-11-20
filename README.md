@@ -23,7 +23,7 @@ The system uses [Nova](https://eprint.iacr.org/2021/370) recursive SNARKs via Mi
 ## Performance Characteristics
 
 -   **Proof Size:** ~10 kB (constant across challenge count and file set within a shape).
--   **Verification Time:** ~30 ms for compressed SNARK verification.
+-   **Verification Time:** ~50 ms for compressed SNARK verification.
 -   **Proving Time:** Approximately linear in the number of recursive steps.
 
 ## API Reference
@@ -101,16 +101,13 @@ println!("Proof successfully generated and verified with Nova PoR API.");
 
 ## CLI & Simulation
 
-The project includes a CLI that serves as a **Storage Node Simulator** to demonstrate the system at scale. It simulates storage node operations with heterogeneous file sizes, staggered challenges, and multi-file proof aggregation.
+The project includes a CLI that simulates storage node operations with heterogeneous file sizes, staggered challenges, and multi-file proof aggregation.
 
 ### Usage
 
 ```bash
 # Default: small demo (100 files in ledger, node stores 10, 5 challenges)
 cargo run --release
-
-# Realistic scenario with many files
-cargo run --release -- --files-stored-by-node 50
 
 # Large-scale test with memory profiling
 cargo run --release --features memory-profiling -- \
@@ -144,16 +141,6 @@ cargo codspeed build
 cargo codspeed run
 ```
 
-**Benchmark Groups:**
-- **Primitives**: Poseidon hashing, Merkle tree operations, erasure coding
-- **File Preparation**: Encoding across protocol file sizes (10KB - 100MB)
-- **Single-File Proving**: Various file sizes × challenge counts
-- **Multi-File Aggregation**: 1, 2, 4, 8 files (demonstrates constant proof size)
-- **Verification**: Constant-time verification across file counts
-- **E2E Workflows**: Complete prepare → prove → verify cycles
-
-All benchmarks align with protocol parameters from the specification (file sizes, challenge counts, tree depths).
-
 ## Development
 
 ### Test Suite
@@ -183,4 +170,4 @@ Key error variants surfaced at API boundaries (see `KontorPoRError`):
 ## Documentation
 
 -   **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
--   **[Technical Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design
+-   **[Library Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design

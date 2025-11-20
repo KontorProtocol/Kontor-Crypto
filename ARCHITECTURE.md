@@ -83,16 +83,6 @@ The `PorCircuit` implements Nova's `StepCircuit` trait. For each step, it proves
 3.  File root commitment membership in the aggregated ledger (multi-file only).
 4.  Correct evolution of the state via a hash chain: `state_out = H(TAG_STATE, state_in, leaf_value)`.
 
-**Circuit Shape and Complexity:**
-
--   **Shape derivation**: `files_per_step = next_power_of_two(num_files)` for uniform structure
--   **Circuit cost**: `C_IVC = 100 × file_tree_depth` constraints (from protocol specification)
--   **Examples**:
-    -   10 KB file (depth 9): 900 constraints
-    -   100 KB file (depth 12): 1,200 constraints  
-    -   1 MB file (depth 16): 1,600 constraints
-    -   10 MB file (depth 19): 1,900 constraints
-
 **Public I/O Vector Layout (Primary):**
 
 The vector length is `2 + 4 * files_per_step` with the following sections:
@@ -130,61 +120,16 @@ The system supports dynamic circuit parameters based on the actual files being p
 -   Subsequent proofs with the same shape use cached parameters instantly
 -   Simulator displays "Parameter Load (cached)" when cache is hit
 
-## Multi-File Proof Aggregation
-
-**Protocol Feature:**
-
-Storage nodes can aggregate multiple file challenges into a single constant-size proof:
--   **Input**: N file challenges with different seeds (from different block heights)
--   **Output**: Single ~10-12 KB proof covering all files
--   **Benefit**: Amortizes Bitcoin transaction fee across all challenges
-
-**Implementation:**
-
-1.  Files are sorted by file_id for deterministic ordering
-2.  Ledger indices are computed for each file's rc value
-3.  Circuit processes all files in a single IVC proof
-4.  Different seeds per file (from different Bitcoin block hashes) are supported
-5.  Proof size remains constant regardless of file count
-
-**Economics:**
--   Single proof: ~$0.50 Bitcoin transaction fee
--   Cost per file: $0.50 / N where N = number of files
--   Example: 5 files → $0.10 per file challenge
-
-## Performance Characteristics
-
-From simulator output (typical values):
-
-**File Preparation:**
--   10 KB file: ~10 ms (erasure coding + Merkle tree)
--   100 KB file: ~80 ms
--   1 MB file: ~800 ms
--   10 MB file: ~8 seconds
-
-**Proof Generation:**
--   Parameter generation: 2-5 seconds (first time), ~0s (cached)
--   Single-file proof (100 symbols): ~20-30 seconds
--   Multi-file proof (5 files × 100 symbols): ~75 seconds
--   Memory usage: ~1-2 GB peak (with memory-profiling feature)
-
-**Verification:**
--   Constant time: ~50-130 ms regardless of file count or symbol count
--   Verification time is independent of proof generation complexity
-
 ## Benchmarking and Testing
 
 **Benchmark Suite** (`benches/bench_main.rs`):
 -   Uses **Divan** for statistical benchmarking
 -   Regression tracking for critical paths
--   Protocol-aligned file sizes (10KB, 1MB, 100MB)
--   Multi-file aggregation tests (1, 2, 8 files)
 -   Run with: `cargo bench`
 
 **Production Simulator** (`src/main.rs`):
 -   Realistic storage node operation
 -   Heterogeneous file sizes and staggered challenges
--   Shows circuit cost (C_IVC = 100 × depth), per-file coverage, and economics
 -   Run with: `cargo run --release`
 
 **Test Suite** (`tests/`):
@@ -192,13 +137,3 @@ From simulator output (typical values):
 -   Security tests (ledger binding, depth spoofing, replay attacks)
 -   E2E tests with variable file sizes and depths
 -   Run with: `cargo test`
-
-## Important SNARK API Semantics
-
-This project uses `nova-snark`/Arecibo, which has a deliberate API quirk:
-
--   `RecursiveSNARK::new(...)` synthesizes step 0.
--   You must call `prove_step(...)` exactly `N` times for a batch with `N` iterations; the first call is a no-op that advances the internal counter, and only calls 2..N synthesize.
--   Verification must pass `num_steps = N`.
-
-Our API abstracts this complexity away from the user.
