@@ -55,7 +55,7 @@ mod primitives {
     #[divan::bench(
         sample_count = 1,
         sample_size = 1,
-        args = [10, 1024, 102400] // 10KB, 1MB, 100MB
+        args = [10, 1024] // 10KB, 1MB
     )]
     fn erasure_encode(bencher: Bencher, size_kb: usize) {
         bencher
@@ -71,7 +71,7 @@ mod primitives {
 #[divan::bench(
     sample_count = 1,
     sample_size = 1,
-    args = [10, 1024, 102400] // 10KB, 1MB, 100MB
+    args = [10, 1024] // 10KB, 1MB
 )]
 fn file_preparation(bencher: Bencher, size_kb: usize) {
     bencher
@@ -91,9 +91,7 @@ mod proving {
         args = [
             (10, 1, 100),       // 10KB, 1 file, 100 challenges
             (1024, 1, 100),     // 1MB, 1 file, 100 challenges
-            (102400, 1, 100),   // 100MB, 1 file, 100 challenges
             (1024, 2, 100),     // Multi-file: 2 files
-            (1024, 4, 100)      // Multi-file: 4 files
         ]
     )]
     fn prove(bencher: Bencher, args: (usize, usize, usize)) {
