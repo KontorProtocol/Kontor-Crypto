@@ -24,7 +24,7 @@ fn generate_test_data(size: usize, seed: u64) -> Vec<u8> {
 
 // --- Primitives ---
 
-#[divan::bench_group(sample_count = 10, sample_size = 100)]
+#[divan::bench_group(sample_count = 10, sample_size = 10)]
 mod primitives {
     use super::*;
 
@@ -52,7 +52,11 @@ mod primitives {
             });
     }
 
-    #[divan::bench(args = [10, 1024, 102400])] // 10KB, 1MB, 100MB
+    #[divan::bench(
+        sample_count = 1,
+        sample_size = 1,
+        args = [10, 1024, 102400] // 10KB, 1MB, 100MB
+    )]
     fn erasure_encode(bencher: Bencher, size_kb: usize) {
         bencher
             .with_inputs(|| generate_test_data(size_kb * 1024, 42))
@@ -65,7 +69,8 @@ mod primitives {
 // --- File Preparation ---
 
 #[divan::bench(
-    sample_count = 10,
+    sample_count = 1,
+    sample_size = 1,
     args = [10, 1024, 102400] // 10KB, 1MB, 100MB
 )]
 fn file_preparation(bencher: Bencher, size_kb: usize) {
@@ -78,7 +83,7 @@ fn file_preparation(bencher: Bencher, size_kb: usize) {
 
 // --- Proving (Expensive!) ---
 
-#[divan::bench_group(sample_count = 1)] // Only 1 sample needed for expensive proofs
+#[divan::bench_group(sample_count = 1, sample_size = 1)]
 mod proving {
     use super::*;
 
@@ -87,8 +92,8 @@ mod proving {
             (10, 1, 100),       // 10KB, 1 file, 100 challenges
             (1024, 1, 100),     // 1MB, 1 file, 100 challenges
             (102400, 1, 100),   // 100MB, 1 file, 100 challenges
-            (1024, 2, 100),       // Multi-file: 2 files
-            (1024, 8, 100)        // Multi-file: 8 files
+            (1024, 2, 100),     // Multi-file: 2 files
+            (1024, 4, 100)      // Multi-file: 4 files
         ]
     )]
     fn prove(bencher: Bencher, args: (usize, usize, usize)) {
@@ -139,11 +144,11 @@ mod proving {
 
 // --- Verification ---
 
-#[divan::bench_group(sample_count = 10)]
+#[divan::bench_group(sample_count = 1, sample_size = 10)]
 mod verification {
     use super::*;
 
-    #[divan::bench(args = [2, 50])]
+    #[divan::bench(args = [2, 100])]
     fn verify_challenges(bencher: Bencher, num_challenges: usize) {
         bencher
             .with_inputs(|| {
