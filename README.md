@@ -107,10 +107,10 @@ The project includes a CLI that simulates storage node operations with heterogen
 
 ```bash
 # Default: small demo (100 files in ledger, node stores 10, 5 challenges)
-cargo run --release
+cargo run
 
 # Large-scale test with memory profiling
-cargo run --release --features memory-profiling -- \
+cargo run --features memory-profiling -- \
   --total-files-in-ledger 1000 \
   --files-stored-by-node 100 \
   --challenges-to-simulate 20 \

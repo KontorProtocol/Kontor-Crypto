@@ -7,7 +7,6 @@
 //! - Bitcoin transaction fee economics
 //!
 //! Run with: cargo run --release
-//! For economic analysis: cargo run --release -- --economic-analysis
 
 use clap::{ArgAction, Parser};
 use kontor_crypto::{
