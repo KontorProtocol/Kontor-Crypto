@@ -13,7 +13,9 @@ fn generate_test_data(size: usize, seed: u64) -> Vec<u8> {
 
 fn bench_prepare_file(c: &mut Criterion) {
     let mut group = c.benchmark_group("file_preparation");
-    group.sample_size(3).warm_up_time(std::time::Duration::from_millis(10));
+    group
+        .sample_size(3)
+        .warm_up_time(std::time::Duration::from_millis(10));
 
     // Test extremes: small and large files (skip 10MB - too slow)
     let sizes = [(10, "10KB"), (1024, "1MB")];
