@@ -65,7 +65,7 @@ graph TD
 -   **`src/metrics.rs`**: Performance metrics and structured output for benchmarking.
 -   **`src/config.rs`**: Centralized configuration, economic constants, and public I/O layout.
 -   **`src/poseidon.rs`**: Domain-separated Poseidon hashing with cached constants.
--   **`benches/`**: Criterion benchmark suite for regression tracking (primitives, file prep, proving, verification, e2e).
+-   **`benches/`**: Divan benchmark suite (`bench_main.rs`) for regression tracking (primitives, file prep, proving, verification, e2e).
 
 ## Data Encoding and Merkle Tree Construction
 
@@ -174,10 +174,11 @@ From simulator output (typical values):
 
 ## Benchmarking and Testing
 
-**Criterion Benchmark Suite** (`benches/`):
--   Regression tracking with statistical analysis
--   Protocol-aligned file sizes (10KB, 100KB, 1MB, 10MB)
--   Multi-file aggregation tests (1, 2, 4, 8, 16 files)
+**Benchmark Suite** (`benches/bench_main.rs`):
+-   Uses **Divan** for statistical benchmarking
+-   Regression tracking for critical paths
+-   Protocol-aligned file sizes (10KB, 1MB, 100MB)
+-   Multi-file aggregation tests (1, 2, 8 files)
 -   Run with: `cargo bench`
 
 **Production Simulator** (`src/main.rs`):
