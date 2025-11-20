@@ -202,7 +202,9 @@ mod verification {
                 );
 
                 let system = PorSystem::new(&ledger);
-                let proof = system.prove(vec![&prepared], &[challenge.clone()]).unwrap();
+                let proof = system
+                    .prove(vec![&prepared], std::slice::from_ref(&challenge))
+                    .unwrap();
 
                 // We can't return system because it borrows ledger.
                 // Instead, return (ledger, proof, challenges) and recreate system in bench
