@@ -19,7 +19,7 @@ fn bench_e2e_workflow(c: &mut Criterion) {
     group
         .sampling_mode(SamplingMode::Flat)
         .sample_size(2)
-        .warmup_time(std::time::Duration::from_millis(10));
+        .warm_up_time(std::time::Duration::from_millis(10));
 
     // Test extremes: small file only (large files too slow for e2e)
     for (size_kb, label) in [(10, "10KB")] {
