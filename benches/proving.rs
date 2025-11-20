@@ -16,8 +16,10 @@ fn generate_test_data(size: usize, seed: u64) -> Vec<u8> {
 
 fn bench_prove_single_file(c: &mut Criterion) {
     let mut group = c.benchmark_group("prove_single_file");
-    group.sampling_mode(SamplingMode::Flat);
-    group.sample_size(3);
+    group
+        .sampling_mode(SamplingMode::Flat)
+        .sample_size(2)
+        .warmup_time(std::time::Duration::from_millis(10));
 
     // Test extremes: small and large files
     let file_sizes = [(10, "10KB"), (1024, "1MB")];
@@ -70,13 +72,15 @@ fn bench_prove_single_file(c: &mut Criterion) {
 
 fn bench_prove_multi_file_aggregation(c: &mut Criterion) {
     let mut group = c.benchmark_group("multi_file_aggregation");
-    group.sampling_mode(SamplingMode::Flat);
-    group.sample_size(3);
+    group
+        .sampling_mode(SamplingMode::Flat)
+        .sample_size(2)
+        .warmup_time(std::time::Duration::from_millis(10));
 
     // Test extremes: single file vs many files
     let file_counts = [1, 8];
-    let num_challenges_per_file = 5;
-    let file_size_kb = 16;
+    let num_challenges_per_file = 2;
+    let file_size_kb = 10;
 
     for num_files in file_counts {
         // Prepare multiple files

@@ -16,7 +16,7 @@ fn generate_test_data(size: usize, seed: u64) -> Vec<u8> {
 
 fn bench_verify(c: &mut Criterion) {
     let mut group = c.benchmark_group("verification");
-    group.sample_size(3);
+    group.sample_size(3).warmup_time(std::time::Duration::from_millis(10));
 
     // Verification should be constant time regardless of challenge count
     let file_size_kb = 16;
@@ -67,7 +67,7 @@ fn bench_verify(c: &mut Criterion) {
 
 fn bench_verify_multi_file(c: &mut Criterion) {
     let mut group = c.benchmark_group("verification_multi_file");
-    group.sample_size(3);
+    group.sample_size(3).warmup_time(std::time::Duration::from_millis(10));
 
     // Test extremes: single file vs many files
     let file_size_kb = 16;
