@@ -10,7 +10,7 @@ use kontor_crypto::{
 fn bench_poseidon_hash(c: &mut Criterion) {
     let mut group = c.benchmark_group("poseidon");
     group
-        .sample_size(3)
+        .sample_size(10)
         .warm_up_time(std::time::Duration::from_millis(10));
 
     let a = FieldElement::from(config::TEST_RANDOM_SEED);
@@ -32,7 +32,7 @@ fn bench_poseidon_hash(c: &mut Criterion) {
 fn bench_merkle_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("merkle");
     group
-        .sample_size(3)
+        .sample_size(10)
         .warm_up_time(std::time::Duration::from_millis(10));
 
     // Test extremes: small and large trees
@@ -75,7 +75,7 @@ fn bench_erasure_coding(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("erasure_coding");
     group
-        .sample_size(3)
+        .sample_size(10)
         .warm_up_time(std::time::Duration::from_millis(10));
 
     // Test extremes: small and large files

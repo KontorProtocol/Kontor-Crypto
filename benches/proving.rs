@@ -18,7 +18,7 @@ fn bench_prove_single_file(c: &mut Criterion) {
     let mut group = c.benchmark_group("prove_single_file");
     group
         .sampling_mode(SamplingMode::Flat)
-        .sample_size(2)
+        .sample_size(10)
         .warm_up_time(std::time::Duration::from_millis(10));
 
     // Test extremes: small and large files
@@ -74,7 +74,7 @@ fn bench_prove_multi_file_aggregation(c: &mut Criterion) {
     let mut group = c.benchmark_group("multi_file_aggregation");
     group
         .sampling_mode(SamplingMode::Flat)
-        .sample_size(2)
+        .sample_size(10)
         .warm_up_time(std::time::Duration::from_millis(10));
 
     // Test extremes: single file vs many files
