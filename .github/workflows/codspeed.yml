@@ -24,13 +24,16 @@ jobs:
         with:
           cache-on-failure: true
           shared-key: "benchmarks"
+
+      - name: Prepare CodSpeed tooling
+        run: |
+          cargo install cargo-codspeed --locked
+          cargo codspeed build --bench bench_main --features bench-smoke
       
       - name: Run benchmarks with CodSpeed
         uses: CodSpeedHQ/action@v4
         with:
           mode: simulation
           run: |
-            cargo install cargo-codspeed --locked
-            cargo codspeed build --bench bench_main --features bench-smoke
             cargo codspeed run -- cargo bench --bench bench_main --features bench-smoke
 
