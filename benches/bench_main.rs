@@ -109,9 +109,10 @@ mod proving {
         not(feature = "bench-smoke"),
         divan::bench(
             args = [
-                (10, 1, 100),   // 10KB, 1 file, 100 challenges
-                (1024, 1, 100), // 1MB, 1 file, 100 challenges
-                (1024, 2, 100), // Multi-file: 2 files
+                (10, 1, 10),   // 10KB, 1 file, 10 challenges
+                (1024, 1, 10), // 1MB, 1 file, 10 challenges
+                (10, 2, 10), // 10KB, 2 files, 10 challenges
+                (1024, 2, 10), // 1MB, 2 files, 10 challenges
             ]
         )
     )]
