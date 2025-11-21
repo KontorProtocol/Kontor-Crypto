@@ -28,7 +28,7 @@ jobs:
       - name: Prepare CodSpeed tooling
         run: |
           cargo install cargo-codspeed --locked
-          cargo codspeed build --bench bench_main --features bench-smoke
+          cargo codspeed build
       
       - name: Run benchmarks with CodSpeed
         uses: CodSpeedHQ/action@v4
