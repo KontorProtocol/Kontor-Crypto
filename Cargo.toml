@@ -60,6 +60,7 @@ divan = "0.1.14"
 [features]
 default = []
 memory-profiling = ["peak_alloc"]
+bench-smoke = []
 
 # Documentation configuration for docs.rs
 [package.metadata.docs.rs]

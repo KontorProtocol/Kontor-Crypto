@@ -24,7 +24,14 @@ fn generate_test_data(size: usize, seed: u64) -> Vec<u8> {
 
 // --- Primitives ---
 
-#[divan::bench_group(sample_count = 10, sample_size = 10)]
+#[cfg_attr(
+    feature = "bench-smoke",
+    divan::bench_group(sample_count = 1, sample_size = 1)
+)]
+#[cfg_attr(
+    not(feature = "bench-smoke"),
+    divan::bench_group(sample_count = 10, sample_size = 10)
+)]
 mod primitives {
     use super::*;
 
@@ -39,7 +46,8 @@ mod primitives {
         ));
     }
 
-    #[divan::bench(args = [16, 1024])]
+    #[cfg_attr(feature = "bench-smoke", divan::bench(args = [16]))]
+    #[cfg_attr(not(feature = "bench-smoke"), divan::bench(args = [16, 1024]))]
     fn merkle_build(bencher: Bencher, num_leaves: usize) {
         bencher
             .with_inputs(|| {
@@ -52,10 +60,13 @@ mod primitives {
             });
     }
 
-    #[divan::bench(
-        sample_count = 1,
-        sample_size = 1,
-        args = [10, 1024] // 10KB, 1MB
+    #[cfg_attr(
+        feature = "bench-smoke",
+        divan::bench(sample_count = 1, sample_size = 1, args = [10])
+    )]
+    #[cfg_attr(
+        not(feature = "bench-smoke"),
+        divan::bench(sample_count = 1, sample_size = 1, args = [10, 1024])
     )]
     fn erasure_encode(bencher: Bencher, size_kb: usize) {
         bencher
@@ -68,10 +79,13 @@ mod primitives {
 
 // --- File Preparation ---
 
-#[divan::bench(
-    sample_count = 1,
-    sample_size = 1,
-    args = [10, 1024] // 10KB, 1MB
+#[cfg_attr(
+    feature = "bench-smoke",
+    divan::bench(sample_count = 1, sample_size = 1, args = [10])
+)]
+#[cfg_attr(
+    not(feature = "bench-smoke"),
+    divan::bench(sample_count = 1, sample_size = 1, args = [10, 1024])
 )]
 fn file_preparation(bencher: Bencher, size_kb: usize) {
     bencher
@@ -87,12 +101,19 @@ fn file_preparation(bencher: Bencher, size_kb: usize) {
 mod proving {
     use super::*;
 
-    #[divan::bench(
-        args = [
-            (10, 1, 100),       // 10KB, 1 file, 100 challenges
-            (1024, 1, 100),     // 1MB, 1 file, 100 challenges
-            (1024, 2, 100),     // Multi-file: 2 files
-        ]
+    #[cfg_attr(
+        feature = "bench-smoke",
+        divan::bench(args = [(10, 1, 2)]) // 10KB, 1 file, 2 challenges
+    )]
+    #[cfg_attr(
+        not(feature = "bench-smoke"),
+        divan::bench(
+            args = [
+                (10, 1, 100),   // 10KB, 1 file, 100 challenges
+                (1024, 1, 100), // 1MB, 1 file, 100 challenges
+                (1024, 2, 100), // Multi-file: 2 files
+            ]
+        )
     )]
     fn prove(bencher: Bencher, args: (usize, usize, usize)) {
         let (size_kb, num_files, num_challenges) = args;
@@ -142,11 +163,19 @@ mod proving {
 
 // --- Verification ---
 
-#[divan::bench_group(sample_count = 1, sample_size = 10)]
+#[cfg_attr(
+    feature = "bench-smoke",
+    divan::bench_group(sample_count = 1, sample_size = 1)
+)]
+#[cfg_attr(
+    not(feature = "bench-smoke"),
+    divan::bench_group(sample_count = 1, sample_size = 10)
+)]
 mod verification {
     use super::*;
 
-    #[divan::bench(args = [2, 100])]
+    #[cfg_attr(feature = "bench-smoke", divan::bench(args = [2]))]
+    #[cfg_attr(not(feature = "bench-smoke"), divan::bench(args = [2, 100]))]
     fn verify_challenges(bencher: Bencher, num_challenges: usize) {
         bencher
             .with_inputs(|| {

@@ -7,10 +7,6 @@ on:
   pull_request:
   workflow_dispatch:  # Allow manual triggers for baseline generation
 
-permissions:
-  contents: read
-  id-token: write  # Required for CodSpeed OIDC auth
-
 jobs:
   benchmarks:
     name: Run performance benchmarks
@@ -35,6 +31,6 @@ jobs:
           mode: simulation
           run: |
             cargo install cargo-codspeed --locked
-            cargo codspeed build
-            cargo codspeed run
+            cargo codspeed build --bench bench_main --features bench-smoke
+            cargo codspeed run -- cargo bench --bench bench_main --features bench-smoke
 
