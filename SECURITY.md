@@ -164,3 +164,4 @@ Verifier generates parameters from challenge shape independently. If prover used
 **Testing:** `cargo nextest run` clean, 57+ security tests, edge cases, regressions, circuit uniformity.
 
 **Dependencies:** `cargo audit` clean, versions pinned, licenses compatible, critical deps audited.
+
