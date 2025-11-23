@@ -114,7 +114,8 @@ State evolution one-way: `state_new = H(TAG_STATE_UPDATE, state_old, leaf)`. Cir
 | Ledger security | `security_ledger*.rs` | 10 |
 | Circuit uniformity | `circuit_uniformity*.rs` | 8 |
 | Negative cases | `security_negative_cases.rs` | 5 |
-| **Total** | | **57** |
+| **Total Security Tests** | | **57** |
+| **Total Project Tests** | | **183** |
 
 **Gaps:** fuzzing (infrastructure exists), concurrency, timing analysis, malformed serialization fuzzing.
 
@@ -163,3 +164,4 @@ Verifier generates parameters from challenge shape independently. If prover used
 **Testing:** `cargo nextest run` clean, 57+ security tests, edge cases, regressions, circuit uniformity.
 
 **Dependencies:** `cargo audit` clean, versions pinned, licenses compatible, critical deps audited.
+

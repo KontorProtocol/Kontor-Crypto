@@ -1,0 +1,38 @@
+name: CodSpeed Performance Monitoring
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:  # Allow manual triggers for baseline generation
+
+jobs:
+  benchmarks:
+    name: Run performance benchmarks
+    runs-on: ubuntu-x86-8cpu
+    timeout-minutes: 600
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: "benchmarks"
+
+      - name: Prepare CodSpeed tooling
+        run: |
+          cargo install cargo-codspeed --locked
+          cargo codspeed build
+      
+      - name: Run benchmarks with CodSpeed
+        uses: CodSpeedHQ/action@v4
+        with:
+          mode: simulation
+          run: cargo codspeed run
+

@@ -45,13 +45,27 @@ graph TD
 
 **Core Components:**
 
--   **`src/main.rs`**: CLI benchmark demonstrating the full PoR workflow.
--   **`src/api/`**: High-level API providing `prepare_file()`, `prove()`, `verify()`, and `reconstruct_file()`.
--   **`src/erasure.rs`**: Reed-Solomon erasure coding implementation.
--   **`src/merkle.rs`**: Merkle tree implementation using Poseidon hash with domain separation.
--   **`src/circuit/`**: The unified Nova `StepCircuit` for the PoR computation.
--   **`src/config.rs`**: Centralized configuration and public I/O layout.
--   **`src/ledger.rs`**: Ledger management, including versioned save/load and root validation on load.
+-   **`src/main.rs`**: Production storage node simulator with realistic multi-file proof aggregation, heterogeneous file sizes, and economic analysis.
+-   **`src/api/`**: High-level unified API via `PorSystem` struct providing `prepare_file()`, `prove()`, and `verify()` methods.
+  -   **`system.rs`**: `PorSystem` - unified API entry point
+  -   **`plan.rs`**: Preprocessing logic shared between prove and verify
+  -   **`prove.rs`**: Proof generation with automatic shape derivation
+  -   **`verify.rs`**: Verification with secure ledger root pinning
+  -   **`witness.rs`**: Circuit witness generation with guaranteed padding
+  -   **`types.rs`**: Core data types (Challenge, Proof, FileMetadata, etc.)
+-   **`src/circuit/`**: The unified Nova `StepCircuit` for PoR verification.
+  -   **`synth.rs`**: Main circuit synthesis logic
+  -   **`witness.rs`**: Witness data structures
+  -   **`gadgets/`**: Low-level circuit components (Merkle, Poseidon, selection)
+  -   **`debug.rs`**: Circuit uniformity fingerprinting (debug builds)
+-   **`src/erasure.rs`**: Multi-codeword Reed-Solomon (GF(2^8), 231+24 symbols per codeword).
+-   **`src/merkle.rs`**: Poseidon Merkle trees with domain separation.
+-   **`src/ledger.rs`**: File ledger with aggregated Merkle tree of root commitments (rc values).
+-   **`src/params.rs`**: Dynamic parameter generation with in-memory caching for different circuit shapes.
+-   **`src/metrics.rs`**: Performance metrics and structured output for benchmarking.
+-   **`src/config.rs`**: Centralized configuration, economic constants, and public I/O layout.
+-   **`src/poseidon.rs`**: Domain-separated Poseidon hashing with cached constants.
+-   **`benches/`**: Divan benchmark suite (`bench_main.rs`) for regression tracking (primitives, file prep, proving, verification, e2e).
 
 ## Data Encoding and Merkle Tree Construction
 
@@ -64,35 +78,62 @@ graph TD
 ## Circuit Design
 
 The `PorCircuit` implements Nova's `StepCircuit` trait. For each step, it proves:
-1.  Correct calculation of the challenged leaf index.
-2.  Knowledge of a valid Merkle path from the leaf to the public root.
-3.  Correct evolution of the state via a hash chain: `state_out = H(state_in, leaf_value)`.
+1.  Correct calculation of the challenged leaf index via domain-separated hashing.
+2.  Knowledge of a valid Merkle path from the leaf to the file root.
+3.  File root commitment membership in the aggregated ledger (multi-file only).
+4.  Correct evolution of the state via a hash chain: `state_out = H(TAG_STATE, state_in, leaf_value)`.
 
 **Public I/O Vector Layout (Primary):**
 
 The vector length is `2 + 4 * files_per_step` with the following sections:
 
 1.  **Fixed (2):** `aggregated_root`, `state_in`.
-2.  **Ledger indices (F):** `ledger_index_0 ... ledger_index_{F-1}`.
-3.  **Depths (F):** `actual_depth_0 ... actual_depth_{F-1}`.
-4.  **Seeds (F):** `seed_0 ... seed_{F-1}` (enables multi-batch aggregation).
-5.  **Leaves (F):** `leaf_0 ... leaf_{F-1}`.
+2.  **Ledger indices (F):** `ledger_index_0 ... ledger_index_{F-1}` (canonical positions in ledger).
+3.  **Depths (F):** `actual_depth_0 ... actual_depth_{F-1}` (for depth binding).
+4.  **Seeds (F):** `seed_0 ... seed_{F-1}` (enables multi-batch aggregation with different block hashes).
+5.  **Leaves (F):** `leaf_0 ... leaf_{F-1}` (challenged symbols, initially zero).
 
 Notes:
 -   The leaves section is initialized to zero in `z0_primary` and filled by the circuit; it is carried forward step-to-step by Nova.
+-   Different seeds per file enable aggregating challenges from different block heights (different Bitcoin block hashes).
 
 **Security Properties:**
 
--   **Public Depth Binding:** Each slot's computed depth is enforced to equal its public depth input.
--   **Ledger Binding:** Public ledger indices and the aggregated root cryptographically prove that each file's `(root, depth)` commitment exists in the canonical `FileLedger`.
--   **Gating Logic:** Circuit slots are only processed if their public depth is greater than zero, allowing padding slots to be skipped securely.
+-   **Public Depth Binding:** Each slot's computed depth is enforced to equal its public depth input via constraint.
+-   **Ledger Binding:** Public ledger indices and the aggregated root cryptographically prove that each file's `rc = H(TAG_RC, root, depth)` commitment exists in the canonical `FileLedger`.
+-   **Gating Logic:** Circuit slots are only processed if their public depth is greater than zero, allowing padding slots to be skipped without changing circuit structure.
+-   **Root Commitment (rc):** Binds file root and depth to prevent depth-spoofing attacks.
 
-## Important SNARK API Semantics
+## Parameter Caching and Shape Derivation
 
-This project uses `nova-snark`/Nova, which has a deliberate API quirk:
+**Dynamic Circuit Shapes:**
 
--   `RecursiveSNARK::new(...)` synthesizes step 0.
--   You must call `prove_step(...)` exactly `N` times for a batch with `N` iterations; the first call is a no-op that advances the internal counter, and only calls 2..N synthesize.
--   Verification must pass `num_steps = N`.
+The system supports dynamic circuit parameters based on the actual files being proven:
+-   **Shape key**: `(files_per_step, file_tree_depth, aggregated_tree_depth)`
+-   **files_per_step**: `next_power_of_two(num_files)` - ensures uniform structure
+-   **file_tree_depth**: `max(file_depths)` - handles heterogeneous file sizes
+-   **aggregated_tree_depth**: `ledger.depth()` for multi-file, 0 for single-file
 
-Our API abstracts this complexity away from the user.
+**In-Memory Caching** (`src/params.rs`):
+-   Parameters are expensive to generate (2-5 seconds)
+-   Cached by shape key with LRU eviction (max 50 entries)
+-   Subsequent proofs with the same shape use cached parameters instantly
+-   Simulator displays "Parameter Load (cached)" when cache is hit
+
+## Benchmarking and Testing
+
+**Benchmark Suite** (`benches/bench_main.rs`):
+-   Uses **Divan** for statistical benchmarking
+-   Regression tracking for critical paths
+-   Run with: `cargo bench`
+
+**Production Simulator** (`src/main.rs`):
+-   Realistic storage node operation
+-   Heterogeneous file sizes and staggered challenges
+-   Run with: `cargo run --release`
+
+**Test Suite** (`tests/`):
+-   Circuit uniformity regression tests
+-   Security tests (ledger binding, depth spoofing, replay attacks)
+-   E2E tests with variable file sizes and depths
+-   Run with: `cargo test`
