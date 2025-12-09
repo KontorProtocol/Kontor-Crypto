@@ -55,40 +55,28 @@ fn test_proof_invalidation_after_ledger_update() {
     );
 
     // 4. Attempt to verify the original proof for file A against the NEW ledger
-    let _challenge_a_clone = challenge_a.clone(); // Clone for debug output
+    //
+    // EXPECTED BEHAVIOR (Per-File Ledger Roots):
+    // The proof MUST remain valid because:
+    // - Each file slot verifies against its own pinned ledger root from challenge creation
+    // - File A still exists at the same position in the ledger
+    // - File A's content hasn't changed
+    // - New file activations do NOT invalidate existing proofs
+    //
+    // This enables the full 2-week aggregation window (W_proof) without constant
+    // proof regeneration due to ledger changes.
     let updated_system = api::PorSystem::new(&updated_ledger);
     let verification_result = updated_system
         .verify(&proof_for_a, &[challenge_a])
         .expect("Verification should complete without cryptographic errors");
 
-    // With Option 1: This test case shows a subtle issue - even though this is conceptually
-    // a "single challenge", the original setup used multi_file(2) which influences the shape.
-    // The proof may have been generated with aggregation, so ledger index changes matter.
-    // The verification failure is actually correct behavior for Option 1 if aggregation was used.
-    //
-    // NOTE: After security fixes (endianness correction and range checking), this test behavior
-    // has changed. The proof now correctly continues to verify because:
-    // 1. The file's actual position (index 0) hasn't changed in the ledger
-    // 2. The aggregated root change doesn't affect the validity of the file's inclusion proof
-    // This is actually MORE SECURE behavior - the proof remains valid as long as the file
-    // is still in the ledger at the same position with the same content.
-    //
-    // UPDATED: Due to security improvements (pinned ledger roots), the behavior has changed.
-    // Single challenges with ledgers now use file roots for consistency, making proofs more robust.
-    if verification_result {
-        println!(
-            "✓ Proof correctly remains valid when file position unchanged (more secure behavior)"
-        );
-    } else {
-        println!(
-            "✓ Proof correctly becomes invalid due to ledger changes (expected security behavior)"
-        );
-    }
+    assert!(
+        verification_result,
+        "Proof MUST remain valid when new files are added to the ledger. \
+         Per-file ledger roots ensure proofs are never invalidated by new file activations."
+    );
 
-    // The test passes regardless of result - both behaviors are defensible
-    // depending on security model preferences
-
-    println!("✓ Option 1: Proofs correctly remain valid when file position is unchanged in ledger");
+    println!("✓ Proof correctly remains valid after ledger update (per-file ledger roots working)");
 }
 
 #[test]
@@ -285,9 +273,12 @@ fn test_ledger_file_ordering_consistency() {
 }
 
 #[test]
-fn test_ledger_duplicate_file_rejected() {
-    // Test that adding the same file twice is handled correctly
-    println!("Testing duplicate file handling in ledger");
+fn test_ledger_duplicate_file_updates_entry() {
+    // Test that adding the same file_id again updates the existing entry.
+    // This is the expected behavior: the ledger uses BTreeMap::insert which
+    // silently overwrites. This allows file metadata to be updated (e.g., if
+    // the file content changes and gets a new root).
+    println!("Testing duplicate file updates in ledger");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
@@ -298,31 +289,26 @@ fn test_ledger_duplicate_file_rejected() {
     let result1 = ledger.add_file(file_id.clone(), root1, 3);
     assert!(result1.is_ok(), "First add should succeed");
 
-    // Try to add the same file again with a different root
+    let original_root = ledger.files.get(&file_id).unwrap().root;
+    assert_eq!(original_root, root1, "Initial root should be root1");
+
+    // Add the same file again with a different root - this should UPDATE
     let root2 = kontor_crypto::api::FieldElement::from(200u64);
     let result2 = ledger.add_file(file_id.clone(), root2, 3);
 
-    // This should either:
-    // 1. Fail with an error about duplicate file
-    // 2. Update the existing entry (implementation dependent)
-    match result2 {
-        Ok(_) => {
-            // If it succeeds, verify the root was updated
-            assert_eq!(
-                ledger.files.get(&file_id).unwrap().root,
-                root2,
-                "Root should be updated to new value"
-            );
-            println!("✓ Duplicate file updates existing entry");
-        }
-        Err(error) => {
-            let error_msg = format!("{}", error);
-            assert!(
-                error_msg.contains("duplicate") || error_msg.contains("already exists"),
-                "Error should mention duplicate file: {}",
-                error_msg
-            );
-            println!("✓ Duplicate file correctly rejected");
-        }
-    }
+    assert!(result2.is_ok(), "Second add should succeed (update)");
+    assert_eq!(
+        ledger.files.get(&file_id).unwrap().root,
+        root2,
+        "Root MUST be updated to new value - ledger uses insert semantics"
+    );
+
+    // Verify only one file exists (not two)
+    assert_eq!(
+        ledger.files.len(),
+        1,
+        "Should still have exactly one file entry"
+    );
+
+    println!("✓ Duplicate file correctly updates existing entry");
 }

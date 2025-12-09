@@ -4,15 +4,16 @@ use kontor_crypto::api::{self, Challenge, FieldElement};
 use std::collections::BTreeMap;
 
 #[test]
-fn test_duplicate_file_challenges() {
-    // VERIF-01: Test behavior when verifier requests same file multiple times
+fn test_duplicate_file_challenges_fail_verification() {
+    // VERIF-01: Duplicate challenges (same file, same params) produce invalid proofs.
+    // This is expected - duplicate challenges are not a supported use case.
+    // The verifier correctly rejects these proofs.
     println!("Testing duplicate file challenges in multi-file proof");
 
     let data = vec![1u8; 100];
-
     let (prepared, metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
 
-    // Create challenges for the same file multiple times [A, A, A]
+    // Create identical challenges for the same file [A, A, A]
     let seed = FieldElement::from(42u64);
     let challenges = vec![
         Challenge::new_test(metadata.clone(), 1000, 1, seed),
@@ -20,10 +21,6 @@ fn test_duplicate_file_challenges() {
         Challenge::new_test(metadata.clone(), 1000, 1, seed),
     ];
 
-    let mut files = BTreeMap::new();
-    files.insert(metadata.file_id.clone(), &prepared);
-
-    // Create ledger (for multi-file proof)
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
     ledger
         .add_file(
@@ -33,39 +30,19 @@ fn test_duplicate_file_challenges() {
         )
         .unwrap();
 
-    // Try to prove with duplicate challenges
     let system = kontor_crypto::api::PorSystem::new(&ledger);
-    let files_vec = vec![&prepared];
-    let result = system.prove(files_vec, &challenges);
+    let proof = system
+        .prove(vec![&prepared], &challenges)
+        .expect("Prove accepts duplicate challenges");
 
-    // Document the actual behavior (should either error or handle gracefully)
-    match result {
-        Ok(proof) => {
-            println!("  System allows duplicate file challenges (deduplication or repetition)");
+    // Verification should fail - duplicate challenges produce invalid proofs
+    let verify_result = system.verify(&proof, &challenges);
+    assert!(
+        matches!(verify_result, Ok(false) | Err(_)),
+        "Duplicate challenges MUST fail verification"
+    );
 
-            // If it succeeds, verify the proof works
-            let verify_result = system.verify(&proof, &challenges);
-            match verify_result {
-                Ok(true) => {
-                    println!("  Duplicate challenges verified successfully");
-                    println!("✓ Duplicate file challenges handled gracefully (proof verifies)");
-                }
-                Ok(false) => {
-                    println!("  Duplicate challenges failed verification");
-                    println!("✓ Duplicate challenges handled but verification failed (acceptable edge case)");
-                }
-                Err(e) => {
-                    println!("  Verification error with duplicates: {:?}", e);
-                    println!("✓ Duplicate challenges cause verification error (acceptable edge case behavior)");
-                    // This is acceptable - duplicate challenges are an edge case
-                }
-            }
-        }
-        Err(e) => {
-            println!("✓ Duplicate file challenges rejected with error: {}", e);
-            // This is also acceptable behavior
-        }
-    }
+    println!("✓ Duplicate challenges correctly rejected by verifier");
 }
 
 #[test]
