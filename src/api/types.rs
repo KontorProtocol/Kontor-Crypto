@@ -43,6 +43,11 @@ pub struct Proof {
     pub compressed_snark: CompressedSNARK<E1, E2, C, S1, S2>,
     /// Exact ordered set of challenges covered by this proof
     pub challenge_ids: Vec<ChallengeID>,
+    /// The ledger root used during proof generation.
+    /// Verifiers must validate this root is in their accepted historical roots set
+    /// before verification. This enables cross-block aggregation without requiring
+    /// provers to regenerate proofs when new files activate.
+    pub ledger_root: FieldElement,
 }
 
 /// Constants for proof serialization format
@@ -51,7 +56,8 @@ mod proof_format {
     pub const MAGIC: &[u8] = b"NPOR";
 
     /// Current format version for forward compatibility
-    pub const VERSION: u16 = 1;
+    /// v2: Added ledger_root field for historical root validation
+    pub const VERSION: u16 = 2;
 
     /// Header size in bytes: magic(4) + version(2) + length(4)
     pub const HEADER_SIZE: usize = 10;

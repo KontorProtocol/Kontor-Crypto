@@ -13,10 +13,21 @@ use tracing::{debug, info_span};
 
 /// Verifies a proof against one or more challenges.
 ///
-/// This function implements the Option 1 security model verification with proper ledger root pinning.
+/// This function implements secure verification with automatic ledger root derivation.
 /// Parameters are derived automatically to match the proof structure.
 ///
-/// # Security: Ledger Root Pinning
+/// # Historical Root Validation
+///
+/// Before calling this function, the caller MUST validate that `proof.ledger_root` is in
+/// the set of accepted historical roots. This enables cross-block aggregation:
+///
+/// 1. Extract `proof.ledger_root` from the proof
+/// 2. Check it's in the accepted historical roots set (roots from last W_proof blocks)
+/// 3. Pass the ledger state corresponding to that root to this function
+///
+/// If the provided ledger's root doesn't match `proof.ledger_root`, verification will fail.
+///
+/// # Security: Ledger Root Derivation
 ///
 /// **SECURE**: The expected aggregated root is derived from the provided `ledger` automatically.
 /// This prevents malicious provers from substituting a different ledger with a different root.
@@ -35,7 +46,7 @@ use tracing::{debug, info_span};
 ///
 /// * `challenges` - Vector of challenges to verify against
 /// * `proof` - The proof to verify
-/// * `ledger` - The file ledger containing the file(s) being verified
+/// * `ledger` - The file ledger at the state corresponding to proof.ledger_root
 ///
 /// # Returns
 ///
