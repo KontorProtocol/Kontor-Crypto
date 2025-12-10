@@ -74,6 +74,8 @@ pub fn prove(
         compressed_snark,
         challenge_ids,
         ledger_root: plan.aggregated_root,
+        ledger_indices: plan.ledger_indices.clone(),
+        aggregated_tree_depth: plan.aggregated_tree_depth,
     })
 }
 

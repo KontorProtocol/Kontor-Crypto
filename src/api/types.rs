@@ -48,6 +48,13 @@ pub struct Proof {
     /// before verification. This enables cross-block aggregation without requiring
     /// provers to regenerate proofs when new files activate.
     pub ledger_root: FieldElement,
+    /// The ledger indices for each file at proof generation time.
+    /// These are the positions of each file's root commitment (rc) in the ledger tree.
+    /// The SNARK proves these indices are correct for the claimed ledger_root.
+    pub ledger_indices: Vec<usize>,
+    /// The aggregated tree depth at proof generation time.
+    /// Required for verification to load the correct circuit parameters.
+    pub aggregated_tree_depth: usize,
 }
 
 /// Constants for proof serialization format

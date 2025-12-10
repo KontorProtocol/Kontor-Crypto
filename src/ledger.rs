@@ -19,7 +19,7 @@ use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTre
 use crate::KontorPoRError;
 use ff::Field;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -50,6 +50,13 @@ struct LedgerData {
 ///
 /// In Option 1, the ledger tree is built from rc values (root commitments)
 /// where rc = Poseidon(TAG_RC, root, depth), not raw roots.
+///
+/// ## Historical Root Tracking
+///
+/// The ledger maintains a set of historical roots for proof validation.
+/// When files are added/removed, the old root is preserved in `historical_roots`.
+/// Verifiers check that a proof's `ledger_root` is in this set before accepting it.
+/// This enables cross-block aggregation without proof regeneration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileLedger {
     /// Unified map from file identifier to complete file information.
@@ -58,6 +65,11 @@ pub struct FileLedger {
     /// The aggregated Merkle tree built from rc values (not raw roots).
     #[serde(skip)]
     pub tree: MerkleTree,
+    /// Set of accepted historical roots for proof validation.
+    /// Proofs generated against any of these roots are considered valid.
+    /// Callers should periodically prune old roots (e.g., keep last W_proof blocks).
+    #[serde(default)]
+    pub historical_roots: HashSet<[u8; 32]>,
 }
 
 impl Default for FileLedger {
@@ -67,6 +79,7 @@ impl Default for FileLedger {
             tree: MerkleTree {
                 layers: vec![vec![]],
             },
+            historical_roots: HashSet::new(),
         }
     }
 }
@@ -76,6 +89,49 @@ impl FileLedger {
     pub fn new() -> Self {
         Self::default()
     }
+
+    // --- Historical Root Management ---
+
+    /// Returns the current root of the aggregated Merkle tree.
+    pub fn root(&self) -> F {
+        self.tree.root()
+    }
+
+    /// Records the current root as a valid historical root.
+    /// Call this before modifying the ledger (e.g., before adding files)
+    /// to preserve the old root for proof validation.
+    pub fn record_current_root(&mut self) {
+        use ff::PrimeField;
+        let root = self.tree.root();
+        let repr: [u8; 32] = root.to_repr().into();
+        self.historical_roots.insert(repr);
+    }
+
+    /// Checks if a root is valid (either current or in historical set).
+    /// Use this to validate `proof.ledger_root` before verification.
+    pub fn is_valid_root(&self, root: F) -> bool {
+        use ff::PrimeField;
+        // Current root is always valid
+        if root == self.tree.root() {
+            return true;
+        }
+        // Check historical roots
+        let repr: [u8; 32] = root.to_repr().into();
+        self.historical_roots.contains(&repr)
+    }
+
+    /// Clears all historical roots (keeps only current root as valid).
+    /// Use with caution - this will invalidate proofs against old roots.
+    pub fn clear_historical_roots(&mut self) {
+        self.historical_roots.clear();
+    }
+
+    /// Returns the number of historical roots being tracked.
+    pub fn historical_root_count(&self) -> usize {
+        self.historical_roots.len()
+    }
+
+    // --- File Management ---
 
     /// Adds a new file to the ledger and rebuilds the aggregated tree.
     ///
@@ -193,6 +249,7 @@ impl FileLedger {
         let mut ledger = FileLedger {
             files: data.files,
             tree: MerkleTree::default(),
+            historical_roots: HashSet::new(),
         };
         ledger.rebuild_tree()?;
 
