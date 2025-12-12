@@ -16,12 +16,49 @@
 //! that `get_canonical_index_for_rc()` returns the correct tree position.
 
 use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTree, F};
+use crate::poseidon::calculate_root_commitment;
 use crate::KontorPoRError;
 use ff::Field;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+
+/// Input data for adding a file to the ledger.
+///
+/// This struct provides a clean API for specifying file information when adding
+/// files to the ledger, either individually or in batch.
+#[derive(Debug, Clone)]
+pub struct FileInput {
+    /// A unique identifier for the file
+    pub file_id: String,
+    /// The Merkle root of the file's data tree
+    pub root: F,
+    /// The depth of the file's Merkle tree
+    pub depth: usize,
+}
+
+impl FileInput {
+    /// Create a new FileInput with the given parameters.
+    pub fn new(file_id: String, root: F, depth: usize) -> Self {
+        Self {
+            file_id,
+            root,
+            depth,
+        }
+    }
+}
+
+/// Allow construction from a tuple for convenience.
+impl From<(String, F, usize)> for FileInput {
+    fn from((file_id, root, depth): (String, F, usize)) -> Self {
+        Self {
+            file_id,
+            root,
+            depth,
+        }
+    }
+}
 
 /// Entry for a single file in the ledger, combining all file information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +69,17 @@ pub struct FileEntry {
     pub depth: usize,
     /// The root commitment (rc = H(TAG_RC, root, depth))
     pub rc: F,
+}
+
+impl From<&FileInput> for FileEntry {
+    fn from(input: &FileInput) -> Self {
+        let rc = calculate_root_commitment(input.root, F::from(input.depth as u64));
+        Self {
+            root: input.root,
+            depth: input.depth,
+            rc,
+        }
+    }
 }
 
 /// Versioned wrapper for ledger serialization
@@ -93,15 +141,8 @@ impl FileLedger {
         file_root: F,
         file_depth: usize,
     ) -> Result<(), KontorPoRError> {
-        use crate::poseidon::calculate_root_commitment;
-
-        let rc = calculate_root_commitment(file_root, F::from(file_depth as u64));
-        let entry = FileEntry {
-            root: file_root,
-            depth: file_depth,
-            rc,
-        };
-
+        let input = FileInput::new(file_id.clone(), file_root, file_depth);
+        let entry = FileEntry::from(&input);
         self.files.insert(file_id, entry);
         self.rebuild_tree()
     }
@@ -114,33 +155,36 @@ impl FileLedger {
     ///
     /// # Arguments
     ///
-    /// * `files` - Iterator of `(file_id, file_root, file_depth)` tuples
+    /// * `files` - Iterator of items that can be converted into [`FileInput`].
+    ///   Accepts both `FileInput` structs and `(file_id, root, depth)` tuples.
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// let files_to_add = vec![
+    /// use kontor_crypto::ledger::FileInput;
+    ///
+    /// // Using tuples (backward compatible)
+    /// ledger.add_files_batch(vec![
     ///     ("file1".to_string(), root1, depth1),
     ///     ("file2".to_string(), root2, depth2),
-    ///     ("file3".to_string(), root3, depth3),
-    /// ];
-    /// ledger.add_files_batch(files_to_add)?;
+    /// ])?;
+    ///
+    /// // Using FileInput structs
+    /// ledger.add_files_batch(vec![
+    ///     FileInput::new("file1".to_string(), root1, depth1),
+    ///     FileInput::new("file2".to_string(), root2, depth2),
+    /// ])?;
     /// ```
-    pub fn add_files_batch<I>(&mut self, files: I) -> Result<(), KontorPoRError>
+    pub fn add_files_batch<I, T>(&mut self, files: I) -> Result<(), KontorPoRError>
     where
-        I: IntoIterator<Item = (String, F, usize)>,
+        I: IntoIterator<Item = T>,
+        T: Into<FileInput>,
     {
-        use crate::poseidon::calculate_root_commitment;
-
         // Insert all files without rebuilding
-        for (file_id, file_root, file_depth) in files {
-            let rc = calculate_root_commitment(file_root, F::from(file_depth as u64));
-            let entry = FileEntry {
-                root: file_root,
-                depth: file_depth,
-                rc,
-            };
-            self.files.insert(file_id, entry);
+        for item in files {
+            let input: FileInput = item.into();
+            let entry = FileEntry::from(&input);
+            self.files.insert(input.file_id, entry);
         }
 
         // Rebuild tree once at the end
