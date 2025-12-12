@@ -50,6 +50,12 @@ pub struct Proof {
     pub ledger_root: FieldElement,
     /// The ledger indices for each file at proof generation time.
     /// These are the positions of each file's root commitment (rc) in the ledger tree.
+    ///
+    /// Important: indices are *relative to the ledger_root*. Adding files can change
+    /// canonical positions in later ledger states (because ordering is by file_id),
+    /// so verifiers must use the indices bundled in the proof together with the
+    /// proof's ledger_root.
+    ///
     /// The SNARK proves these indices are correct for the claimed ledger_root.
     pub ledger_indices: Vec<usize>,
     /// The aggregated tree depth at proof generation time.

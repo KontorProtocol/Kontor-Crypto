@@ -97,7 +97,7 @@ fn test_multi_file_proof_valid_with_historical_root() {
 
     // 3. Create updated ledger with historical root recorded
     let mut updated_ledger = original_ledger.clone();
-    updated_ledger.record_current_root(); // Record original root as historical
+    updated_ledger.record_current_root(1_000); // Record original root as historical (height-keyed)
     
     println!("Original root recorded as historical");
     println!("Historical root count: {}", updated_ledger.historical_root_count());
