@@ -79,6 +79,9 @@ impl FileLedger {
 
     /// Adds a new file to the ledger and rebuilds the aggregated tree.
     ///
+    /// **Note**: If adding many files at once, use [`add_files_batch`] instead
+    /// for O(n) performance rather than O(n²).
+    ///
     /// # Arguments
     ///
     /// * `file_id` - A unique identifier for the file.
@@ -100,6 +103,47 @@ impl FileLedger {
         };
 
         self.files.insert(file_id, entry);
+        self.rebuild_tree()
+    }
+
+    /// Adds multiple files to the ledger in a single batch, rebuilding the tree only once.
+    ///
+    /// This is significantly more efficient than calling [`add_file`] in a loop:
+    /// - `add_file` in a loop: O(n²) - rebuilds tree after each insertion
+    /// - `add_files_batch`: O(n) - rebuilds tree once at the end
+    ///
+    /// # Arguments
+    ///
+    /// * `files` - Iterator of `(file_id, file_root, file_depth)` tuples
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let files_to_add = vec![
+    ///     ("file1".to_string(), root1, depth1),
+    ///     ("file2".to_string(), root2, depth2),
+    ///     ("file3".to_string(), root3, depth3),
+    /// ];
+    /// ledger.add_files_batch(files_to_add)?;
+    /// ```
+    pub fn add_files_batch<I>(&mut self, files: I) -> Result<(), KontorPoRError>
+    where
+        I: IntoIterator<Item = (String, F, usize)>,
+    {
+        use crate::poseidon::calculate_root_commitment;
+
+        // Insert all files without rebuilding
+        for (file_id, file_root, file_depth) in files {
+            let rc = calculate_root_commitment(file_root, F::from(file_depth as u64));
+            let entry = FileEntry {
+                root: file_root,
+                depth: file_depth,
+                rc,
+            };
+            self.files.insert(file_id, entry);
+        }
+
+        // Rebuild tree once at the end
         self.rebuild_tree()
     }
 
