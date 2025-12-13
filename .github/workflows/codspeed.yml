@@ -13,30 +13,29 @@ permissions:
 jobs:
   benchmarks:
     name: Run performance benchmarks
-    runs-on: ubuntu-x86-8cpu
+    runs-on: codspeed-macro
     timeout-minutes: 600
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-      
+
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-          shared-key: "benchmarks"
+          shared-key: "benchmarks-${{ runner.arch }}"
 
       - name: Prepare CodSpeed tooling
         run: |
           cargo install cargo-codspeed --locked
-          cargo codspeed build
-      
+          cargo codspeed build -m walltime
+
       - name: Run benchmarks with CodSpeed
         # v4.4.1 (tag v4) pinned to commit for supply-chain safety
         uses: CodSpeedHQ/action@346a2d8a8d9d38909abd0bc3d23f773110f076ad
         with:
-          mode: simulation
+          mode: walltime
           run: cargo codspeed run
-

@@ -24,18 +24,17 @@ fn generate_test_data(size: usize, seed: u64) -> Vec<u8> {
 
 // --- Primitives ---
 
-#[cfg_attr(
-    feature = "bench-smoke",
-    divan::bench_group(sample_count = 1, sample_size = 1)
-)]
-#[cfg_attr(
-    not(feature = "bench-smoke"),
-    divan::bench_group(sample_count = 10, sample_size = 10)
-)]
 mod primitives {
     use super::*;
 
-    #[divan::bench]
+    #[cfg_attr(
+        feature = "bench-smoke",
+        divan::bench(sample_count = 1, sample_size = 1)
+    )]
+    #[cfg_attr(
+        not(feature = "bench-smoke"),
+        divan::bench(sample_count = 10, sample_size = 10)
+    )]
     fn poseidon_hash() {
         let a = FieldElement::from(config::TEST_RANDOM_SEED);
         let b = FieldElement::from(123u64);
@@ -46,8 +45,14 @@ mod primitives {
         ));
     }
 
-    #[cfg_attr(feature = "bench-smoke", divan::bench(args = [16]))]
-    #[cfg_attr(not(feature = "bench-smoke"), divan::bench(args = [16, 1024]))]
+    #[cfg_attr(
+        feature = "bench-smoke",
+        divan::bench(sample_count = 1, sample_size = 1, args = [16])
+    )]
+    #[cfg_attr(
+        not(feature = "bench-smoke"),
+        divan::bench(sample_count = 10, sample_size = 10, args = [16, 1024])
+    )]
     fn merkle_build(bencher: Bencher, num_leaves: usize) {
         bencher
             .with_inputs(|| {
@@ -97,17 +102,18 @@ fn file_preparation(bencher: Bencher, size_kb: usize) {
 
 // --- Proving (Expensive!) ---
 
-#[divan::bench_group(sample_count = 1, sample_size = 1)]
 mod proving {
     use super::*;
 
     #[cfg_attr(
         feature = "bench-smoke",
-        divan::bench(args = [(10, 1, 2)]) // 10KB, 1 file, 2 challenges
+        divan::bench(sample_count = 1, sample_size = 1, args = [(10, 1, 2)]) // 10KB, 1 file, 2 challenges
     )]
     #[cfg_attr(
         not(feature = "bench-smoke"),
         divan::bench(
+            sample_count = 1,
+            sample_size = 1,
             args = [
                 (10, 1, 10),   // 10KB, 1 file, 10 challenges
                 (1024, 1, 10), // 1MB, 1 file, 10 challenges
@@ -164,19 +170,17 @@ mod proving {
 
 // --- Verification ---
 
-#[cfg_attr(
-    feature = "bench-smoke",
-    divan::bench_group(sample_count = 1, sample_size = 1)
-)]
-#[cfg_attr(
-    not(feature = "bench-smoke"),
-    divan::bench_group(sample_count = 1, sample_size = 10)
-)]
 mod verification {
     use super::*;
 
-    #[cfg_attr(feature = "bench-smoke", divan::bench(args = [2]))]
-    #[cfg_attr(not(feature = "bench-smoke"), divan::bench(args = [2, 100]))]
+    #[cfg_attr(
+        feature = "bench-smoke",
+        divan::bench(sample_count = 1, sample_size = 1, args = [2])
+    )]
+    #[cfg_attr(
+        not(feature = "bench-smoke"),
+        divan::bench(sample_count = 1, sample_size = 10, args = [2, 100])
+    )]
     fn verify_challenges(bencher: Bencher, num_challenges: usize) {
         bencher
             .with_inputs(|| {

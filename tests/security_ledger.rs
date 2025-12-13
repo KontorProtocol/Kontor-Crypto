@@ -84,23 +84,28 @@ fn test_multi_file_proof_valid_with_historical_root() {
     let system = kontor_crypto::api::PorSystem::new(&original_ledger);
     let files_vec: Vec<&_> = setup.files.values().collect();
     let challenges: Vec<_> = setup.challenges.clone();
-    
+
     let multi_proof = system
         .prove(files_vec, &challenges)
         .expect("Should generate multi-file proof");
 
     // Sanity check: proof valid against original ledger
     assert!(
-        system.verify(&multi_proof, &challenges).expect("Should verify"),
+        system
+            .verify(&multi_proof, &challenges)
+            .expect("Should verify"),
         "Multi-file proof should be valid against original ledger"
     );
 
     // 3. Create updated ledger with historical root recorded
     let mut updated_ledger = original_ledger.clone();
     updated_ledger.record_current_root(1_000); // Record original root as historical (height-keyed)
-    
+
     println!("Original root recorded as historical");
-    println!("Historical root count: {}", updated_ledger.historical_root_count());
+    println!(
+        "Historical root count: {}",
+        updated_ledger.historical_root_count()
+    );
 
     // Add a third file (this changes the current root)
     let data_c = create_test_data(100, Some(999));
@@ -142,7 +147,7 @@ fn test_multi_file_proof_fails_without_historical_root() {
     let system = kontor_crypto::api::PorSystem::new(&original_ledger);
     let files_vec: Vec<&_> = setup.files.values().collect();
     let challenges: Vec<_> = setup.challenges.clone();
-    
+
     let multi_proof = system
         .prove(files_vec, &challenges)
         .expect("Should generate multi-file proof");
