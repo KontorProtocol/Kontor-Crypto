@@ -102,6 +102,31 @@ impl FileLedger {
         self.rebuild_tree()
     }
 
+    /// Adds multiple files to the ledger in a single batch, rebuilding the tree only once.
+    ///
+    /// This is more efficient than calling [`Self::add_file`] in a loop when adding
+    /// many files, as the aggregated Merkle tree is rebuilt only once at the end.
+    ///
+    /// # Arguments
+    ///
+    /// * `files` - An iterator of file metadata references to add.
+    ///
+    /// # Duplicate Handling
+    ///
+    /// If a file with the same `file_id` already exists in the ledger or appears
+    /// multiple times in the batch, the last entry wins.
+    ///
+    pub fn add_files<'a>(
+        &mut self,
+        files: impl IntoIterator<Item = &'a FileMetadata>,
+    ) -> Result<(), KontorPoRError> {
+        for metadata in files {
+            let entry = FileLedgerEntry::from(metadata);
+            self.files.insert(metadata.file_id.clone(), entry);
+        }
+        self.rebuild_tree()
+    }
+
     /// Rebuilds the aggregated Merkle tree from rc values (root commitments).
     /// The tree is built from rc = Poseidon(TAG_RC, root, depth) for each file,
     /// padded to the next power of two to ensure a fixed depth.
