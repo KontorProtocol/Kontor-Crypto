@@ -126,13 +126,7 @@ fn bench_proving() {
         let mut files = BTreeMap::new();
         files.insert(challenge.file_metadata.file_id.clone(), &prepared_file);
         let mut ledger = FileLedger::new();
-        ledger
-            .add_file(
-                challenge.file_metadata.file_id.clone(),
-                challenge.file_metadata.root,
-                api::tree_depth_from_metadata(&challenge.file_metadata),
-            )
-            .unwrap();
+        ledger.add_file(&challenge.file_metadata).unwrap();
         let challenges = vec![challenge];
         let system = PorSystem::new(&ledger);
         time_operation("Prove 16KB/2 challenges", || {
@@ -147,13 +141,7 @@ fn bench_proving() {
         let mut files = BTreeMap::new();
         files.insert(challenge.file_metadata.file_id.clone(), &prepared_file);
         let mut ledger = FileLedger::new();
-        ledger
-            .add_file(
-                challenge.file_metadata.file_id.clone(),
-                challenge.file_metadata.root,
-                api::tree_depth_from_metadata(&challenge.file_metadata),
-            )
-            .unwrap();
+        ledger.add_file(&challenge.file_metadata).unwrap();
         let challenges = vec![challenge];
         let system = PorSystem::new(&ledger);
         time_operation("Prove 32KB/3 challenges", || {
@@ -168,13 +156,7 @@ fn bench_proving() {
         let mut files = BTreeMap::new();
         files.insert(challenge.file_metadata.file_id.clone(), &prepared_file);
         let mut ledger = FileLedger::new();
-        ledger
-            .add_file(
-                challenge.file_metadata.file_id.clone(),
-                challenge.file_metadata.root,
-                api::tree_depth_from_metadata(&challenge.file_metadata),
-            )
-            .unwrap();
+        ledger.add_file(&challenge.file_metadata).unwrap();
         let challenges = vec![challenge];
         let system = PorSystem::new(&ledger);
         time_operation("Prove 16KB/5 challenges", || {
@@ -195,13 +177,7 @@ fn bench_verifying() {
     let mut files = BTreeMap::new();
     files.insert(challenge.file_metadata.file_id.clone(), &prepared_file);
     let mut ledger = FileLedger::new();
-    ledger
-        .add_file(
-            challenge.file_metadata.file_id.clone(),
-            challenge.file_metadata.root,
-            api::tree_depth_from_metadata(&challenge.file_metadata),
-        )
-        .unwrap();
+    ledger.add_file(&challenge.file_metadata).unwrap();
     let challenges = vec![challenge.clone()];
     let system = PorSystem::new(&ledger);
     let proof = system.prove(vec![&prepared_file], &challenges).unwrap();
@@ -251,13 +227,7 @@ fn bench_e2e() {
 
             // 4. Create ledger
             let mut ledger = FileLedger::new();
-            ledger
-                .add_file(
-                    metadata.file_id.clone(),
-                    metadata.root,
-                    api::tree_depth_from_metadata(&metadata),
-                )
-                .unwrap();
+            ledger.add_file(&metadata).unwrap();
 
             // 5. Prove
             let mut files = BTreeMap::new();

@@ -15,7 +15,9 @@
 //! The aggregated tree is built from rc values in this same key order, ensuring
 //! that `get_canonical_index_for_rc()` returns the correct tree position.
 
+use crate::api::FileMetadata;
 use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTree, F};
+use crate::poseidon::calculate_root_commitment;
 use crate::KontorPoRError;
 use ff::Field;
 use serde::{Deserialize, Serialize};
@@ -25,7 +27,7 @@ use std::path::Path;
 
 /// Entry for a single file in the ledger, combining all file information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileEntry {
+pub struct FileLedgerEntry {
     /// The Merkle root of this file
     pub root: F,
     /// The depth of this file's Merkle tree
@@ -34,13 +36,25 @@ pub struct FileEntry {
     pub rc: F,
 }
 
+impl From<&FileMetadata> for FileLedgerEntry {
+    fn from(metadata: &FileMetadata) -> Self {
+        let depth = metadata.depth();
+        let rc = calculate_root_commitment(metadata.root, F::from(depth as u64));
+        FileLedgerEntry {
+            root: metadata.root,
+            depth,
+            rc,
+        }
+    }
+}
+
 /// Versioned wrapper for ledger serialization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LedgerData {
     /// Format version for forward compatibility
     version: u16,
     /// The actual ledger data (unified file entries)
-    files: BTreeMap<String, FileEntry>,
+    files: BTreeMap<String, FileLedgerEntry>,
     /// Stored root for validation on load
     root: F,
 }
@@ -54,7 +68,7 @@ struct LedgerData {
 pub struct FileLedger {
     /// Unified map from file identifier to complete file information.
     /// BTreeMap ensures deterministic ordering for canonical ledger construction.
-    pub files: BTreeMap<String, FileEntry>,
+    pub files: BTreeMap<String, FileLedgerEntry>,
     /// The aggregated Merkle tree built from rc values (not raw roots).
     #[serde(skip)]
     pub tree: MerkleTree,
@@ -81,25 +95,10 @@ impl FileLedger {
     ///
     /// # Arguments
     ///
-    /// * `file_id` - A unique identifier for the file.
-    /// * `file_root` - The Merkle root of the file to be added.
-    /// * `file_depth` - The depth of the file's Merkle tree (for rc computation).
-    pub fn add_file(
-        &mut self,
-        file_id: String,
-        file_root: F,
-        file_depth: usize,
-    ) -> Result<(), KontorPoRError> {
-        use crate::poseidon::calculate_root_commitment;
-
-        let rc = calculate_root_commitment(file_root, F::from(file_depth as u64));
-        let entry = FileEntry {
-            root: file_root,
-            depth: file_depth,
-            rc,
-        };
-
-        self.files.insert(file_id, entry);
+    /// * `metadata` - The file's metadata, containing root, file_id, and depth information.
+    pub fn add_file(&mut self, metadata: &FileMetadata) -> Result<(), KontorPoRError> {
+        let entry = FileLedgerEntry::from(metadata);
+        self.files.insert(metadata.file_id.clone(), entry);
         self.rebuild_tree()
     }
 
