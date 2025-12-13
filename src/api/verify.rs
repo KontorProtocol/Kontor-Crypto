@@ -70,7 +70,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // Validate proof's ledger_root for multi-file proofs
     // For multi-file proofs (aggregated_tree_depth > 0), the proof's ledger_root must be
     // in the ledger's set of valid roots (current or historical).
-    // 
+    //
     // The proof includes the ledger indices at proof generation time, so we don't need
     // to recompute them from the current ledger state. The SNARK proves the indices
     // are correct for the claimed root.
@@ -87,7 +87,8 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
             );
             return Err(KontorPoRError::InvalidLedgerRoot {
                 proof_root: format!("{:?}", proof.ledger_root),
-                reason: "Proof's ledger_root is not in the set of valid historical roots".to_string(),
+                reason: "Proof's ledger_root is not in the set of valid historical roots"
+                    .to_string(),
             });
         }
         debug!(

@@ -12,16 +12,24 @@ permissions:
 
 jobs:
   benchmarks:
-    name: Run performance benchmarks
+    name: Benchmarks (${{ matrix.shard }})
     runs-on: ubuntu-x86-8cpu
     timeout-minutes: 600
-    
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - primitives
+          - file_preparation
+          - proving
+          - verification
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-      
+
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -31,12 +39,11 @@ jobs:
       - name: Prepare CodSpeed tooling
         run: |
           cargo install cargo-codspeed --locked
-          cargo codspeed build
-      
+          cargo codspeed build -m walltime
+
       - name: Run benchmarks with CodSpeed
         # v4.4.1 (tag v4) pinned to commit for supply-chain safety
         uses: CodSpeedHQ/action@346a2d8a8d9d38909abd0bc3d23f773110f076ad
         with:
-          mode: simulation
-          run: cargo codspeed run
-
+          mode: walltime
+          run: cargo codspeed run -- ${{ matrix.shard }}

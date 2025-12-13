@@ -233,7 +233,9 @@ fn test_proof_replay_with_different_files_is_rejected() {
         "Proof for files A,B should NOT verify against challenges for files A,C - challenge_ids mismatch prevents replay!"
     );
 
-    println!("✓ Proof replay attack correctly rejected - challenge_ids binding working as intended");
+    println!(
+        "✓ Proof replay attack correctly rejected - challenge_ids binding working as intended"
+    );
 
     // Sanity check: Verify that the original proof still works for the original challenges
     let original_verification = system

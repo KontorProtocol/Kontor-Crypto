@@ -55,7 +55,7 @@ reed-solomon-erasure = "6.0"
 clap = { version = "4.5.10", features = ["derive"] }
 rand = "0.8.5"
 statrs = "0.18.0"
-divan = "0.1.14"
+divan = { version = "4.1", package = "codspeed-divan-compat" }
 
 [features]
 default = []
