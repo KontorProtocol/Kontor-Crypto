@@ -226,20 +226,8 @@ fn test_single_vs_multi_file_equivalence() {
 
     // Create ledger with both files
     let mut ledger = FileLedger::new();
-    ledger
-        .add_file(
-            metadata.file_id.clone(),
-            metadata.root,
-            kontor_crypto::api::tree_depth_from_metadata(&metadata),
-        )
-        .unwrap();
-    ledger
-        .add_file(
-            metadata2.file_id.clone(),
-            metadata2.root,
-            kontor_crypto::api::tree_depth_from_metadata(&metadata2),
-        )
-        .unwrap();
+    ledger.add_file(&metadata).unwrap();
+    ledger.add_file(&metadata2).unwrap();
 
     let mut multi_files = BTreeMap::new();
     multi_files.insert(metadata.file_id.clone(), &prepared);
@@ -301,20 +289,8 @@ fn test_gating_uniformity() {
 
     // Create ledger with both files
     let mut ledger = FileLedger::new();
-    ledger
-        .add_file(
-            metadata_small.file_id.clone(),
-            metadata_small.root,
-            depth_small,
-        )
-        .unwrap();
-    ledger
-        .add_file(
-            metadata_large.file_id.clone(),
-            metadata_large.root,
-            depth_large,
-        )
-        .unwrap();
+    ledger.add_file(&metadata_small).unwrap();
+    ledger.add_file(&metadata_large).unwrap();
 
     let mut files = BTreeMap::new();
     files.insert(metadata_small.file_id.clone(), &prepared_small);

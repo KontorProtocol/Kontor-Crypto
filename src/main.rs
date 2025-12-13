@@ -127,14 +127,11 @@ fn main() {
                     std::process::exit(1);
                 });
 
-            // Add to ledger with depth for rc computation
-            let file_depth = metadata.padded_len.trailing_zeros() as usize;
-            ledger
-                .add_file(metadata.file_id.clone(), metadata.root, file_depth)
-                .unwrap_or_else(|e| {
-                    error!("Error adding file {} to ledger: {}", i, e);
-                    std::process::exit(1);
-                });
+            // Add to ledger
+            ledger.add_file(&metadata).unwrap_or_else(|e| {
+                error!("Error adding file {} to ledger: {}", i, e);
+                std::process::exit(1);
+            });
 
             prepared_files.push(prepared_file);
             metadatas.push(metadata);
