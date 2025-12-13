@@ -321,7 +321,7 @@ fn test_ledger_duplicate_file_rejected() {
 }
 
 // ===========================================
-// Security Tests for add_files_batch()
+// Security Tests for add_files()
 // ===========================================
 
 #[test]
@@ -344,7 +344,7 @@ fn test_batch_add_produces_identical_cryptographic_commitments() {
 
     // Method 2: Batch add
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files_batch(&files_data).unwrap();
+    ledger_batch.add_files(&files_data).unwrap();
 
     // Verify cryptographic equivalence
     assert_eq!(
@@ -382,7 +382,7 @@ fn test_batch_add_proof_generation_and_verification() {
 
     // Use batch add to create ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_files_batch([&metadata_1, &metadata_2]).unwrap();
+    ledger.add_files([&metadata_1, &metadata_2]).unwrap();
 
     // Generate a proof for file 1
     let challenge = api::Challenge::new(
@@ -429,7 +429,7 @@ fn test_batch_add_multi_file_proof_verification() {
 
     // Batch add all files to ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_files_batch(&metadatas).unwrap();
+    ledger.add_files(&metadatas).unwrap();
 
     // Create challenges for all files
     let challenges: Vec<_> = metadatas
@@ -485,7 +485,7 @@ fn test_batch_add_save_load_roundtrip() {
         })
         .collect();
 
-    ledger.add_files_batch(&files).unwrap();
+    ledger.add_files(&files).unwrap();
     let original_root = ledger.tree.root();
     let original_count = ledger.files.len();
 
@@ -539,10 +539,10 @@ fn test_batch_add_canonical_ordering_security() {
     ];
 
     let mut ledger1 = kontor_crypto::ledger::FileLedger::new();
-    ledger1.add_files_batch(&files_order1).unwrap();
+    ledger1.add_files(&files_order1).unwrap();
 
     let mut ledger2 = kontor_crypto::ledger::FileLedger::new();
-    ledger2.add_files_batch(&files_order2).unwrap();
+    ledger2.add_files(&files_order2).unwrap();
 
     // Roots must be identical
     assert_eq!(
@@ -590,7 +590,7 @@ fn test_batch_add_aggregation_proof_integrity() {
         synthetic_metadata("file_c", api::FieldElement::from(300u64), 5),
         synthetic_metadata("file_d", api::FieldElement::from(400u64), 3),
     ];
-    ledger.add_files_batch(&files).unwrap();
+    ledger.add_files(&files).unwrap();
 
     // Get aggregation proof for each file and verify structure
     for file_id in ["file_a", "file_b", "file_c", "file_d"] {
@@ -640,13 +640,13 @@ fn test_batch_add_ledger_root_changes_with_different_files() {
     ];
 
     let mut ledger_a = kontor_crypto::ledger::FileLedger::new();
-    ledger_a.add_files_batch(&files_a).unwrap();
+    ledger_a.add_files(&files_a).unwrap();
 
     let mut ledger_b = kontor_crypto::ledger::FileLedger::new();
-    ledger_b.add_files_batch(&files_b).unwrap();
+    ledger_b.add_files(&files_b).unwrap();
 
     let mut ledger_c = kontor_crypto::ledger::FileLedger::new();
-    ledger_c.add_files_batch(&files_c).unwrap();
+    ledger_c.add_files(&files_c).unwrap();
 
     // All roots must be different
     assert_ne!(
@@ -679,12 +679,12 @@ fn test_batch_add_rc_computation_consistency() {
 
     // Add via batch method
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files_batch([&metadata]).unwrap();
+    ledger_batch.add_files([&metadata]).unwrap();
     let rc_batch = ledger_batch.files.get("test_file").unwrap().rc;
 
     assert_eq!(
         rc_individual, rc_batch,
-        "SECURITY VIOLATION: RC computation must be identical between add_file and add_files_batch"
+        "SECURITY VIOLATION: RC computation must be identical between add_file and add_files"
     );
 
     // Verify rc is non-trivial (not zero or the root itself)
@@ -721,9 +721,7 @@ fn test_batch_add_with_real_files_proof_equivalence() {
 
     // Create ledger via batch add
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch
-        .add_files_batch([&metadata_1, &metadata_2])
-        .unwrap();
+    ledger_batch.add_files([&metadata_1, &metadata_2]).unwrap();
 
     // Roots must be identical
     assert_eq!(
@@ -809,7 +807,7 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
 
     // Build ledger via batch add (same order)
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files_batch(&files).unwrap();
+    ledger_batch.add_files(&files).unwrap();
 
     // Verify canonical indices are identical
     let expected_order = ["alpha", "beta", "delta", "gamma"]; // Alphabetical

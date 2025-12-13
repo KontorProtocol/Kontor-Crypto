@@ -116,7 +116,7 @@ impl FileLedger {
     /// If a file with the same `file_id` already exists in the ledger or appears
     /// multiple times in the batch, the last entry wins.
     ///
-    pub fn add_files_batch<'a>(
+    pub fn add_files<'a>(
         &mut self,
         files: impl IntoIterator<Item = &'a FileMetadata>,
     ) -> Result<(), KontorPoRError> {

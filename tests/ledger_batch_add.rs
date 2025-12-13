@@ -1,4 +1,4 @@
-//! Tests for the FileLedger::add_files_batch() method.
+//! Tests for the FileLedger::add_files() method.
 //!
 //! These tests verify that batch adding files to a ledger produces identical
 //! cryptographic results to individual adds, with the benefit of rebuilding
@@ -33,9 +33,7 @@ fn test_batch_add_basic() {
         dummy_metadata("file_c", 300, 5),
     ];
 
-    ledger
-        .add_files_batch(&files)
-        .expect("Batch add should succeed");
+    ledger.add_files(&files).expect("Batch add should succeed");
 
     assert_eq!(ledger.files.len(), 3, "Should have 3 files");
     assert!(ledger.files.contains_key("file_a"));
@@ -55,7 +53,7 @@ fn test_batch_add_empty() {
     // Empty batch should succeed and not change anything
     let empty: Vec<FileMetadata> = vec![];
     ledger
-        .add_files_batch(&empty)
+        .add_files(&empty)
         .expect("Empty batch should succeed");
 
     assert_eq!(ledger.files.len(), 1, "Should still have 1 file");
@@ -68,7 +66,7 @@ fn test_batch_add_single_file() {
 
     let files = vec![dummy_metadata("only_file", 999, 5)];
     ledger
-        .add_files_batch(&files)
+        .add_files(&files)
         .expect("Single file batch should succeed");
 
     assert_eq!(ledger.files.len(), 1);
@@ -101,7 +99,7 @@ fn test_batch_add_equivalent_to_individual_adds() {
 
     // Method 2: Batch add
     let mut ledger_batch = FileLedger::new();
-    ledger_batch.add_files_batch(&files).unwrap();
+    ledger_batch.add_files(&files).unwrap();
 
     // Both should produce identical cryptographic results
     assert_eq!(
@@ -147,10 +145,10 @@ fn test_batch_add_order_independence() {
     ];
 
     let mut ledger1 = FileLedger::new();
-    ledger1.add_files_batch(&files_order1).unwrap();
+    ledger1.add_files(&files_order1).unwrap();
 
     let mut ledger2 = FileLedger::new();
-    ledger2.add_files_batch(&files_order2).unwrap();
+    ledger2.add_files(&files_order2).unwrap();
 
     assert_eq!(
         ledger1.tree.root(),
@@ -179,7 +177,7 @@ fn test_batch_add_with_duplicates_in_batch() {
         dummy_metadata("dup_file", 999, 5), // Same file_id, different values
     ];
 
-    ledger.add_files_batch(&files).unwrap();
+    ledger.add_files(&files).unwrap();
 
     assert_eq!(ledger.files.len(), 2, "Should have 2 unique files");
 
@@ -207,7 +205,7 @@ fn test_batch_add_overwrites_existing_files() {
         dummy_metadata("existing", 999, 5), // Overwrite
         dummy_metadata("new_file", 200, 4),
     ];
-    ledger.add_files_batch(&files).unwrap();
+    ledger.add_files(&files).unwrap();
 
     assert_eq!(ledger.files.len(), 2);
     assert_eq!(
@@ -243,7 +241,7 @@ fn test_batch_add_after_individual_adds() {
         dummy_metadata("batch_1", 300, 5),
         dummy_metadata("batch_2", 400, 3),
     ];
-    ledger.add_files_batch(&batch_files).unwrap();
+    ledger.add_files(&batch_files).unwrap();
 
     assert_eq!(ledger.files.len(), 4, "Should have 4 files total");
     assert!(ledger.files.contains_key("individual_1"));
@@ -261,7 +259,7 @@ fn test_individual_add_after_batch_add() {
         dummy_metadata("batch_1", 100, 3),
         dummy_metadata("batch_2", 200, 4),
     ];
-    ledger.add_files_batch(&files).unwrap();
+    ledger.add_files(&files).unwrap();
 
     // Then add individually
     ledger
@@ -284,7 +282,7 @@ fn test_lookup_after_batch_add() {
         dummy_metadata("banana", 200, 4),
         dummy_metadata("cherry", 300, 5),
     ];
-    ledger.add_files_batch(&files).unwrap();
+    ledger.add_files(&files).unwrap();
 
     // Indices should be in lexicographic order
     let (idx_apple, rc_apple) = ledger.lookup("apple").expect("apple should be found");
@@ -314,7 +312,7 @@ fn test_aggregation_proof_after_batch_add() {
         dummy_metadata("file_3", 300, 5),
         dummy_metadata("file_4", 400, 3),
     ];
-    ledger.add_files_batch(&files).unwrap();
+    ledger.add_files(&files).unwrap();
 
     // Get aggregation proof for each file
     for file_id in ["file_1", "file_2", "file_3", "file_4"] {
@@ -357,7 +355,7 @@ fn test_batch_add_tree_depth_progression() {
             .map(|i| dummy_metadata(&format!("file_{}", i), i as u64, 3))
             .collect();
 
-        ledger.add_files_batch(&files).unwrap();
+        ledger.add_files(&files).unwrap();
 
         assert_eq!(
             ledger.depth(),
@@ -383,7 +381,7 @@ fn test_batch_add_large_batch() {
         .collect();
 
     ledger
-        .add_files_batch(&files)
+        .add_files(&files)
         .expect("Large batch should succeed");
 
     assert_eq!(ledger.files.len(), 100);
@@ -411,7 +409,7 @@ fn test_batch_vs_individual_large_dataset() {
 
     // Batch add
     let mut ledger_batch = FileLedger::new();
-    ledger_batch.add_files_batch(&files).unwrap();
+    ledger_batch.add_files(&files).unwrap();
 
     // Verify identical results
     assert_eq!(ledger_individual.tree.root(), ledger_batch.tree.root());
@@ -443,7 +441,7 @@ fn test_batch_add_with_iter() {
 
     // Using .iter() explicitly
     let mut ledger = FileLedger::new();
-    ledger.add_files_batch(files.iter()).unwrap();
+    ledger.add_files(files.iter()).unwrap();
 
     assert_eq!(ledger.files.len(), 3);
 }
@@ -461,7 +459,7 @@ fn test_batch_add_with_filter() {
     // Filter to only add files with depth > 3
     let mut ledger = FileLedger::new();
     ledger
-        .add_files_batch(files.iter().filter(|m| m.depth() > 3))
+        .add_files(files.iter().filter(|m| m.depth() > 3))
         .unwrap();
 
     assert_eq!(ledger.files.len(), 2);
@@ -489,7 +487,7 @@ fn test_batch_add_with_real_files() {
 
     // Batch add
     let mut ledger_batch = FileLedger::new();
-    ledger_batch.add_files_batch(&metadatas).unwrap();
+    ledger_batch.add_files(&metadatas).unwrap();
 
     // Individual adds for comparison
     let mut ledger_individual = FileLedger::new();
