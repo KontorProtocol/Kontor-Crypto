@@ -1,7 +1,7 @@
 //! Tests for ledger state changes and their impact on proof validity
 
 use kontor_crypto::{
-    api::{self, Challenge, FieldElement},
+    api::{self, Challenge, FieldElement, FileMetadata},
     ledger::FileLedger,
 };
 use std::collections::BTreeMap;
@@ -29,11 +29,7 @@ fn test_file_removal_invalidates_proof() {
     let mut ledger_full = FileLedger::new();
     for metadata in &metadatas {
         ledger_full
-            .add_file(
-                metadata.file_id.clone(),
-                metadata.root,
-                kontor_crypto::api::tree_depth_from_metadata(metadata),
-            )
+            .add_file(metadata)
             .expect("Failed to add file to ledger");
     }
     let original_root = ledger_full.tree.root();
@@ -60,20 +56,8 @@ fn test_file_removal_invalidates_proof() {
 
     // Create new ledger WITHOUT the third file (simulating file removal)
     let mut ledger_reduced = FileLedger::new();
-    ledger_reduced
-        .add_file(
-            metadatas[0].file_id.clone(),
-            metadatas[0].root,
-            kontor_crypto::api::tree_depth_from_metadata(&metadatas[0]),
-        )
-        .unwrap();
-    ledger_reduced
-        .add_file(
-            metadatas[1].file_id.clone(),
-            metadatas[1].root,
-            kontor_crypto::api::tree_depth_from_metadata(&metadatas[1]),
-        )
-        .unwrap();
+    ledger_reduced.add_file(&metadatas[0]).unwrap();
+    ledger_reduced.add_file(&metadatas[1]).unwrap();
     // File 2 is NOT added (removed)
 
     let new_root = ledger_reduced.tree.root();
@@ -126,52 +110,16 @@ fn test_ledger_reorg_changes_aggregated_root() {
 
     // Create ledger in order A, B, C
     let mut ledger1 = FileLedger::new();
-    ledger1
-        .add_file(
-            "file_a".to_string(),
-            prepared_files[0].0.root,
-            kontor_crypto::api::tree_depth_from_metadata(&prepared_files[0].0),
-        )
-        .unwrap();
-    ledger1
-        .add_file(
-            "file_b".to_string(),
-            prepared_files[1].0.root,
-            kontor_crypto::api::tree_depth_from_metadata(&prepared_files[1].0),
-        )
-        .unwrap();
-    ledger1
-        .add_file(
-            "file_c".to_string(),
-            prepared_files[2].0.root,
-            kontor_crypto::api::tree_depth_from_metadata(&prepared_files[2].0),
-        )
-        .unwrap();
+    ledger1.add_file(&prepared_files[0].0).unwrap();
+    ledger1.add_file(&prepared_files[1].0).unwrap();
+    ledger1.add_file(&prepared_files[2].0).unwrap();
     let root1 = ledger1.tree.root();
 
     // Create another ledger with same files (BTreeMap ensures same order)
     let mut ledger2 = FileLedger::new();
-    ledger2
-        .add_file(
-            "file_c".to_string(),
-            prepared_files[2].0.root,
-            kontor_crypto::api::tree_depth_from_metadata(&prepared_files[2].0),
-        )
-        .unwrap();
-    ledger2
-        .add_file(
-            "file_a".to_string(),
-            prepared_files[0].0.root,
-            kontor_crypto::api::tree_depth_from_metadata(&prepared_files[0].0),
-        )
-        .unwrap();
-    ledger2
-        .add_file(
-            "file_b".to_string(),
-            prepared_files[1].0.root,
-            kontor_crypto::api::tree_depth_from_metadata(&prepared_files[1].0),
-        )
-        .unwrap();
+    ledger2.add_file(&prepared_files[2].0).unwrap();
+    ledger2.add_file(&prepared_files[0].0).unwrap();
+    ledger2.add_file(&prepared_files[1].0).unwrap();
     let root2 = ledger2.tree.root();
 
     // Due to BTreeMap sorting, both ledgers should have the same order and root
@@ -182,23 +130,17 @@ fn test_ledger_reorg_changes_aggregated_root() {
 
     // Now test with different file roots (simulating file content changes)
     let mut ledger3 = FileLedger::new();
-    ledger3
-        .add_file("file_a".to_string(), FieldElement::from(999u64), 3)
-        .unwrap(); // Different root
-    ledger3
-        .add_file(
-            "file_b".to_string(),
-            prepared_files[1].0.root,
-            kontor_crypto::api::tree_depth_from_metadata(&prepared_files[1].0),
-        )
-        .unwrap();
-    ledger3
-        .add_file(
-            "file_c".to_string(),
-            prepared_files[2].0.root,
-            kontor_crypto::api::tree_depth_from_metadata(&prepared_files[2].0),
-        )
-        .unwrap();
+    // Create synthetic metadata with different root for file_a
+    let fake_metadata_a = FileMetadata {
+        root: FieldElement::from(999u64),
+        file_id: "file_a".to_string(),
+        padded_len: 8, // depth 3
+        original_size: 100,
+        filename: "fake.dat".to_string(),
+    };
+    ledger3.add_file(&fake_metadata_a).unwrap(); // Different root
+    ledger3.add_file(&prepared_files[1].0).unwrap();
+    ledger3.add_file(&prepared_files[2].0).unwrap();
     let root3 = ledger3.tree.root();
 
     assert_ne!(
@@ -221,13 +163,7 @@ fn test_proof_invalidation_with_file_update() {
 
     // Create ledger with v1
     let mut ledger_v1 = FileLedger::new();
-    ledger_v1
-        .add_file(
-            metadata_v1.file_id.clone(),
-            metadata_v1.root,
-            kontor_crypto::api::tree_depth_from_metadata(&metadata_v1),
-        )
-        .unwrap();
+    ledger_v1.add_file(&metadata_v1).unwrap();
 
     // Generate proof with v1
     let challenge_v1 = Challenge::new_test(metadata_v1.clone(), 1000, 1, FieldElement::from(42u64));
@@ -255,13 +191,15 @@ fn test_proof_invalidation_with_file_update() {
     // For this test, we'll simulate by using the same position in a new ledger
     let mut ledger_v2 = FileLedger::new();
     // Add with the SAME file_id key but DIFFERENT root (simulating update)
-    ledger_v2
-        .add_file(
-            metadata_v1.file_id.clone(),
-            metadata_v2.root,
-            kontor_crypto::api::tree_depth_from_metadata(&metadata_v2),
-        )
-        .unwrap();
+    // Create a hybrid metadata: old file_id with new root/padded_len
+    let updated_metadata = FileMetadata {
+        root: metadata_v2.root,
+        file_id: metadata_v1.file_id.clone(),
+        padded_len: metadata_v2.padded_len,
+        original_size: metadata_v2.original_size,
+        filename: metadata_v1.filename.clone(),
+    };
+    ledger_v2.add_file(&updated_metadata).unwrap();
 
     // With Option 1: when file content changes, the rc value changes, so the file
     // is not found in the ledger (rc mismatch). This is the correct security behavior.

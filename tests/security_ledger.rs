@@ -1,10 +1,21 @@
 //! Security tests for the FileLedger component.
 
-use kontor_crypto::api::{self};
+use kontor_crypto::api::{self, FieldElement, FileMetadata};
 use std::collections::BTreeMap;
 
 mod common;
 use common::fixtures::{create_test_data, setup_test_scenario, TestConfig};
+
+/// Helper to create a synthetic FileMetadata for testing.
+fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> FileMetadata {
+    FileMetadata {
+        root,
+        file_id: file_id.to_string(),
+        padded_len: 1 << depth, // 2^depth
+        original_size: 100,
+        filename: "synthetic.dat".to_string(),
+    }
+}
 
 #[test]
 fn test_proof_invalidation_after_ledger_update() {
@@ -42,10 +53,7 @@ fn test_proof_invalidation_after_ledger_update() {
     let data_c = create_test_data(100, Some(999));
     let (_, metadata_c) = api::prepare_file(&data_c, "test_file.dat").unwrap();
 
-    let depth_c = kontor_crypto::api::tree_depth_from_metadata(&metadata_c);
-    updated_ledger
-        .add_file(metadata_c.file_id, metadata_c.root, depth_c)
-        .unwrap();
+    updated_ledger.add_file(&metadata_c).unwrap();
 
     // Ensure the aggregated root has changed
     assert_ne!(
@@ -101,9 +109,12 @@ fn test_ledger_save_load_roundtrip() {
 
     // Add multiple files
     for i in 0..5 {
-        let file_id = format!("file_{}", i);
-        let root = kontor_crypto::api::FieldElement::from(i as u64 * 100);
-        ledger.add_file(file_id, root, 3).unwrap();
+        let metadata = synthetic_metadata(
+            &format!("file_{}", i),
+            FieldElement::from(i as u64 * 100),
+            3,
+        );
+        ledger.add_file(&metadata).unwrap();
     }
 
     // Store the original root for comparison
@@ -154,18 +165,10 @@ fn test_ledger_tamper_detected_on_load() {
     // Create and save a valid ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
     ledger
-        .add_file(
-            "file1".to_string(),
-            kontor_crypto::api::FieldElement::from(100u64),
-            3,
-        )
+        .add_file(&synthetic_metadata("file1", FieldElement::from(100u64), 3))
         .unwrap();
     ledger
-        .add_file(
-            "file2".to_string(),
-            kontor_crypto::api::FieldElement::from(200u64),
-            3,
-        )
+        .add_file(&synthetic_metadata("file2", FieldElement::from(200u64), 3))
         .unwrap();
 
     let temp_path = std::env::temp_dir().join("test_tampered_ledger.bin");
@@ -202,25 +205,13 @@ fn test_get_aggregation_proof_missing_returns_none() {
     // Create a ledger with a few files
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
     ledger
-        .add_file(
-            "file1".to_string(),
-            kontor_crypto::api::FieldElement::from(100u64),
-            3,
-        )
+        .add_file(&synthetic_metadata("file1", FieldElement::from(100u64), 3))
         .unwrap();
     ledger
-        .add_file(
-            "file2".to_string(),
-            kontor_crypto::api::FieldElement::from(200u64),
-            3,
-        )
+        .add_file(&synthetic_metadata("file2", FieldElement::from(200u64), 3))
         .unwrap();
     ledger
-        .add_file(
-            "file3".to_string(),
-            kontor_crypto::api::FieldElement::from(300u64),
-            3,
-        )
+        .add_file(&synthetic_metadata("file3", FieldElement::from(300u64), 3))
         .unwrap();
 
     // Try to get proof for a non-existent file
@@ -269,7 +260,9 @@ fn test_ledger_file_ordering_consistency() {
     ];
 
     for (hash, root) in &files {
-        ledger.add_file(hash.clone(), *root, 3).unwrap();
+        ledger
+            .add_file(&synthetic_metadata(hash, *root, 3))
+            .unwrap();
     }
 
     // Get the keys in sorted order (BTreeMap should maintain this)
@@ -292,15 +285,15 @@ fn test_ledger_duplicate_file_rejected() {
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
     // Add a file
-    let file_id = "duplicate_test".to_string();
-    let root1 = kontor_crypto::api::FieldElement::from(100u64);
+    let file_id = "duplicate_test";
+    let root1 = FieldElement::from(100u64);
 
-    let result1 = ledger.add_file(file_id.clone(), root1, 3);
+    let result1 = ledger.add_file(&synthetic_metadata(file_id, root1, 3));
     assert!(result1.is_ok(), "First add should succeed");
 
     // Try to add the same file again with a different root
-    let root2 = kontor_crypto::api::FieldElement::from(200u64);
-    let result2 = ledger.add_file(file_id.clone(), root2, 3);
+    let root2 = FieldElement::from(200u64);
+    let result2 = ledger.add_file(&synthetic_metadata(file_id, root2, 3));
 
     // This should either:
     // 1. Fail with an error about duplicate file
@@ -309,7 +302,7 @@ fn test_ledger_duplicate_file_rejected() {
         Ok(_) => {
             // If it succeeds, verify the root was updated
             assert_eq!(
-                ledger.files.get(&file_id).unwrap().root,
+                ledger.files.get(file_id).unwrap().root,
                 root2,
                 "Root should be updated to new value"
             );

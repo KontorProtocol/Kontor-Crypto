@@ -12,13 +12,13 @@ The system uses [Nova](https://eprint.iacr.org/2021/370) recursive SNARKs via Mi
 
 ## Core Capabilities
 
--   Partition files into fixed 31-byte symbols for direct field element encoding.
--   Apply multi-codeword Reed-Solomon (GF(2^8)) for fault tolerance.
--   Generate Poseidon Merkle trees over all symbols (data + parity).
--   Create recursive SNARKs proving possession of randomly sampled symbols.
--   Compress proofs to constant ~10 kB size regardless of file count or challenge count.
--   Support dynamic circuit parameters with in-memory caching.
--   Reconstruct original files from partial symbol availability (≥90% per codeword).
+- Partition files into fixed 31-byte symbols for direct field element encoding.
+- Apply multi-codeword Reed-Solomon (GF(2^8)) for fault tolerance.
+- Generate Poseidon Merkle trees over all symbols (data + parity).
+- Create recursive SNARKs proving possession of randomly sampled symbols.
+- Compress proofs to constant ~10 kB size regardless of file count or challenge count.
+- Support dynamic circuit parameters with in-memory caching.
+- Reconstruct original files from partial symbol availability (≥90% per codeword).
 
 ## API Reference
 
@@ -74,7 +74,7 @@ let (prepared_file, metadata) = prepare_file(my_data, "test.dat").unwrap();
 
 // 2. Create ledger and add the file
 let mut ledger = FileLedger::new();
-ledger.add_file(metadata.file_id.clone(), metadata.root, tree_depth_from_metadata(&metadata)).unwrap();
+ledger.add_file(&metadata).unwrap();
 
 // 3. Create PorSystem and challenge
 let system = PorSystem::new(&ledger);
@@ -95,6 +95,6 @@ println!("Proof successfully generated and verified with Nova PoR API.");
 
 ## Documentation
 
--   **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
--   **[Technical Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design
--   **[Developer Guide](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/DEVELOPER_GUIDE.md)** - CLI usage, testing, and benchmarking
+- **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
+- **[Technical Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design
+- **[Developer Guide](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/DEVELOPER_GUIDE.md)** - CLI usage, testing, and benchmarking

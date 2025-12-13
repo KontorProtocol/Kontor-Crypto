@@ -88,17 +88,8 @@ fn generate_params_for_shape(
     // Create dummy ledger for parameter generation
     let mut dummy_ledger = FileLedger::new();
     for challenge in &dummy_challenges {
-        let file_depth = if challenge.file_metadata.padded_len > 0 {
-            challenge.file_metadata.padded_len.trailing_zeros() as usize
-        } else {
-            0
-        };
         dummy_ledger
-            .add_file(
-                challenge.file_metadata.file_id.clone(),
-                challenge.file_metadata.root,
-                file_depth,
-            )
+            .add_file(&challenge.file_metadata)
             .expect("Dummy ledger operations should never fail during parameter generation");
     }
 

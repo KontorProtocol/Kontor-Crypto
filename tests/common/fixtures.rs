@@ -197,11 +197,7 @@ pub fn setup_test_scenario(
 
         // Add to ledger if multi-file
         if let Some(ref mut ledger) = ledger {
-            ledger.add_file(
-                metadata.file_id.clone(),
-                metadata.root,
-                kontor_crypto::api::tree_depth_from_metadata(&metadata),
-            )?;
+            ledger.add_file(&metadata)?;
         }
 
         files.insert(metadata.file_id.clone(), prepared);
@@ -377,9 +373,8 @@ pub fn create_padding_witness<F: PrimeField>(
 pub fn create_ledger_from_metadatas(metadatas: &[&FileMetadata]) -> FileLedger {
     let mut ledger = FileLedger::new();
     for metadata in metadatas {
-        let depth = tree_depth_from_metadata(metadata);
         ledger
-            .add_file(metadata.file_id.clone(), metadata.root, depth)
+            .add_file(metadata)
             .expect("Failed to add file to ledger");
     }
     ledger
@@ -419,11 +414,7 @@ pub fn create_test_files(
 pub fn create_single_file_ledger(metadata: &FileMetadata) -> FileLedger {
     let mut ledger = FileLedger::new();
     ledger
-        .add_file(
-            metadata.file_id.clone(),
-            metadata.root,
-            tree_depth_from_metadata(metadata),
-        )
+        .add_file(metadata)
         .expect("Failed to add file to test ledger");
     ledger
 }
@@ -434,11 +425,7 @@ pub fn create_multi_file_ledger(metadatas: &[&FileMetadata]) -> FileLedger {
     let mut ledger = FileLedger::new();
     for metadata in metadatas {
         ledger
-            .add_file(
-                metadata.file_id.clone(),
-                metadata.root,
-                tree_depth_from_metadata(metadata),
-            )
+            .add_file(metadata)
             .expect("Failed to add file to test ledger");
     }
     ledger
