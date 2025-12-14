@@ -10,7 +10,8 @@
       "Bash(./test_single_multi)",
       "Bash(./test_single_1)",
       "Bash(cargo run:*)",
-      "Bash(RUST_BACKTRACE=1 cargo test test_depth_0_through_3_with_same_params --test circuit_uniformity_test)"
+      "Bash(RUST_BACKTRACE=1 cargo test test_depth_0_through_3_with_same_params --test circuit_uniformity_test)",
+      "WebFetch(domain:codspeed.io)"
     ],
     "deny": [],
     "ask": []

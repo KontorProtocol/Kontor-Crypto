@@ -173,50 +173,55 @@ mod proving {
 mod verification {
     use super::*;
 
+    /// Pre-generate proof and fixtures for verification benchmark.
+    /// This avoids regenerating expensive proofs on each iteration.
+    fn setup_verification_fixture(
+        num_challenges: usize,
+    ) -> (FileLedger, api::Proof, Vec<Challenge>) {
+        let data = generate_test_data(16 * 1024, 42);
+        let (prepared, metadata) = api::prepare_file(&data, "v.dat").unwrap();
+        let mut ledger = FileLedger::new();
+        ledger
+            .add_file(
+                metadata.file_id.clone(),
+                metadata.root,
+                api::tree_depth_from_metadata(&metadata),
+            )
+            .unwrap();
+
+        let challenge = Challenge::new(
+            metadata,
+            1000,
+            num_challenges,
+            FieldElement::from(config::TEST_RANDOM_SEED),
+            "v".into(),
+        );
+
+        let system = PorSystem::new(&ledger);
+        let proof = system
+            .prove(vec![&prepared], std::slice::from_ref(&challenge))
+            .unwrap();
+
+        (ledger, proof, vec![challenge])
+    }
+
     #[cfg_attr(
         feature = "bench-smoke",
         divan::bench(sample_count = 1, sample_size = 1, args = [2])
     )]
     #[cfg_attr(
         not(feature = "bench-smoke"),
-        divan::bench(sample_count = 1, sample_size = 10, args = [2, 100])
+        divan::bench(sample_count = 10, sample_size = 10, args = [2, 100])
     )]
     fn verify_challenges(bencher: Bencher, num_challenges: usize) {
-        bencher
-            .with_inputs(|| {
-                let data = generate_test_data(16 * 1024, 42);
-                let (prepared, metadata) = api::prepare_file(&data, "v.dat").unwrap();
-                let mut ledger = FileLedger::new();
-                ledger
-                    .add_file(
-                        metadata.file_id.clone(),
-                        metadata.root,
-                        api::tree_depth_from_metadata(&metadata),
-                    )
-                    .unwrap();
+        // Generate proof once, outside the benchmark loop
+        let (ledger, proof, challenges) = setup_verification_fixture(num_challenges);
 
-                let challenge = Challenge::new(
-                    metadata,
-                    1000,
-                    num_challenges,
-                    FieldElement::from(config::TEST_RANDOM_SEED),
-                    "v".into(),
-                );
-
-                let system = PorSystem::new(&ledger);
-                let proof = system
-                    .prove(vec![&prepared], std::slice::from_ref(&challenge))
-                    .unwrap();
-
-                // We can't return system because it borrows ledger.
-                // Instead, return (ledger, proof, challenges) and recreate system in bench
-                (ledger, proof, vec![challenge])
-            })
-            .bench_values(|(ledger, proof, challenges)| {
-                let system = PorSystem::new(&ledger);
-                system
-                    .verify(black_box(&proof), black_box(&challenges))
-                    .unwrap();
-            });
+        bencher.bench(|| {
+            let system = PorSystem::new(&ledger);
+            system
+                .verify(black_box(&proof), black_box(&challenges))
+                .unwrap();
+        });
     }
 }
