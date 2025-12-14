@@ -6,6 +6,7 @@
 use super::types::{Challenge, FieldElement};
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
 use ff::Field;
+use std::cmp::Ordering;
 
 /// Internal preprocessing plan that consolidates logic shared between prove() and verify().
 /// This eliminates duplication and reduces the chance of drift between the two functions.
@@ -65,9 +66,18 @@ impl Plan {
             0
         };
 
-        // 2. Sort challenges canonically by file ID
+        // 2. Sort challenges canonically by (file_id, challenge_id)
+        //
+        // We need a total order so proof verification cannot accidentally depend on
+        // the caller-provided ordering of `challenges` when multiple challenges refer
+        // to the same file.
         let mut sorted_challenges: Vec<Challenge> = challenges.to_vec();
-        sorted_challenges.sort_by(|a, b| a.file_metadata.file_id.cmp(&b.file_metadata.file_id));
+        sorted_challenges.sort_by(|a, b| {
+            match a.file_metadata.file_id.cmp(&b.file_metadata.file_id) {
+                Ordering::Equal => a.id().0.cmp(&b.id().0),
+                other => other,
+            }
+        });
 
         // 3. Compute ledger indices
         let mut ledger_indices = vec![0usize; files_per_step];

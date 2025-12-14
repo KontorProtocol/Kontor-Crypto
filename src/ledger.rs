@@ -43,6 +43,10 @@ struct LedgerData {
     files: BTreeMap<String, FileEntry>,
     /// Stored root for validation on load
     root: F,
+    /// Historical roots retained for proof validation (keyed by block height).
+    /// This is optional for backward compatibility with older serialized ledgers.
+    #[serde(default)]
+    historical_roots: BTreeMap<u64, [u8; 32]>,
 }
 
 /// The `FileLedger` manages the aggregated Merkle tree of all file roots.
@@ -50,6 +54,13 @@ struct LedgerData {
 ///
 /// In Option 1, the ledger tree is built from rc values (root commitments)
 /// where rc = Poseidon(TAG_RC, root, depth), not raw roots.
+///
+/// ## Historical Root Tracking
+///
+/// The ledger maintains a set of historical roots for proof validation.
+/// When files are added/removed, the old root is preserved in `historical_roots`.
+/// Verifiers check that a proof's `ledger_root` is in this set before accepting it.
+/// This enables cross-block aggregation without proof regeneration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileLedger {
     /// Unified map from file identifier to complete file information.
@@ -58,6 +69,16 @@ pub struct FileLedger {
     /// The aggregated Merkle tree built from rc values (not raw roots).
     #[serde(skip)]
     pub tree: MerkleTree,
+    /// Accepted historical roots for proof validation, keyed by block height.
+    ///
+    /// Proofs generated against a ledger root are valid as long as that root is either:
+    /// - the current root, or
+    /// - present in this map.
+    ///
+    /// Callers are expected to prune this map according to their consensus rules
+    /// (typically a sliding window tied to block height).
+    #[serde(default)]
+    pub historical_roots: BTreeMap<u64, [u8; 32]>,
 }
 
 impl Default for FileLedger {
@@ -67,6 +88,7 @@ impl Default for FileLedger {
             tree: MerkleTree {
                 layers: vec![vec![]],
             },
+            historical_roots: BTreeMap::new(),
         }
     }
 }
@@ -76,6 +98,76 @@ impl FileLedger {
     pub fn new() -> Self {
         Self::default()
     }
+
+    // --- Historical Root Management ---
+
+    /// Returns the current root of the aggregated Merkle tree.
+    pub fn root(&self) -> F {
+        self.tree.root()
+    }
+
+    /// Records the current root as a valid historical root at the given block height.
+    ///
+    /// Call this before modifying the ledger (e.g., before adding files) to preserve the
+    /// old root for proof validation.
+    ///
+    /// Using a height-keyed map makes pruning unambiguous: old roots are invalidated by
+    /// time (block height), not by the number of file additions.
+    pub fn record_current_root(&mut self, block_height: u64) {
+        use ff::PrimeField;
+        let root = self.tree.root();
+        let repr: [u8; 32] = root.to_repr().into();
+        self.historical_roots.insert(block_height, repr);
+    }
+
+    /// Checks if a root is valid (either current or in historical set).
+    /// Use this to validate `proof.ledger_root` before verification.
+    pub fn is_valid_root(&self, root: F) -> bool {
+        use ff::PrimeField;
+        // Current root is always valid
+        if root == self.tree.root() {
+            return true;
+        }
+        // Check historical roots
+        let repr: [u8; 32] = root.to_repr().into();
+        self.historical_roots.values().any(|r| r == &repr)
+    }
+
+    /// Prunes historical roots strictly older than `min_block_height`.
+    ///
+    /// After this call, the retained set satisfies: `height >= min_block_height`.
+    pub fn prune_historical_roots_older_than(&mut self, min_block_height: u64) {
+        self.historical_roots
+            .retain(|h, _root| *h >= min_block_height);
+    }
+
+    /// Keeps only the newest `max_entries` historical roots by block height.
+    ///
+    /// This is a size-based safeguard. Consensus rules should generally prune by height
+    /// using `prune_historical_roots_older_than`.
+    pub fn prune_historical_roots_keep_last(&mut self, max_entries: usize) {
+        while self.historical_roots.len() > max_entries {
+            if let Some((&oldest, _)) = self.historical_roots.iter().next() {
+                self.historical_roots.remove(&oldest);
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Clears all historical roots.
+    ///
+    /// Use with caution: this invalidates proofs against old roots immediately.
+    pub fn clear_historical_roots(&mut self) {
+        self.historical_roots.clear();
+    }
+
+    /// Returns the number of historical roots being tracked.
+    pub fn historical_root_count(&self) -> usize {
+        self.historical_roots.len()
+    }
+
+    // --- File Management ---
 
     /// Adds a new file to the ledger and rebuilds the aggregated tree.
     ///
@@ -137,6 +229,7 @@ impl FileLedger {
             version: crate::config::LEDGER_FORMAT_VERSION,
             files: self.files.clone(),
             root: self.tree.root(),
+            historical_roots: self.historical_roots.clone(),
         };
 
         let encoded = bincode::serialize(&data).map_err(|e| {
@@ -193,6 +286,7 @@ impl FileLedger {
         let mut ledger = FileLedger {
             files: data.files,
             tree: MerkleTree::default(),
+            historical_roots: data.historical_roots,
         };
         ledger.rebuild_tree()?;
 

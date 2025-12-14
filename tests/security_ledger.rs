@@ -7,16 +7,17 @@ mod common;
 use common::fixtures::{create_test_data, setup_test_scenario, TestConfig};
 
 #[test]
-fn test_proof_invalidation_after_ledger_update() {
-    // This test ensures that a proof generated against a specific state of
-    // the ledger is invalidated if the ledger is updated (e.g., a new file
-    // is added), changing the aggregated root.
+fn test_single_file_proof_survives_ledger_update() {
+    // Single-file proofs (k=1) use the file's Merkle root directly as the
+    // aggregated root, NOT the ledger root. So they remain valid even when
+    // the ledger changes.
+    println!("Testing that single-file proofs survive ledger updates");
 
     // 1. Set up an initial multi-file scenario with 2 files (A and B)
     let setup = setup_test_scenario(&TestConfig::multi_file(2)).unwrap();
     let original_ledger = setup.ledger.as_ref().unwrap().clone();
 
-    // 2. Generate a valid proof for just the first file (A) against this ledger
+    // 2. Generate a SINGLE-FILE proof for just file A
     let challenge_a = setup.challenges[0].clone();
     let file_a_hash = &challenge_a.file_metadata.file_id;
     let file_a_ref = setup.files.get(file_a_hash).unwrap();
@@ -27,14 +28,14 @@ fn test_proof_invalidation_after_ledger_update() {
     let files_vec: Vec<&_> = files_for_proof.values().copied().collect();
     let proof_for_a = system
         .prove(files_vec, std::slice::from_ref(&challenge_a))
-        .expect("Should generate a valid proof for file A");
+        .expect("Should generate a valid single-file proof for file A");
 
     // Sanity check: the proof should be valid against the original ledger
     assert!(
         system
             .verify(&proof_for_a, std::slice::from_ref(&challenge_a))
             .expect("Verification should succeed"),
-        "Proof for file A should be valid against the original ledger"
+        "Single-file proof should be valid against the original ledger"
     );
 
     // 3. Update the ledger by adding a third file (C)
@@ -47,48 +48,141 @@ fn test_proof_invalidation_after_ledger_update() {
         .add_file(metadata_c.file_id, metadata_c.root, depth_c)
         .unwrap();
 
-    // Ensure the aggregated root has changed
     assert_ne!(
         original_ledger.tree.root(),
         updated_ledger.tree.root(),
         "Ledger root should change after adding a file"
     );
 
-    // 4. Attempt to verify the original proof for file A against the NEW ledger
-    let _challenge_a_clone = challenge_a.clone(); // Clone for debug output
+    // 4. Single-file proof should STILL be valid against updated ledger
+    // because single-file mode uses the file's root directly, not the ledger root
     let updated_system = api::PorSystem::new(&updated_ledger);
     let verification_result = updated_system
         .verify(&proof_for_a, &[challenge_a])
-        .expect("Verification should complete without cryptographic errors");
+        .expect("Verification should complete");
 
-    // With Option 1: This test case shows a subtle issue - even though this is conceptually
-    // a "single challenge", the original setup used multi_file(2) which influences the shape.
-    // The proof may have been generated with aggregation, so ledger index changes matter.
-    // The verification failure is actually correct behavior for Option 1 if aggregation was used.
-    //
-    // NOTE: After security fixes (endianness correction and range checking), this test behavior
-    // has changed. The proof now correctly continues to verify because:
-    // 1. The file's actual position (index 0) hasn't changed in the ledger
-    // 2. The aggregated root change doesn't affect the validity of the file's inclusion proof
-    // This is actually MORE SECURE behavior - the proof remains valid as long as the file
-    // is still in the ledger at the same position with the same content.
-    //
-    // UPDATED: Due to security improvements (pinned ledger roots), the behavior has changed.
-    // Single challenges with ledgers now use file roots for consistency, making proofs more robust.
-    if verification_result {
-        println!(
-            "✓ Proof correctly remains valid when file position unchanged (more secure behavior)"
-        );
-    } else {
-        println!(
-            "✓ Proof correctly becomes invalid due to ledger changes (expected security behavior)"
-        );
-    }
+    assert!(
+        verification_result,
+        "Single-file proof should remain valid (uses file root, not ledger root)"
+    );
 
-    // The test passes regardless of result - both behaviors are defensible
-    // depending on security model preferences
+    println!("✓ Single-file proof correctly survives ledger update");
+}
 
-    println!("✓ Option 1: Proofs correctly remain valid when file position is unchanged in ledger");
+#[test]
+fn test_multi_file_proof_valid_with_historical_root() {
+    // Multi-file proofs include ledger_root and ledger_indices.
+    // The proof remains valid as long as the root is in the historical set.
+    // No ledger snapshot needed - the proof carries its own indices.
+    println!("Testing multi-file proof valid with historical root");
+
+    // 1. Set up multi-file scenario with 2 files
+    let setup = setup_test_scenario(&TestConfig::multi_file(2)).unwrap();
+    let original_ledger = setup.ledger.as_ref().unwrap().clone();
+
+    // 2. Generate a MULTI-FILE proof for both files
+    let system = kontor_crypto::api::PorSystem::new(&original_ledger);
+    let files_vec: Vec<&_> = setup.files.values().collect();
+    let challenges: Vec<_> = setup.challenges.clone();
+
+    let multi_proof = system
+        .prove(files_vec, &challenges)
+        .expect("Should generate multi-file proof");
+
+    // Sanity check: proof valid against original ledger
+    assert!(
+        system
+            .verify(&multi_proof, &challenges)
+            .expect("Should verify"),
+        "Multi-file proof should be valid against original ledger"
+    );
+
+    // 3. Create updated ledger with historical root recorded
+    let mut updated_ledger = original_ledger.clone();
+    updated_ledger.record_current_root(1_000); // Record original root as historical (height-keyed)
+
+    println!("Original root recorded as historical");
+    println!(
+        "Historical root count: {}",
+        updated_ledger.historical_root_count()
+    );
+
+    // Add a third file (this changes the current root)
+    let data_c = create_test_data(100, Some(999));
+    let (_, metadata_c) = api::prepare_file(&data_c, "test_file.dat").unwrap();
+    let depth_c = kontor_crypto::api::tree_depth_from_metadata(&metadata_c);
+    updated_ledger
+        .add_file(metadata_c.file_id, metadata_c.root, depth_c)
+        .unwrap();
+
+    println!("Added new file, current root changed");
+    println!("Proof ledger_root: {:?}", multi_proof.ledger_root);
+    println!("Updated ledger root: {:?}", updated_ledger.root());
+
+    // 4. Verify using updated ledger - should work because:
+    //    - proof.ledger_root is in historical_roots
+    //    - proof includes ledger_indices from proof generation time
+    //    - SNARK proves indices are correct for claimed root
+    let updated_system = api::PorSystem::new(&updated_ledger);
+    let result = updated_system.verify(&multi_proof, &challenges);
+
+    assert!(
+        result.expect("Should complete verification"),
+        "Multi-file proof should be valid with historical root (proof carries its own indices)"
+    );
+
+    println!("✓ Multi-file proof correctly validates with historical root");
+}
+
+#[test]
+fn test_multi_file_proof_fails_without_historical_root() {
+    // If we don't record the historical root, multi-file proof fails
+    println!("Testing multi-file proof fails without historical root");
+
+    // 1. Set up multi-file scenario
+    let setup = setup_test_scenario(&TestConfig::multi_file(2)).unwrap();
+    let original_ledger = setup.ledger.as_ref().unwrap().clone();
+
+    // 2. Generate multi-file proof
+    let system = kontor_crypto::api::PorSystem::new(&original_ledger);
+    let files_vec: Vec<&_> = setup.files.values().collect();
+    let challenges: Vec<_> = setup.challenges.clone();
+
+    let multi_proof = system
+        .prove(files_vec, &challenges)
+        .expect("Should generate multi-file proof");
+
+    // 3. Create a NEW ledger (without historical root)
+    let mut new_ledger = original_ledger.clone();
+    // DO NOT call record_current_root() - this simulates not tracking history
+
+    // Add a file to change the root
+    let data_c = create_test_data(100, Some(999));
+    let (_, metadata_c) = api::prepare_file(&data_c, "test_file.dat").unwrap();
+    let depth_c = kontor_crypto::api::tree_depth_from_metadata(&metadata_c);
+    new_ledger
+        .add_file(metadata_c.file_id, metadata_c.root, depth_c)
+        .unwrap();
+
+    // 4. Verify should FAIL because old root not in historical_roots
+    let new_system = api::PorSystem::new(&new_ledger);
+    let result = new_system.verify(&multi_proof, &challenges);
+
+    assert!(
+        result.is_err(),
+        "Multi-file proof should fail when old root is NOT in historical_roots"
+    );
+
+    // Check it's the right error
+    let err = result.unwrap_err();
+    let err_msg = format!("{}", err);
+    assert!(
+        err_msg.contains("Invalid ledger root"),
+        "Error should mention invalid ledger root, got: {}",
+        err_msg
+    );
+
+    println!("✓ Multi-file proof correctly rejected when historical root not recorded");
 }
 
 #[test]
@@ -285,9 +379,12 @@ fn test_ledger_file_ordering_consistency() {
 }
 
 #[test]
-fn test_ledger_duplicate_file_rejected() {
-    // Test that adding the same file twice is handled correctly
-    println!("Testing duplicate file handling in ledger");
+fn test_ledger_duplicate_file_updates_entry() {
+    // Test that adding the same file_id again updates the existing entry.
+    // This is the expected behavior: the ledger uses BTreeMap::insert which
+    // silently overwrites. This allows file metadata to be updated (e.g., if
+    // the file content changes and gets a new root).
+    println!("Testing duplicate file updates in ledger");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
@@ -298,31 +395,26 @@ fn test_ledger_duplicate_file_rejected() {
     let result1 = ledger.add_file(file_id.clone(), root1, 3);
     assert!(result1.is_ok(), "First add should succeed");
 
-    // Try to add the same file again with a different root
+    let original_root = ledger.files.get(&file_id).unwrap().root;
+    assert_eq!(original_root, root1, "Initial root should be root1");
+
+    // Add the same file again with a different root - this should UPDATE
     let root2 = kontor_crypto::api::FieldElement::from(200u64);
     let result2 = ledger.add_file(file_id.clone(), root2, 3);
 
-    // This should either:
-    // 1. Fail with an error about duplicate file
-    // 2. Update the existing entry (implementation dependent)
-    match result2 {
-        Ok(_) => {
-            // If it succeeds, verify the root was updated
-            assert_eq!(
-                ledger.files.get(&file_id).unwrap().root,
-                root2,
-                "Root should be updated to new value"
-            );
-            println!("✓ Duplicate file updates existing entry");
-        }
-        Err(error) => {
-            let error_msg = format!("{}", error);
-            assert!(
-                error_msg.contains("duplicate") || error_msg.contains("already exists"),
-                "Error should mention duplicate file: {}",
-                error_msg
-            );
-            println!("✓ Duplicate file correctly rejected");
-        }
-    }
+    assert!(result2.is_ok(), "Second add should succeed (update)");
+    assert_eq!(
+        ledger.files.get(&file_id).unwrap().root,
+        root2,
+        "Root MUST be updated to new value - ledger uses insert semantics"
+    );
+
+    // Verify only one file exists (not two)
+    assert_eq!(
+        ledger.files.len(),
+        1,
+        "Should still have exactly one file entry"
+    );
+
+    println!("✓ Duplicate file correctly updates existing entry");
 }
