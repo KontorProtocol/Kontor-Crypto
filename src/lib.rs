@@ -91,7 +91,7 @@ pub use api::{prepare_file, reconstruct_file, tree_depth_from_metadata, PorSyste
 pub use api::{Challenge, FieldElement, FileMetadata, PorParams, PreparedFile, Proof};
 pub use circuit::{CircuitWitness, FileProofWitness, PorCircuit};
 pub use error::{KontorPoRError, Result};
-pub use ledger::{AddFileInput, FileLedger};
+pub use ledger::{FileLedger, LedgerFileEntry};
 pub use merkle::{
     build_tree, build_tree_from_leaves, get_leaf_hash, get_padded_proof_for_leaf, hash_leaf_data,
     hash_node, verify_merkle_proof_in_place, CircuitMerkleProof, MerkleTree,

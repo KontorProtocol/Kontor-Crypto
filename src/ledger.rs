@@ -24,18 +24,17 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-/// Input data required to add a file to the ledger.
+/// Trait for types that can be added to a [`FileLedger`].
 ///
-/// This struct decouples the ledger from `FileMetadata`, allowing the ledger
-/// to accept any type that can be converted into `AddFileInput`.
-#[derive(Debug, Clone)]
-pub struct AddFileInput {
-    /// Unique identifier for the file (typically SHA256 hash)
-    pub file_id: String,
-    /// The Merkle root of this file's tree
-    pub root: F,
-    /// The depth of this file's Merkle tree
-    pub depth: usize,
+/// This trait decouples the ledger from any specific file metadata type,
+/// allowing any type that provides the required information to be used.
+pub trait LedgerFileEntry {
+    /// Returns the unique identifier for this file.
+    fn file_id(&self) -> &str;
+    /// Returns the Merkle root of this file's tree.
+    fn root(&self) -> F;
+    /// Returns the depth of this file's Merkle tree.
+    fn depth(&self) -> usize;
 }
 
 /// Entry for a single file in the ledger, combining all file information.
@@ -49,12 +48,12 @@ pub struct FileLedgerEntry {
     pub rc: F,
 }
 
-impl From<AddFileInput> for FileLedgerEntry {
-    fn from(input: AddFileInput) -> Self {
-        let rc = calculate_root_commitment(input.root, F::from(input.depth as u64));
+impl<T: LedgerFileEntry> From<&T> for FileLedgerEntry {
+    fn from(entry: &T) -> Self {
+        let rc = calculate_root_commitment(entry.root(), F::from(entry.depth() as u64));
         FileLedgerEntry {
-            root: input.root,
-            depth: input.depth,
+            root: entry.root(),
+            depth: entry.depth(),
             rc,
         }
     }
@@ -107,26 +106,22 @@ impl FileLedger {
     ///
     /// # Arguments
     ///
-    /// * `input` - Any type that can be converted into `AddFileInput`, containing
+    /// * `entry` - Any type that implements [`LedgerFileEntry`], providing
     ///   the file's ID, root, and depth.
     ///
     /// # Example
     ///
     /// ```rust,no_run
-    /// use kontor_crypto::ledger::{FileLedger, AddFileInput};
-    /// use kontor_crypto::api::FieldElement;
+    /// use kontor_crypto::api::prepare_file;
+    /// use kontor_crypto::FileLedger;
     ///
+    /// let (prepared, metadata) = prepare_file(b"hello", "test.dat").unwrap();
     /// let mut ledger = FileLedger::new();
-    /// ledger.add_file(AddFileInput {
-    ///     file_id: "my_file".into(),
-    ///     root: FieldElement::from(123u64),
-    ///     depth: 5,
-    /// }).unwrap();
+    /// ledger.add_file(&metadata).unwrap();
     /// ```
-    pub fn add_file(&mut self, input: impl Into<AddFileInput>) -> Result<(), KontorPoRError> {
-        let input = input.into();
-        let entry = FileLedgerEntry::from(input.clone());
-        self.files.insert(input.file_id, entry);
+    pub fn add_file(&mut self, entry: &impl LedgerFileEntry) -> Result<(), KontorPoRError> {
+        self.files
+            .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
         self.rebuild_tree()
     }
 
@@ -137,21 +132,20 @@ impl FileLedger {
     ///
     /// # Arguments
     ///
-    /// * `files` - An iterator of items that can be converted into `AddFileInput`.
+    /// * `files` - An iterator of references to types that implement [`LedgerFileEntry`].
     ///
     /// # Duplicate Handling
     ///
     /// If a file with the same `file_id` already exists in the ledger or appears
     /// multiple times in the batch, the last entry wins.
     ///
-    pub fn add_files(
+    pub fn add_files<'a, T: LedgerFileEntry + 'a>(
         &mut self,
-        files: impl IntoIterator<Item = impl Into<AddFileInput>>,
+        files: impl IntoIterator<Item = &'a T>,
     ) -> Result<(), KontorPoRError> {
-        for item in files {
-            let input = item.into();
-            let entry = FileLedgerEntry::from(input.clone());
-            self.files.insert(input.file_id, entry);
+        for entry in files {
+            self.files
+                .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
         }
         self.rebuild_tree()
     }

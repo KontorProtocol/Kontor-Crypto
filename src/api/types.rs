@@ -237,13 +237,17 @@ impl FileMetadata {
     }
 }
 
-impl From<&FileMetadata> for crate::ledger::AddFileInput {
-    fn from(metadata: &FileMetadata) -> Self {
-        crate::ledger::AddFileInput {
-            file_id: metadata.file_id.clone(),
-            root: metadata.root,
-            depth: metadata.depth(),
-        }
+impl crate::ledger::LedgerFileEntry for FileMetadata {
+    fn file_id(&self) -> &str {
+        &self.file_id
+    }
+
+    fn root(&self) -> FieldElement {
+        self.root
+    }
+
+    fn depth(&self) -> usize {
+        self.depth() // Delegates to FileMetadata::depth()
     }
 }
 
