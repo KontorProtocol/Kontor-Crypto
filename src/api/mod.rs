@@ -42,7 +42,7 @@
 //! let my_data = b"This is a test file for the PoR system.";
 //! let (prepared_file, metadata) = prepare_file(my_data, "test.dat").unwrap();
 //!
-//! // 2. Create ledger and add the file (FileMetadata implements Into<AddFileInput>)
+//! // 2. Create ledger and add the file
 //! let mut ledger = FileLedger::new();
 //! ledger.add_file(&metadata).unwrap();
 //!
