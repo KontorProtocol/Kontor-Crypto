@@ -374,7 +374,7 @@ pub fn create_ledger_from_metadatas(metadatas: &[&FileMetadata]) -> FileLedger {
     let mut ledger = FileLedger::new();
     for metadata in metadatas {
         ledger
-            .add_file(metadata)
+            .add_file(*metadata)
             .expect("Failed to add file to ledger");
     }
     ledger
@@ -425,7 +425,7 @@ pub fn create_multi_file_ledger(metadatas: &[&FileMetadata]) -> FileLedger {
     let mut ledger = FileLedger::new();
     for metadata in metadatas {
         ledger
-            .add_file(metadata)
+            .add_file(*metadata)
             .expect("Failed to add file to test ledger");
     }
     ledger
