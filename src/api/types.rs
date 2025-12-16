@@ -237,6 +237,20 @@ impl FileMetadata {
     }
 }
 
+impl crate::ledger::FileDescriptor for FileMetadata {
+    fn file_id(&self) -> &str {
+        &self.file_id
+    }
+
+    fn root(&self) -> FieldElement {
+        self.root
+    }
+
+    fn depth(&self) -> usize {
+        self.depth() // Delegates to FileMetadata::depth()
+    }
+}
+
 /// The prover's representation of a file, containing the full Merkle tree.
 #[derive(Debug, Clone)]
 pub struct PreparedFile {

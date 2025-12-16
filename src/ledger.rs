@@ -15,7 +15,6 @@
 //! The aggregated tree is built from rc values in this same key order, ensuring
 //! that `get_canonical_index_for_rc()` returns the correct tree position.
 
-use crate::api::FileMetadata;
 use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTree, F};
 use crate::poseidon::calculate_root_commitment;
 use crate::KontorPoRError;
@@ -24,6 +23,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+
+/// Trait for types that can be added to a [`FileLedger`].
+///
+/// This trait decouples the ledger from any specific file metadata type,
+/// allowing any type that provides the required information to be used.
+pub trait FileDescriptor {
+    /// Returns the unique identifier for this file.
+    fn file_id(&self) -> &str;
+    /// Returns the Merkle root of this file's tree.
+    fn root(&self) -> F;
+    /// Returns the depth of this file's Merkle tree.
+    fn depth(&self) -> usize;
+}
 
 /// Entry for a single file in the ledger, combining all file information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,13 +48,12 @@ pub struct FileLedgerEntry {
     pub rc: F,
 }
 
-impl From<&FileMetadata> for FileLedgerEntry {
-    fn from(metadata: &FileMetadata) -> Self {
-        let depth = metadata.depth();
-        let rc = calculate_root_commitment(metadata.root, F::from(depth as u64));
+impl<T: FileDescriptor> From<&T> for FileLedgerEntry {
+    fn from(entry: &T) -> Self {
+        let rc = calculate_root_commitment(entry.root(), F::from(entry.depth() as u64));
         FileLedgerEntry {
-            root: metadata.root,
-            depth,
+            root: entry.root(),
+            depth: entry.depth(),
             rc,
         }
     }
@@ -95,10 +106,22 @@ impl FileLedger {
     ///
     /// # Arguments
     ///
-    /// * `metadata` - The file's metadata, containing root, file_id, and depth information.
-    pub fn add_file(&mut self, metadata: &FileMetadata) -> Result<(), KontorPoRError> {
-        let entry = FileLedgerEntry::from(metadata);
-        self.files.insert(metadata.file_id.clone(), entry);
+    /// * `entry` - Any type that implements [`FileDescriptor`], providing
+    ///   the file's ID, root, and depth.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use kontor_crypto::api::prepare_file;
+    /// use kontor_crypto::FileLedger;
+    ///
+    /// let (prepared, metadata) = prepare_file(b"hello", "test.dat").unwrap();
+    /// let mut ledger = FileLedger::new();
+    /// ledger.add_file(&metadata).unwrap();
+    /// ```
+    pub fn add_file(&mut self, entry: &impl FileDescriptor) -> Result<(), KontorPoRError> {
+        self.files
+            .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
         self.rebuild_tree()
     }
 
@@ -109,20 +132,20 @@ impl FileLedger {
     ///
     /// # Arguments
     ///
-    /// * `files` - An iterator of file metadata references to add.
+    /// * `files` - An iterator of references to types that implement [`FileDescriptor`].
     ///
     /// # Duplicate Handling
     ///
     /// If a file with the same `file_id` already exists in the ledger or appears
     /// multiple times in the batch, the last entry wins.
     ///
-    pub fn add_files<'a>(
+    pub fn add_files<'a, T: FileDescriptor + 'a>(
         &mut self,
-        files: impl IntoIterator<Item = &'a FileMetadata>,
+        files: impl IntoIterator<Item = &'a T>,
     ) -> Result<(), KontorPoRError> {
-        for metadata in files {
-            let entry = FileLedgerEntry::from(metadata);
-            self.files.insert(metadata.file_id.clone(), entry);
+        for entry in files {
+            self.files
+                .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
         }
         self.rebuild_tree()
     }
