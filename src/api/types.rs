@@ -237,7 +237,7 @@ impl FileMetadata {
     }
 }
 
-impl crate::ledger::LedgerFileEntry for FileMetadata {
+impl crate::ledger::FileDescriptor for FileMetadata {
     fn file_id(&self) -> &str {
         &self.file_id
     }

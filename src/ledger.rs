@@ -28,7 +28,7 @@ use std::path::Path;
 ///
 /// This trait decouples the ledger from any specific file metadata type,
 /// allowing any type that provides the required information to be used.
-pub trait LedgerFileEntry {
+pub trait FileDescriptor {
     /// Returns the unique identifier for this file.
     fn file_id(&self) -> &str;
     /// Returns the Merkle root of this file's tree.
@@ -48,7 +48,7 @@ pub struct FileLedgerEntry {
     pub rc: F,
 }
 
-impl<T: LedgerFileEntry> From<&T> for FileLedgerEntry {
+impl<T: FileDescriptor> From<&T> for FileLedgerEntry {
     fn from(entry: &T) -> Self {
         let rc = calculate_root_commitment(entry.root(), F::from(entry.depth() as u64));
         FileLedgerEntry {
@@ -106,7 +106,7 @@ impl FileLedger {
     ///
     /// # Arguments
     ///
-    /// * `entry` - Any type that implements [`LedgerFileEntry`], providing
+    /// * `entry` - Any type that implements [`FileDescriptor`], providing
     ///   the file's ID, root, and depth.
     ///
     /// # Example
@@ -119,7 +119,7 @@ impl FileLedger {
     /// let mut ledger = FileLedger::new();
     /// ledger.add_file(&metadata).unwrap();
     /// ```
-    pub fn add_file(&mut self, entry: &impl LedgerFileEntry) -> Result<(), KontorPoRError> {
+    pub fn add_file(&mut self, entry: &impl FileDescriptor) -> Result<(), KontorPoRError> {
         self.files
             .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
         self.rebuild_tree()
@@ -132,14 +132,14 @@ impl FileLedger {
     ///
     /// # Arguments
     ///
-    /// * `files` - An iterator of references to types that implement [`LedgerFileEntry`].
+    /// * `files` - An iterator of references to types that implement [`FileDescriptor`].
     ///
     /// # Duplicate Handling
     ///
     /// If a file with the same `file_id` already exists in the ledger or appears
     /// multiple times in the batch, the last entry wins.
     ///
-    pub fn add_files<'a, T: LedgerFileEntry + 'a>(
+    pub fn add_files<'a, T: FileDescriptor + 'a>(
         &mut self,
         files: impl IntoIterator<Item = &'a T>,
     ) -> Result<(), KontorPoRError> {
