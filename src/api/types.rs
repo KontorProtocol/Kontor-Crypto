@@ -237,6 +237,16 @@ impl FileMetadata {
     }
 }
 
+impl From<&FileMetadata> for crate::ledger::AddFileInput {
+    fn from(metadata: &FileMetadata) -> Self {
+        crate::ledger::AddFileInput {
+            file_id: metadata.file_id.clone(),
+            root: metadata.root,
+            depth: metadata.depth(),
+        }
+    }
+}
+
 /// The prover's representation of a file, containing the full Merkle tree.
 #[derive(Debug, Clone)]
 pub struct PreparedFile {
