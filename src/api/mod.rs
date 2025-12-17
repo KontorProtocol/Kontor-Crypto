@@ -44,7 +44,7 @@
 //!
 //! // 2. Create ledger and add the file
 //! let mut ledger = FileLedger::new();
-//! ledger.add_file(metadata.file_id.clone(), metadata.root, tree_depth_from_metadata(&metadata)).unwrap();
+//! ledger.add_file(&metadata).unwrap();
 //!
 //! // 3. Create PorSystem and challenge
 //! let system = PorSystem::new(&ledger);

@@ -34,11 +34,7 @@
 //!
 //! // 2. Create ledger and add the file
 //! let mut ledger = FileLedger::new();
-//! ledger.add_file(
-//!     metadata.file_id.clone(),
-//!     metadata.root,
-//!     api::tree_depth_from_metadata(&metadata)
-//! )?;
+//! ledger.add_file(&metadata)?;
 //!
 //! // 3. Create PorSystem and generate proof
 //! let system = PorSystem::new(&ledger);
@@ -61,8 +57,8 @@
 //!
 //! // 2. Build ledger
 //! let mut ledger = FileLedger::new();
-//! ledger.add_file(metadata1.file_id.clone(), metadata1.root, api::tree_depth_from_metadata(&metadata1))?;
-//! ledger.add_file(metadata2.file_id.clone(), metadata2.root, api::tree_depth_from_metadata(&metadata2))?;
+//! ledger.add_file(&metadata1)?;
+//! ledger.add_file(&metadata2)?;
 //!
 //! // 3. Create challenges and prove (different seeds supported for multi-batch aggregation)
 //! let system = PorSystem::new(&ledger);
@@ -96,7 +92,7 @@ pub use api::{prepare_file, reconstruct_file, tree_depth_from_metadata, PorSyste
 pub use api::{Challenge, FieldElement, FileMetadata, PorParams, PreparedFile, Proof};
 pub use circuit::{CircuitWitness, FileProofWitness, PorCircuit};
 pub use error::{KontorPoRError, Result};
-pub use ledger::FileLedger;
+pub use ledger::{FileDescriptor, FileLedger};
 pub use merkle::{
     build_tree, build_tree_from_leaves, get_leaf_hash, get_padded_proof_for_leaf, hash_leaf_data,
     hash_node, verify_merkle_proof_in_place, CircuitMerkleProof, MerkleTree,
