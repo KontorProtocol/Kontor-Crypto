@@ -17,6 +17,205 @@ fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> FileMe
     }
 }
 
+// =============================================================================
+// HISTORICAL LEDGER: FULL LIFECYCLE TEST
+// =============================================================================
+//
+// This test demonstrates the complete lifecycle of historical root tracking
+// and explains WHY it is essential for the Kontor PoR system.
+//
+// PROBLEM STATEMENT:
+// ------------------
+// In a blockchain context, files are added to the ledger over time across
+// multiple blocks. When a prover generates a proof, it commits to the current
+// ledger root (the Merkle root of all file root commitments). But what happens
+// when more files are added in subsequent blocks?
+//
+// Without historical root tracking:
+// - A proof generated at block N commits to ledger_root_N
+// - At block N+1, new files are added, creating ledger_root_N+1
+// - The verifier only knows ledger_root_N+1 (the current state)
+// - The proof fails because ledger_root_N != ledger_root_N+1
+// - All proofs would need to be regenerated every time the ledger changes!
+//
+// With historical root tracking:
+// - When files are added at block N+1, ledger_root_N is recorded as historical
+// - The proof's ledger_root_N is checked against both current AND historical roots
+// - The proof remains valid as long as ledger_root_N is in the historical set
+// - Proofs can survive across multiple block updates without regeneration
+//
+// This is CRITICAL for practical PoR systems where:
+// - Files are continuously added by different users
+// - Proofs may be aggregated and verified at different times
+// - Regenerating all proofs on every ledger update would be prohibitively expensive
+
+#[test]
+fn test_historical_ledger_full_lifecycle() {
+    println!("=== HISTORICAL LEDGER: FULL LIFECYCLE DEMONSTRATION ===\n");
+
+    // =========================================================================
+    // BLOCK 1000: Initial state - Alice adds her files
+    // =========================================================================
+    println!("BLOCK 1000: Alice adds two files to the ledger");
+
+    let alice_data_1 = create_test_data(100, Some(1001));
+    let alice_data_2 = create_test_data(100, Some(1002));
+    let (alice_prepared_1, alice_meta_1) =
+        api::prepare_file(&alice_data_1, "alice_doc1.pdf").unwrap();
+    let (alice_prepared_2, alice_meta_2) =
+        api::prepare_file(&alice_data_2, "alice_doc2.pdf").unwrap();
+
+    let mut ledger = kontor_crypto::ledger::FileLedger::new();
+    ledger.add_file(&alice_meta_1, 1000).unwrap();
+    ledger.add_file(&alice_meta_2, 1000).unwrap();
+
+    let root_block_1000 = ledger.root();
+    println!("  Ledger root after block 1000: {:?}", root_block_1000);
+    println!("  Files in ledger: {}", ledger.files.len());
+    println!(
+        "  Historical roots recorded: {}\n",
+        ledger.historical_root_count()
+    );
+
+    // =========================================================================
+    // BLOCK 1000: Alice generates a MULTI-FILE proof for BOTH her files
+    // =========================================================================
+    // NOTE: Single-file proofs (k=1) use the file's own Merkle root directly,
+    // NOT the ledger root. They survive ledger updates WITHOUT historical roots.
+    //
+    // Multi-file proofs (k>1) commit to the LEDGER root and include indices
+    // showing where each file sits in the aggregated tree. THESE require
+    // historical root tracking to verify after the ledger changes.
+    println!("BLOCK 1000: Alice generates a MULTI-FILE proof for both her files");
+
+    let challenge_1 =
+        api::Challenge::new_test(alice_meta_1.clone(), 1000, 1, FieldElement::from(12345u64));
+    let challenge_2 =
+        api::Challenge::new_test(alice_meta_2.clone(), 1000, 1, FieldElement::from(67890u64));
+    let challenges = vec![challenge_1.clone(), challenge_2.clone()];
+
+    let system_1000 = api::PorSystem::new(&ledger);
+    let multi_file_proof = system_1000
+        .prove(vec![&alice_prepared_1, &alice_prepared_2], &challenges)
+        .expect("Alice should generate a valid multi-file proof");
+
+    println!(
+        "  Multi-file proof commits to ledger_root: {:?}",
+        multi_file_proof.ledger_root
+    );
+    println!("  This is the AGGREGATED root of all files in the ledger");
+    println!(
+        "  Proof verifies against current ledger: {}\n",
+        system_1000.verify(&multi_file_proof, &challenges).unwrap()
+    );
+
+    // =========================================================================
+    // BLOCK 1001: Bob adds his file - ledger root CHANGES
+    // =========================================================================
+    println!("BLOCK 1001: Bob adds a file to the ledger");
+
+    let bob_data = create_test_data(100, Some(2001));
+    let (_bob_prepared, bob_meta) = api::prepare_file(&bob_data, "bob_contract.pdf").unwrap();
+
+    // CRITICAL: add_file atomically records the OLD root before adding the new file
+    ledger.add_file(&bob_meta, 1001).unwrap();
+
+    let root_block_1001 = ledger.root();
+    println!("  Ledger root after block 1001: {:?}", root_block_1001);
+    println!("  Files in ledger: {}", ledger.files.len());
+    println!(
+        "  Historical roots recorded: {}",
+        ledger.historical_root_count()
+    );
+
+    // Verify the roots are different
+    assert_ne!(
+        root_block_1000, root_block_1001,
+        "Ledger root must change when a file is added"
+    );
+    println!(
+        "  Root changed: {} -> {} (different: ✓)\n",
+        &format!("{:?}", root_block_1000)[0..20],
+        &format!("{:?}", root_block_1001)[0..20]
+    );
+
+    // =========================================================================
+    // THE CRITICAL TEST: Can Alice's old multi-file proof still verify?
+    // =========================================================================
+    println!("BLOCK 1001: Verifier checks Alice's multi-file proof from block 1000");
+    println!(
+        "  Proof's ledger_root (from block 1000): {:?}",
+        multi_file_proof.ledger_root
+    );
+    println!(
+        "  Current ledger root (block 1001):      {:?}",
+        root_block_1001
+    );
+    println!("  These are DIFFERENT - the proof was generated against a stale root!");
+
+    // Create a new system with the updated ledger
+    let system_1001 = api::PorSystem::new(&ledger);
+
+    // THIS IS WHERE HISTORICAL ROOTS MATTER:
+    // The proof's ledger_root (from block 1000) != current root (from block 1001)
+    // But verification should STILL succeed because:
+    // 1. The old root was recorded as historical when Bob's file was added
+    // 2. The verifier checks is_valid_root() which includes historical roots
+    // 3. The SNARK proves the proof is valid for the claimed root
+
+    println!(
+        "\n  Is old root in historical set? {}",
+        ledger.is_valid_root(root_block_1000)
+    );
+
+    let verification_result = system_1001
+        .verify(&multi_file_proof, &challenges)
+        .expect("Verification should complete without error");
+
+    println!(
+        "  VERIFICATION RESULT: {}",
+        if verification_result {
+            "✓ VALID"
+        } else {
+            "✗ INVALID"
+        }
+    );
+
+    assert!(
+        verification_result,
+        "Alice's multi-file proof from block 1000 MUST verify against block 1001 ledger"
+    );
+
+    // =========================================================================
+    // NEGATIVE TEST: What happens WITHOUT historical root tracking?
+    // =========================================================================
+    println!("\n--- NEGATIVE TEST: Simulating a ledger without historical roots ---");
+
+    // Create a copy of the ledger and clear its historical roots
+    let mut ledger_no_history = ledger.clone();
+    ledger_no_history.clear_historical_roots();
+
+    println!(
+        "  Historical roots cleared: count = {}",
+        ledger_no_history.historical_root_count()
+    );
+    println!(
+        "  Is old root (block 1000) valid now? {}",
+        ledger_no_history.is_valid_root(root_block_1000)
+    );
+
+    let system_no_history = api::PorSystem::new(&ledger_no_history);
+    let no_history_result = system_no_history.verify(&multi_file_proof, &challenges);
+
+    println!("  Verification result: {:?}", no_history_result);
+
+    assert!(
+        no_history_result.is_err(),
+        "WITHOUT historical roots, Alice's multi-file proof MUST fail verification"
+    );
+    println!("\n✓ Historical ledger lifecycle test PASSED\n");
+}
+
 #[test]
 fn test_single_file_proof_survives_ledger_update() {
     // Single-file proofs (k=1) use the file's Merkle root directly as the
