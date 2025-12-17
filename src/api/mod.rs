@@ -42,9 +42,9 @@
 //! let my_data = b"This is a test file for the PoR system.";
 //! let (prepared_file, metadata) = prepare_file(my_data, "test.dat").unwrap();
 //!
-//! // 2. Create ledger and add the file
+//! // 2. Create ledger and add the file (block_height for historical root tracking)
 //! let mut ledger = FileLedger::new();
-//! ledger.add_file(&metadata).unwrap();
+//! ledger.add_file(&metadata, 1000).unwrap();
 //!
 //! // 3. Create PorSystem and challenge
 //! let system = PorSystem::new(&ledger);

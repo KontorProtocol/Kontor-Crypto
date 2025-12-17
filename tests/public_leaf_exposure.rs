@@ -242,8 +242,8 @@ fn test_multi_file_public_leaves() {
 
     // Create ledger
     let mut ledger = FileLedger::new();
-    ledger.add_file(&metadata1).unwrap();
-    ledger.add_file(&metadata2).unwrap();
+    ledger.add_file(&metadata1, 0).unwrap();
+    ledger.add_file(&metadata2, 1).unwrap();
 
     // Create challenges
     let seed = FieldElement::from(42u64);

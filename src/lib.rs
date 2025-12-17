@@ -32,9 +32,9 @@
 //! let data = b"Hello, world! This is test data for Nova PoR.";
 //! let (prepared, metadata) = api::prepare_file(data, "test.dat")?;
 //!
-//! // 2. Create ledger and add the file
+//! // 2. Create ledger and add the file (block_height for historical root tracking)
 //! let mut ledger = FileLedger::new();
-//! ledger.add_file(&metadata)?;
+//! ledger.add_file(&metadata, 1000)?;
 //!
 //! // 3. Create PorSystem and generate proof
 //! let system = PorSystem::new(&ledger);
@@ -55,10 +55,10 @@
 //! let (prepared1, metadata1) = api::prepare_file(b"File 1 content", "file1.dat")?;
 //! let (prepared2, metadata2) = api::prepare_file(b"File 2 content", "file2.dat")?;
 //!
-//! // 2. Build ledger
+//! // 2. Build ledger (block heights for historical root tracking)
 //! let mut ledger = FileLedger::new();
-//! ledger.add_file(&metadata1)?;
-//! ledger.add_file(&metadata2)?;
+//! ledger.add_file(&metadata1, 1000)?;
+//! ledger.add_file(&metadata2, 1001)?;
 //!
 //! // 3. Create challenges and prove (different seeds supported for multi-batch aggregation)
 //! let system = PorSystem::new(&ledger);

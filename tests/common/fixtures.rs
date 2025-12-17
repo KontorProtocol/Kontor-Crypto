@@ -195,9 +195,9 @@ pub fn setup_test_scenario(
         // Prepare the file
         let (prepared, metadata) = prepare_file(&data, &format!("test_file_{}.dat", i))?;
 
-        // Add to ledger if multi-file
+        // Add to ledger if multi-file (use index as block height for testing)
         if let Some(ref mut ledger) = ledger {
-            ledger.add_file(&metadata)?;
+            ledger.add_file(&metadata, i as u64)?;
         }
 
         files.insert(metadata.file_id.clone(), prepared);
@@ -372,9 +372,9 @@ pub fn create_padding_witness<F: PrimeField>(
 /// This centralizes the common pattern of building ledgers in tests.
 pub fn create_ledger_from_metadatas(metadatas: &[&FileMetadata]) -> FileLedger {
     let mut ledger = FileLedger::new();
-    for metadata in metadatas {
+    for (i, metadata) in metadatas.iter().enumerate() {
         ledger
-            .add_file(*metadata)
+            .add_file(*metadata, i as u64)
             .expect("Failed to add file to ledger");
     }
     ledger
@@ -414,7 +414,7 @@ pub fn create_test_files(
 pub fn create_single_file_ledger(metadata: &FileMetadata) -> FileLedger {
     let mut ledger = FileLedger::new();
     ledger
-        .add_file(metadata)
+        .add_file(metadata, 0)
         .expect("Failed to add file to test ledger");
     ledger
 }
@@ -423,9 +423,9 @@ pub fn create_single_file_ledger(metadata: &FileMetadata) -> FileLedger {
 /// This is a test helper to reduce boilerplate when creating ledgers.
 pub fn create_multi_file_ledger(metadatas: &[&FileMetadata]) -> FileLedger {
     let mut ledger = FileLedger::new();
-    for metadata in metadatas {
+    for (i, metadata) in metadatas.iter().enumerate() {
         ledger
-            .add_file(*metadata)
+            .add_file(*metadata, i as u64)
             .expect("Failed to add file to test ledger");
     }
     ledger

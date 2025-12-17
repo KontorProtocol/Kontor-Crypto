@@ -32,7 +32,7 @@ fn test_wrong_root_depth_pair_fails() {
 
     // Create ledger with correct metadata
     let mut correct_ledger = kontor_crypto::FileLedger::new();
-    correct_ledger.add_file(&metadata).unwrap();
+    correct_ledger.add_file(&metadata, 0).unwrap();
 
     let system = api::PorSystem::new(&correct_ledger);
     let files_vec: Vec<&_> = files.values().copied().collect();
@@ -42,7 +42,7 @@ fn test_wrong_root_depth_pair_fails() {
 
     // Create ledger with wrong metadata for verification
     let mut wrong_ledger = kontor_crypto::FileLedger::new();
-    wrong_ledger.add_file(&wrong_metadata).unwrap();
+    wrong_ledger.add_file(&wrong_metadata, 0).unwrap();
 
     // Attempt to verify with wrong challenge (different root)
     // This should fail because files_meta_commitment will be different
@@ -152,7 +152,7 @@ fn test_zero_challenges_rejected() {
 
     // Create ledger for unified API
     let mut ledger = kontor_crypto::FileLedger::new();
-    ledger.add_file(&metadata).unwrap();
+    ledger.add_file(&metadata, 0).unwrap();
 
     // Should fail during proving
     let system = api::PorSystem::new(&ledger);

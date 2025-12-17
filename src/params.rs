@@ -85,11 +85,11 @@ fn generate_params_for_shape(
 
     let dummy_challenges_refs: Vec<&Challenge> = dummy_challenges.iter().collect();
 
-    // Create dummy ledger for parameter generation
+    // Create dummy ledger for parameter generation (block height 0 for dummy data)
     let mut dummy_ledger = FileLedger::new();
-    for challenge in &dummy_challenges {
+    for (i, challenge) in dummy_challenges.iter().enumerate() {
         dummy_ledger
-            .add_file(&challenge.file_metadata)
+            .add_file(&challenge.file_metadata, i as u64)
             .expect("Dummy ledger operations should never fail during parameter generation");
     }
 

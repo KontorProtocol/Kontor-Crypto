@@ -27,9 +27,9 @@ fn test_file_removal_invalidates_proof() {
 
     // Create initial ledger with all 3 files
     let mut ledger_full = FileLedger::new();
-    for metadata in &metadatas {
+    for (i, metadata) in metadatas.iter().enumerate() {
         ledger_full
-            .add_file(metadata)
+            .add_file(metadata, i as u64)
             .expect("Failed to add file to ledger");
     }
     let original_root = ledger_full.tree.root();
@@ -56,8 +56,8 @@ fn test_file_removal_invalidates_proof() {
 
     // Create new ledger WITHOUT the third file (simulating file removal)
     let mut ledger_reduced = FileLedger::new();
-    ledger_reduced.add_file(&metadatas[0]).unwrap();
-    ledger_reduced.add_file(&metadatas[1]).unwrap();
+    ledger_reduced.add_file(&metadatas[0], 0).unwrap();
+    ledger_reduced.add_file(&metadatas[1], 1).unwrap();
     // File 2 is NOT added (removed)
 
     let new_root = ledger_reduced.tree.root();
@@ -110,16 +110,16 @@ fn test_ledger_reorg_changes_aggregated_root() {
 
     // Create ledger in order A, B, C
     let mut ledger1 = FileLedger::new();
-    ledger1.add_file(&prepared_files[0].0).unwrap();
-    ledger1.add_file(&prepared_files[1].0).unwrap();
-    ledger1.add_file(&prepared_files[2].0).unwrap();
+    ledger1.add_file(&prepared_files[0].0, 0).unwrap();
+    ledger1.add_file(&prepared_files[1].0, 1).unwrap();
+    ledger1.add_file(&prepared_files[2].0, 2).unwrap();
     let root1 = ledger1.tree.root();
 
     // Create another ledger with same files (BTreeMap ensures same order)
     let mut ledger2 = FileLedger::new();
-    ledger2.add_file(&prepared_files[2].0).unwrap();
-    ledger2.add_file(&prepared_files[0].0).unwrap();
-    ledger2.add_file(&prepared_files[1].0).unwrap();
+    ledger2.add_file(&prepared_files[2].0, 0).unwrap();
+    ledger2.add_file(&prepared_files[0].0, 1).unwrap();
+    ledger2.add_file(&prepared_files[1].0, 2).unwrap();
     let root2 = ledger2.tree.root();
 
     // Due to BTreeMap sorting, both ledgers should have the same order and root
@@ -138,9 +138,9 @@ fn test_ledger_reorg_changes_aggregated_root() {
         original_size: 100,
         filename: "fake.dat".to_string(),
     };
-    ledger3.add_file(&fake_metadata_a).unwrap(); // Different root
-    ledger3.add_file(&prepared_files[1].0).unwrap();
-    ledger3.add_file(&prepared_files[2].0).unwrap();
+    ledger3.add_file(&fake_metadata_a, 0).unwrap(); // Different root
+    ledger3.add_file(&prepared_files[1].0, 1).unwrap();
+    ledger3.add_file(&prepared_files[2].0, 2).unwrap();
     let root3 = ledger3.tree.root();
 
     assert_ne!(
@@ -163,7 +163,7 @@ fn test_proof_invalidation_with_file_update() {
 
     // Create ledger with v1
     let mut ledger_v1 = FileLedger::new();
-    ledger_v1.add_file(&metadata_v1).unwrap();
+    ledger_v1.add_file(&metadata_v1, 0).unwrap();
 
     // Generate proof with v1
     let challenge_v1 = Challenge::new_test(metadata_v1.clone(), 1000, 1, FieldElement::from(42u64));
@@ -199,7 +199,7 @@ fn test_proof_invalidation_with_file_update() {
         original_size: metadata_v2.original_size,
         filename: metadata_v1.filename.clone(),
     };
-    ledger_v2.add_file(&updated_metadata).unwrap();
+    ledger_v2.add_file(&updated_metadata, 0).unwrap();
 
     // With Option 1: when file content changes, the rc value changes, so the file
     // is not found in the ledger (rc mismatch). This is the correct security behavior.

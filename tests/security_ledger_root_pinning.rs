@@ -28,10 +28,10 @@ fn test_wrong_aggregated_root_fails_verification() {
     // Create legitimate ledger with both files
     let mut legitimate_ledger = FileLedger::new();
     legitimate_ledger
-        .add_file(&metadata1)
+        .add_file(&metadata1, 0)
         .expect("Should add file 1 to legitimate ledger");
     legitimate_ledger
-        .add_file(&metadata2)
+        .add_file(&metadata2, 1)
         .expect("Should add file 2 to legitimate ledger");
 
     // Create challenges for both files
@@ -68,7 +68,7 @@ fn test_wrong_aggregated_root_fails_verification() {
     // SECURITY TEST 2: Create a malicious ledger with only one file (different root)
     let mut malicious_ledger = FileLedger::new();
     malicious_ledger
-        .add_file(&metadata1)
+        .add_file(&metadata1, 0)
         .expect("Should add file 1 to malicious ledger");
     // Note: deliberately omitting file 2, so malicious ledger has different root
 

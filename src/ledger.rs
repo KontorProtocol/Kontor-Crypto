@@ -196,10 +196,19 @@ impl FileLedger {
 
     /// Adds a new file to the ledger and rebuilds the aggregated tree.
     ///
+    /// This method atomically:
+    /// 1. Records the current root as a historical root at the given block height
+    /// 2. Inserts the new file
+    /// 3. Rebuilds the aggregated Merkle tree
+    ///
+    /// If the operation fails, the ledger state is rolled back to its original state.
+    ///
     /// # Arguments
     ///
     /// * `entry` - Any type that implements [`FileDescriptor`], providing
     ///   the file's ID, root, and depth.
+    /// * `block_height` - The block height at which this file is being added.
+    ///   The current root is recorded as valid at this height before modification.
     ///
     /// # Example
     ///
@@ -209,22 +218,56 @@ impl FileLedger {
     ///
     /// let (prepared, metadata) = prepare_file(b"hello", "test.dat").unwrap();
     /// let mut ledger = FileLedger::new();
-    /// ledger.add_file(&metadata).unwrap();
+    /// ledger.add_file(&metadata, 100).unwrap();
     /// ```
-    pub fn add_file(&mut self, entry: &impl FileDescriptor) -> Result<(), KontorPoRError> {
+    pub fn add_file(
+        &mut self,
+        entry: &impl FileDescriptor,
+        block_height: u64,
+    ) -> Result<(), KontorPoRError> {
+        // Snapshot current state for rollback on failure
+        let old_files = self.files.clone();
+        let old_tree = self.tree.clone();
+        let old_historical_roots = self.historical_roots.clone();
+
+        // Record current root before modification (only if ledger is non-empty)
+        if !self.files.is_empty() {
+            self.record_current_root(block_height);
+        }
+
+        // Insert the new file
         self.files
             .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
-        self.rebuild_tree()
+
+        // Rebuild tree - roll back on failure
+        if let Err(e) = self.rebuild_tree() {
+            self.files = old_files;
+            self.tree = old_tree;
+            self.historical_roots = old_historical_roots;
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     /// Adds multiple files to the ledger in a single batch, rebuilding the tree only once.
     ///
+    /// This method atomically:
+    /// 1. Records the current root as a historical root at the given block height
+    /// 2. Inserts all new files
+    /// 3. Rebuilds the aggregated Merkle tree once
+    ///
     /// This is more efficient than calling [`Self::add_file`] in a loop when adding
-    /// many files, as the aggregated Merkle tree is rebuilt only once at the end.
+    /// many files, as the aggregated Merkle tree is rebuilt only once at the end,
+    /// and only one historical root entry is created.
+    ///
+    /// If the operation fails, the ledger state is rolled back to its original state.
     ///
     /// # Arguments
     ///
     /// * `files` - An iterator of references to types that implement [`FileDescriptor`].
+    /// * `block_height` - The block height at which these files are being added.
+    ///   The current root is recorded as valid at this height before modification.
     ///
     /// # Duplicate Handling
     ///
@@ -234,12 +277,33 @@ impl FileLedger {
     pub fn add_files<'a, T: FileDescriptor + 'a>(
         &mut self,
         files: impl IntoIterator<Item = &'a T>,
+        block_height: u64,
     ) -> Result<(), KontorPoRError> {
+        // Snapshot current state for rollback on failure
+        let old_files = self.files.clone();
+        let old_tree = self.tree.clone();
+        let old_historical_roots = self.historical_roots.clone();
+
+        // Record current root before modification (only if ledger is non-empty)
+        if !self.files.is_empty() {
+            self.record_current_root(block_height);
+        }
+
+        // Insert all new files
         for entry in files {
             self.files
                 .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
         }
-        self.rebuild_tree()
+
+        // Rebuild tree - roll back on failure
+        if let Err(e) = self.rebuild_tree() {
+            self.files = old_files;
+            self.tree = old_tree;
+            self.historical_roots = old_historical_roots;
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     /// Rebuilds the aggregated Merkle tree from rc values (root commitments).

@@ -54,7 +54,7 @@ fn test_single_file_proof_survives_ledger_update() {
     let data_c = create_test_data(100, Some(999));
     let (_, metadata_c) = api::prepare_file(&data_c, "test_file.dat").unwrap();
 
-    updated_ledger.add_file(&metadata_c).unwrap();
+    updated_ledger.add_file(&metadata_c, 1001).unwrap();
 
     assert_ne!(
         original_ledger.tree.root(),
@@ -116,16 +116,17 @@ fn test_multi_file_proof_valid_with_historical_root() {
     );
 
     // Add a third file (this changes the current root)
+    // Note: add_file automatically records historical root at the given block height
     let data_c = create_test_data(100, Some(999));
     let (_, metadata_c) = api::prepare_file(&data_c, "test_file.dat").unwrap();
-    updated_ledger.add_file(&metadata_c).unwrap();
+    updated_ledger.add_file(&metadata_c, 1001).unwrap();
 
     println!("Added new file, current root changed");
     println!("Proof ledger_root: {:?}", multi_proof.ledger_root);
     println!("Updated ledger root: {:?}", updated_ledger.root());
 
     // 4. Verify using updated ledger - should work because:
-    //    - proof.ledger_root is in historical_roots
+    //    - proof.ledger_root is in historical_roots (automatically recorded by add_file)
     //    - proof includes ledger_indices from proof generation time
     //    - SNARK proves indices are correct for claimed root
     let updated_system = api::PorSystem::new(&updated_ledger);
@@ -141,7 +142,7 @@ fn test_multi_file_proof_valid_with_historical_root() {
 
 #[test]
 fn test_multi_file_proof_fails_without_historical_root() {
-    // If we don't record the historical root, multi-file proof fails
+    // If we don't have the historical root tracked, multi-file proof fails
     println!("Testing multi-file proof fails without historical root");
 
     // 1. Set up multi-file scenario
@@ -157,14 +158,16 @@ fn test_multi_file_proof_fails_without_historical_root() {
         .prove(files_vec, &challenges)
         .expect("Should generate multi-file proof");
 
-    // 3. Create a NEW ledger (without historical root)
+    // 3. Create a NEW ledger and add a file
     let mut new_ledger = original_ledger.clone();
-    // DO NOT call record_current_root() - this simulates not tracking history
 
-    // Add a file to change the root
+    // Add a file to change the root (this will record the old root as historical)
     let data_c = create_test_data(100, Some(999));
     let (_, metadata_c) = api::prepare_file(&data_c, "test_file.dat").unwrap();
-    new_ledger.add_file(&metadata_c).unwrap();
+    new_ledger.add_file(&metadata_c, 1001).unwrap();
+
+    // Clear historical roots to simulate not tracking history properly
+    new_ledger.clear_historical_roots();
 
     // 4. Verify should FAIL because old root not in historical_roots
     let new_system = api::PorSystem::new(&new_ledger);
@@ -202,7 +205,7 @@ fn test_ledger_save_load_roundtrip() {
             FieldElement::from(i as u64 * 100),
             3,
         );
-        ledger.add_file(&metadata).unwrap();
+        ledger.add_file(&metadata, i as u64).unwrap();
     }
 
     // Store the original root for comparison
@@ -253,10 +256,16 @@ fn test_ledger_tamper_detected_on_load() {
     // Create and save a valid ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
     ledger
-        .add_file(&synthetic_metadata("file1", FieldElement::from(100u64), 3))
+        .add_file(
+            &synthetic_metadata("file1", FieldElement::from(100u64), 3),
+            0,
+        )
         .unwrap();
     ledger
-        .add_file(&synthetic_metadata("file2", FieldElement::from(200u64), 3))
+        .add_file(
+            &synthetic_metadata("file2", FieldElement::from(200u64), 3),
+            1,
+        )
         .unwrap();
 
     let temp_path = std::env::temp_dir().join("test_tampered_ledger.bin");
@@ -293,13 +302,22 @@ fn test_get_aggregation_proof_missing_returns_none() {
     // Create a ledger with a few files
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
     ledger
-        .add_file(&synthetic_metadata("file1", FieldElement::from(100u64), 3))
+        .add_file(
+            &synthetic_metadata("file1", FieldElement::from(100u64), 3),
+            0,
+        )
         .unwrap();
     ledger
-        .add_file(&synthetic_metadata("file2", FieldElement::from(200u64), 3))
+        .add_file(
+            &synthetic_metadata("file2", FieldElement::from(200u64), 3),
+            1,
+        )
         .unwrap();
     ledger
-        .add_file(&synthetic_metadata("file3", FieldElement::from(300u64), 3))
+        .add_file(
+            &synthetic_metadata("file3", FieldElement::from(300u64), 3),
+            2,
+        )
         .unwrap();
 
     // Try to get proof for a non-existent file
@@ -328,7 +346,7 @@ fn test_ledger_file_ordering_consistency() {
     // Create a ledger and add files in a specific order
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
-    let files = vec![
+    let files = [
         (
             "zebra".to_string(),
             kontor_crypto::api::FieldElement::from(1u64),
@@ -347,9 +365,9 @@ fn test_ledger_file_ordering_consistency() {
         ),
     ];
 
-    for (hash, root) in &files {
+    for (i, (hash, root)) in files.iter().enumerate() {
         ledger
-            .add_file(&synthetic_metadata(hash, *root, 3))
+            .add_file(&synthetic_metadata(hash, *root, 3), i as u64)
             .unwrap();
     }
 
@@ -379,7 +397,7 @@ fn test_ledger_duplicate_file_updates_entry() {
     let file_id = "duplicate_test";
     let root1 = FieldElement::from(100u64);
 
-    let result1 = ledger.add_file(&synthetic_metadata(file_id, root1, 3));
+    let result1 = ledger.add_file(&synthetic_metadata(file_id, root1, 3), 0);
     assert!(result1.is_ok(), "First add should succeed");
 
     let original_root = ledger.files.get(file_id).unwrap().root;
@@ -387,7 +405,7 @@ fn test_ledger_duplicate_file_updates_entry() {
 
     // Add the same file again with a different root - this should UPDATE
     let root2 = kontor_crypto::api::FieldElement::from(200u64);
-    let result2 = ledger.add_file(&synthetic_metadata(file_id, root2, 3));
+    let result2 = ledger.add_file(&synthetic_metadata(file_id, root2, 3), 1);
 
     assert!(result2.is_ok(), "Second add should succeed (update)");
     assert_eq!(
@@ -424,13 +442,13 @@ fn test_batch_add_produces_identical_cryptographic_commitments() {
 
     // Method 1: Individual adds
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
-    for metadata in &files_data {
-        ledger_individual.add_file(metadata).unwrap();
+    for (i, metadata) in files_data.iter().enumerate() {
+        ledger_individual.add_file(metadata, i as u64).unwrap();
     }
 
     // Method 2: Batch add
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files(&files_data).unwrap();
+    ledger_batch.add_files(&files_data, 0).unwrap();
 
     // Verify cryptographic equivalence
     assert_eq!(
@@ -468,7 +486,7 @@ fn test_batch_add_proof_generation_and_verification() {
 
     // Use batch add to create ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_files([&metadata_1, &metadata_2]).unwrap();
+    ledger.add_files([&metadata_1, &metadata_2], 0).unwrap();
 
     // Generate a proof for file 1
     let challenge = api::Challenge::new(
@@ -515,7 +533,7 @@ fn test_batch_add_multi_file_proof_verification() {
 
     // Batch add all files to ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_files(&metadatas).unwrap();
+    ledger.add_files(&metadatas, 0).unwrap();
 
     // Create challenges for all files
     let challenges: Vec<_> = metadatas
@@ -571,7 +589,7 @@ fn test_batch_add_save_load_roundtrip() {
         })
         .collect();
 
-    ledger.add_files(&files).unwrap();
+    ledger.add_files(&files, 0).unwrap();
     let original_root = ledger.tree.root();
     let original_count = ledger.files.len();
 
@@ -625,10 +643,10 @@ fn test_batch_add_canonical_ordering_security() {
     ];
 
     let mut ledger1 = kontor_crypto::ledger::FileLedger::new();
-    ledger1.add_files(&files_order1).unwrap();
+    ledger1.add_files(&files_order1, 0).unwrap();
 
     let mut ledger2 = kontor_crypto::ledger::FileLedger::new();
-    ledger2.add_files(&files_order2).unwrap();
+    ledger2.add_files(&files_order2, 0).unwrap();
 
     // Roots must be identical
     assert_eq!(
@@ -676,7 +694,7 @@ fn test_batch_add_aggregation_proof_integrity() {
         synthetic_metadata("file_c", api::FieldElement::from(300u64), 5),
         synthetic_metadata("file_d", api::FieldElement::from(400u64), 3),
     ];
-    ledger.add_files(&files).unwrap();
+    ledger.add_files(&files, 0).unwrap();
 
     // Get aggregation proof for each file and verify structure
     for file_id in ["file_a", "file_b", "file_c", "file_d"] {
@@ -726,13 +744,13 @@ fn test_batch_add_ledger_root_changes_with_different_files() {
     ];
 
     let mut ledger_a = kontor_crypto::ledger::FileLedger::new();
-    ledger_a.add_files(&files_a).unwrap();
+    ledger_a.add_files(&files_a, 0).unwrap();
 
     let mut ledger_b = kontor_crypto::ledger::FileLedger::new();
-    ledger_b.add_files(&files_b).unwrap();
+    ledger_b.add_files(&files_b, 0).unwrap();
 
     let mut ledger_c = kontor_crypto::ledger::FileLedger::new();
-    ledger_c.add_files(&files_c).unwrap();
+    ledger_c.add_files(&files_c, 0).unwrap();
 
     // All roots must be different
     assert_ne!(
@@ -760,12 +778,12 @@ fn test_batch_add_rc_computation_consistency() {
 
     // Add via individual method
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
-    ledger_individual.add_file(&metadata).unwrap();
+    ledger_individual.add_file(&metadata, 0).unwrap();
     let rc_individual = ledger_individual.files.get("test_file").unwrap().rc;
 
     // Add via batch method
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files([&metadata]).unwrap();
+    ledger_batch.add_files([&metadata], 0).unwrap();
     let rc_batch = ledger_batch.files.get("test_file").unwrap().rc;
 
     assert_eq!(
@@ -802,12 +820,14 @@ fn test_batch_add_with_real_files_proof_equivalence() {
 
     // Create ledger via individual adds
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
-    ledger_individual.add_file(&metadata_1).unwrap();
-    ledger_individual.add_file(&metadata_2).unwrap();
+    ledger_individual.add_file(&metadata_1, 0).unwrap();
+    ledger_individual.add_file(&metadata_2, 1).unwrap();
 
     // Create ledger via batch add
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files([&metadata_1, &metadata_2]).unwrap();
+    ledger_batch
+        .add_files([&metadata_1, &metadata_2], 0)
+        .unwrap();
 
     // Roots must be identical
     assert_eq!(
@@ -887,13 +907,13 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
 
     // Build ledger via individual adds (in random order)
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
-    for metadata in &files {
-        ledger_individual.add_file(metadata).unwrap();
+    for (i, metadata) in files.iter().enumerate() {
+        ledger_individual.add_file(metadata, i as u64).unwrap();
     }
 
     // Build ledger via batch add (same order)
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files(&files).unwrap();
+    ledger_batch.add_files(&files, 0).unwrap();
 
     // Verify canonical indices are identical
     let expected_order = ["alpha", "beta", "delta", "gamma"]; // Alphabetical

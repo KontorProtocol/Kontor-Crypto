@@ -44,8 +44,8 @@ fn test_files_meta_commitment_consistency() {
 
     // Create ledger
     let mut ledger = FileLedger::new();
-    ledger.add_file(&metadata1).unwrap();
-    ledger.add_file(&metadata2).unwrap();
+    ledger.add_file(&metadata1, 0).unwrap();
+    ledger.add_file(&metadata2, 1).unwrap();
 
     // Generate proof
     let system = PorSystem::new(&ledger);

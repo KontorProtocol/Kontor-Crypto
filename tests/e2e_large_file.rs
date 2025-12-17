@@ -50,7 +50,7 @@ fn test_50mb_file_preparation_and_proof() {
     // Create ledger
     let mut ledger = kontor_crypto::FileLedger::new();
     ledger
-        .add_file(&metadata)
+        .add_file(&metadata, 0)
         .expect("Failed to add file to ledger");
 
     // Generate proof
