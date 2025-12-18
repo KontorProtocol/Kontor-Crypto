@@ -16,6 +16,7 @@
 //! that `get_canonical_index_for_rc()` returns the correct tree position.
 
 use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTree, F};
+use crate::poseidon::calculate_root_commitment;
 use crate::KontorPoRError;
 use ff::Field;
 use serde::{Deserialize, Serialize};
@@ -23,9 +24,22 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+/// Trait for types that can be added to a [`FileLedger`].
+///
+/// This trait decouples the ledger from any specific file metadata type,
+/// allowing any type that provides the required information to be used.
+pub trait FileDescriptor {
+    /// Returns the unique identifier for this file.
+    fn file_id(&self) -> &str;
+    /// Returns the Merkle root of this file's tree.
+    fn root(&self) -> F;
+    /// Returns the depth of this file's Merkle tree.
+    fn depth(&self) -> usize;
+}
+
 /// Entry for a single file in the ledger, combining all file information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileEntry {
+pub struct FileLedgerEntry {
     /// The Merkle root of this file
     pub root: F,
     /// The depth of this file's Merkle tree
@@ -34,13 +48,24 @@ pub struct FileEntry {
     pub rc: F,
 }
 
+impl<T: FileDescriptor> From<&T> for FileLedgerEntry {
+    fn from(entry: &T) -> Self {
+        let rc = calculate_root_commitment(entry.root(), F::from(entry.depth() as u64));
+        FileLedgerEntry {
+            root: entry.root(),
+            depth: entry.depth(),
+            rc,
+        }
+    }
+}
+
 /// Versioned wrapper for ledger serialization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LedgerData {
     /// Format version for forward compatibility
     version: u16,
     /// The actual ledger data (unified file entries)
-    files: BTreeMap<String, FileEntry>,
+    files: BTreeMap<String, FileLedgerEntry>,
     /// Stored root for validation on load
     root: F,
 }
@@ -54,7 +79,7 @@ struct LedgerData {
 pub struct FileLedger {
     /// Unified map from file identifier to complete file information.
     /// BTreeMap ensures deterministic ordering for canonical ledger construction.
-    pub files: BTreeMap<String, FileEntry>,
+    pub files: BTreeMap<String, FileLedgerEntry>,
     /// The aggregated Merkle tree built from rc values (not raw roots).
     #[serde(skip)]
     pub tree: MerkleTree,
@@ -81,25 +106,47 @@ impl FileLedger {
     ///
     /// # Arguments
     ///
-    /// * `file_id` - A unique identifier for the file.
-    /// * `file_root` - The Merkle root of the file to be added.
-    /// * `file_depth` - The depth of the file's Merkle tree (for rc computation).
-    pub fn add_file(
+    /// * `entry` - Any type that implements [`FileDescriptor`], providing
+    ///   the file's ID, root, and depth.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use kontor_crypto::api::prepare_file;
+    /// use kontor_crypto::FileLedger;
+    ///
+    /// let (prepared, metadata) = prepare_file(b"hello", "test.dat").unwrap();
+    /// let mut ledger = FileLedger::new();
+    /// ledger.add_file(&metadata).unwrap();
+    /// ```
+    pub fn add_file(&mut self, entry: &impl FileDescriptor) -> Result<(), KontorPoRError> {
+        self.files
+            .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
+        self.rebuild_tree()
+    }
+
+    /// Adds multiple files to the ledger in a single batch, rebuilding the tree only once.
+    ///
+    /// This is more efficient than calling [`Self::add_file`] in a loop when adding
+    /// many files, as the aggregated Merkle tree is rebuilt only once at the end.
+    ///
+    /// # Arguments
+    ///
+    /// * `files` - An iterator of references to types that implement [`FileDescriptor`].
+    ///
+    /// # Duplicate Handling
+    ///
+    /// If a file with the same `file_id` already exists in the ledger or appears
+    /// multiple times in the batch, the last entry wins.
+    ///
+    pub fn add_files<'a, T: FileDescriptor + 'a>(
         &mut self,
-        file_id: String,
-        file_root: F,
-        file_depth: usize,
+        files: impl IntoIterator<Item = &'a T>,
     ) -> Result<(), KontorPoRError> {
-        use crate::poseidon::calculate_root_commitment;
-
-        let rc = calculate_root_commitment(file_root, F::from(file_depth as u64));
-        let entry = FileEntry {
-            root: file_root,
-            depth: file_depth,
-            rc,
-        };
-
-        self.files.insert(file_id, entry);
+        for entry in files {
+            self.files
+                .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
+        }
         self.rebuild_tree()
     }
 

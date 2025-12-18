@@ -252,13 +252,7 @@ fn setup_network(
 
     // Add node's files first
     for file in &node_files {
-        ledger
-            .add_file(
-                file.metadata.file_id.clone(),
-                file.metadata.root,
-                api::tree_depth_from_metadata(&file.metadata),
-            )
-            .unwrap();
+        ledger.add_file(&file.metadata).unwrap();
     }
 
     // Add additional files to simulate full network (that this node doesn't store)
@@ -275,11 +269,7 @@ fn setup_network(
 
         let (_, metadata) = api::prepare_file(&data, &format!("network_file_{}.dat", i)).unwrap();
         ledger
-            .add_file(
-                metadata.file_id.clone(),
-                metadata.root,
-                api::tree_depth_from_metadata(&metadata),
-            )
+            .add_file(&metadata)
             .unwrap();
     }
 

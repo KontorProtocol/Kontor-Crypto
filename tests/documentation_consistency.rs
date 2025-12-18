@@ -256,6 +256,7 @@ fn test_chunk_size_constant() {
     // 31 bytes = 248 bits, which is < 254 bits
     // This is a compile-time invariant - the calculation is:
     // 31 * 8 = 248, which is always < 254
+    #[allow(clippy::assertions_on_constants)]
     const _: () = assert!(
         31 * 8 < 254,
         "CHUNK_SIZE_BYTES * 8 must be less than field bit capacity"
