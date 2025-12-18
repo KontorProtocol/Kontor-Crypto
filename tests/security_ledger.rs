@@ -217,6 +217,185 @@ fn test_historical_ledger_full_lifecycle() {
 }
 
 #[test]
+fn test_proofs_against_any_intermediate_state_remain_valid() {
+    // This test verifies that proofs generated at ANY point within a block
+    // remain valid after subsequent operations, because all intermediate
+    // states are preserved in the historical roots.
+    println!("=== INTERMEDIATE STATE PROOF VALIDATION TEST ===\n");
+
+    // Create files for the test
+    let data_1 = create_test_data(100, Some(1));
+    let data_2 = create_test_data(100, Some(2));
+    let data_3 = create_test_data(100, Some(3));
+    let data_4 = create_test_data(100, Some(4));
+
+    let (prepared_1, meta_1) = api::prepare_file(&data_1, "file_1.dat").unwrap();
+    let (prepared_2, meta_2) = api::prepare_file(&data_2, "file_2.dat").unwrap();
+    let (prepared_3, meta_3) = api::prepare_file(&data_3, "file_3.dat").unwrap();
+    let (_prepared_4, meta_4) = api::prepare_file(&data_4, "file_4.dat").unwrap();
+
+    let mut ledger = kontor_crypto::ledger::FileLedger::new();
+
+    // =========================================================================
+    // Block 1000: Add files one by one, generate proofs at each step
+    // =========================================================================
+    println!("BLOCK 1000: Adding files and generating proofs at each step\n");
+
+    // Add file_1
+    ledger.add_file(&meta_1, 1000).unwrap();
+    let root_after_1 = ledger.root();
+    println!(
+        "  After file_1: root = {:?}",
+        &format!("{:?}", root_after_1)[0..20]
+    );
+
+    // Add file_2 - generate a multi-file proof at this state
+    ledger.add_file(&meta_2, 1000).unwrap();
+    let root_after_2 = ledger.root();
+    println!(
+        "  After file_2: root = {:?}",
+        &format!("{:?}", root_after_2)[0..20]
+    );
+
+    let challenge_1 = api::Challenge::new_test(meta_1.clone(), 1000, 1, FieldElement::from(111u64));
+    let challenge_2 = api::Challenge::new_test(meta_2.clone(), 1000, 1, FieldElement::from(222u64));
+
+    let system_2 = api::PorSystem::new(&ledger);
+    let proof_at_state_2 = system_2
+        .prove(
+            vec![&prepared_1, &prepared_2],
+            &[challenge_1.clone(), challenge_2.clone()],
+        )
+        .expect("Should generate proof at state 2");
+    println!(
+        "  Generated proof_at_state_2 against root: {:?}",
+        &format!("{:?}", proof_at_state_2.ledger_root)[0..20]
+    );
+
+    // Add file_3 - generate another proof at this state
+    ledger.add_file(&meta_3, 1000).unwrap();
+    let root_after_3 = ledger.root();
+    println!(
+        "  After file_3: root = {:?}",
+        &format!("{:?}", root_after_3)[0..20]
+    );
+
+    let challenge_3 = api::Challenge::new_test(meta_3.clone(), 1000, 1, FieldElement::from(333u64));
+
+    let system_3 = api::PorSystem::new(&ledger);
+    let proof_at_state_3 = system_3
+        .prove(
+            vec![&prepared_1, &prepared_2, &prepared_3],
+            &[
+                challenge_1.clone(),
+                challenge_2.clone(),
+                challenge_3.clone(),
+            ],
+        )
+        .expect("Should generate proof at state 3");
+    println!(
+        "  Generated proof_at_state_3 against root: {:?}",
+        &format!("{:?}", proof_at_state_3.ledger_root)[0..20]
+    );
+
+    // =========================================================================
+    // Block 1001: Add another file, changing the ledger state
+    // =========================================================================
+    println!("\nBLOCK 1001: Adding file_4\n");
+
+    ledger.add_file(&meta_4, 1001).unwrap();
+    let root_after_4 = ledger.root();
+    println!(
+        "  After file_4: root = {:?}",
+        &format!("{:?}", root_after_4)[0..20]
+    );
+
+    // Verify all roots are different
+    assert_ne!(root_after_2, root_after_3);
+    assert_ne!(root_after_3, root_after_4);
+
+    // =========================================================================
+    // Verify ALL historical roots are preserved
+    // =========================================================================
+    println!("Checking historical roots are preserved:");
+    println!(
+        "  Total historical roots: {}",
+        ledger.historical_root_count()
+    );
+    println!(
+        "  Block heights with roots: {}",
+        ledger.historical_block_count()
+    );
+
+    // root_after_1 should be valid (recorded when file_2 was added in block 1000)
+    assert!(
+        ledger.is_valid_root(root_after_1),
+        "root_after_1 should be in historical roots"
+    );
+    println!("  ✓ root_after_1 is valid");
+
+    // root_after_2 should be valid (recorded when file_3 was added in block 1000)
+    assert!(
+        ledger.is_valid_root(root_after_2),
+        "root_after_2 should be in historical roots"
+    );
+    println!("  ✓ root_after_2 is valid");
+
+    // root_after_3 should be valid (recorded when file_4 was added in block 1001)
+    assert!(
+        ledger.is_valid_root(root_after_3),
+        "root_after_3 should be in historical roots"
+    );
+    println!("  ✓ root_after_3 is valid");
+
+    // root_after_4 is the current root
+    assert!(
+        ledger.is_valid_root(root_after_4),
+        "root_after_4 (current) should be valid"
+    );
+    println!("  ✓ root_after_4 (current) is valid");
+
+    // =========================================================================
+    // Verify ALL proofs generated at intermediate states still validate
+    // =========================================================================
+    println!("\nVerifying proofs against intermediate states:");
+
+    let final_system = api::PorSystem::new(&ledger);
+
+    // Proof generated at state 2 (when only file_1, file_2 existed)
+    let result_2 = final_system
+        .verify(
+            &proof_at_state_2,
+            &[challenge_1.clone(), challenge_2.clone()],
+        )
+        .expect("Verification should complete");
+    assert!(
+        result_2,
+        "Proof at state 2 should still be valid after ledger changed"
+    );
+    println!("  ✓ proof_at_state_2 validates (generated when ledger had 2 files)");
+
+    // Proof generated at state 3 (when file_1, file_2, file_3 existed)
+    let result_3 = final_system
+        .verify(
+            &proof_at_state_3,
+            &[
+                challenge_1.clone(),
+                challenge_2.clone(),
+                challenge_3.clone(),
+            ],
+        )
+        .expect("Verification should complete");
+    assert!(
+        result_3,
+        "Proof at state 3 should still be valid after ledger changed"
+    );
+    println!("  ✓ proof_at_state_3 validates (generated when ledger had 3 files)");
+
+    println!("\n=== ALL INTERMEDIATE STATE PROOFS VALIDATED SUCCESSFULLY ===\n");
+}
+
+#[test]
 fn test_single_file_proof_survives_ledger_update() {
     // Single-file proofs (k=1) use the file's Merkle root directly as the
     // aggregated root, NOT the ledger root. So they remain valid even when

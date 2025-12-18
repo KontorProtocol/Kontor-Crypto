@@ -838,8 +838,9 @@ fn test_add_file_and_batch_interleaved() {
 }
 
 #[test]
-fn test_duplicate_block_height_overwrites_historical_root() {
-    // If the same block height is used twice, the historical root entry is overwritten
+fn test_same_block_height_appends_historical_roots() {
+    // Multiple operations at the same block height should APPEND roots,
+    // preserving every intermediate state for proof validation.
     let mut ledger = FileLedger::new();
 
     ledger
@@ -858,20 +859,289 @@ fn test_duplicate_block_height_overwrites_historical_root() {
 
     let root_after_2 = ledger.tree.root();
 
-    // Add another file with the SAME block height - this overwrites
+    // Add another file with the SAME block height - this APPENDS (not overwrites)
     ledger
         .add_file(&dummy_metadata("file_3", 300, 3), 2000)
         .unwrap();
 
-    // Still only 1 historical root (overwritten), but now it's root_after_2
+    // Now we have 2 historical roots at height 2000: root_after_1 and root_after_2
+    assert_eq!(
+        ledger.historical_root_count(),
+        2,
+        "Same block height should append, preserving all intermediate states"
+    );
+    // BOTH roots should be valid
+    assert!(
+        ledger.is_valid_root(root_after_1),
+        "First root at height 2000 should still be valid"
+    );
+    assert!(
+        ledger.is_valid_root(root_after_2),
+        "Second root at height 2000 should also be valid"
+    );
+
+    // Verify we have 1 block height with 2 roots
+    assert_eq!(
+        ledger.historical_block_count(),
+        1,
+        "Should have roots at 1 block height"
+    );
+}
+
+#[test]
+fn test_all_intermediate_states_preserved_within_block() {
+    // Comprehensive test: add many files in a single block, verify ALL
+    // intermediate roots are preserved.
+    let mut ledger = FileLedger::new();
+    let mut captured_roots = Vec::new();
+
+    // Add 5 files in block 1000, capturing each intermediate root
+    for i in 1..=5 {
+        // Capture root BEFORE this add (except for first file on empty ledger)
+        if i > 1 {
+            captured_roots.push(ledger.tree.root());
+        }
+
+        ledger
+            .add_file(
+                &dummy_metadata(&format!("file_{}", i), i as u64 * 100, 3),
+                1000,
+            )
+            .unwrap();
+    }
+
+    // We should have captured 4 intermediate roots (before files 2, 3, 4, 5)
+    assert_eq!(captured_roots.len(), 4);
+
+    // Historical roots should also be 4 (all at block height 1000)
+    assert_eq!(
+        ledger.historical_root_count(),
+        4,
+        "Should have 4 historical roots"
+    );
+    assert_eq!(
+        ledger.historical_block_count(),
+        1,
+        "All roots should be at block height 1000"
+    );
+
+    // Verify ALL captured roots are valid
+    for (i, root) in captured_roots.iter().enumerate() {
+        assert!(
+            ledger.is_valid_root(*root),
+            "Intermediate root {} should be valid",
+            i + 1
+        );
+    }
+
+    // Current root should also be valid
+    assert!(ledger.is_valid_root(ledger.tree.root()));
+}
+
+#[test]
+fn test_batch_add_records_only_one_historical_root() {
+    // IMPORTANT: add_files (batch) should record only ONE historical root,
+    // even though multiple files are being added. This is different from
+    // calling add_file multiple times.
+    let mut ledger = FileLedger::new();
+
+    // Add first file to make ledger non-empty
+    ledger
+        .add_file(&dummy_metadata("file_0", 50, 3), 999)
+        .unwrap();
+
+    let root_before_batch = ledger.tree.root();
+    assert_eq!(ledger.historical_root_count(), 0, "No historical roots yet");
+
+    // Add 5 files in a single batch
+    let batch: Vec<_> = (1..=5)
+        .map(|i| dummy_metadata(&format!("batch_file_{}", i), i as u64 * 100, 3))
+        .collect();
+
+    ledger.add_files(&batch, 1000).unwrap();
+
+    // Should have exactly ONE historical root (the pre-batch root)
     assert_eq!(
         ledger.historical_root_count(),
         1,
-        "Same block height should overwrite, not add"
+        "Batch add should record exactly ONE historical root, not one per file"
     );
-    // The overwritten root is now root_after_2
+
+    // That root should be the root before the batch was added
     assert!(
-        ledger.is_valid_root(root_after_2),
-        "The overwritten root should be the most recent one at that height"
+        ledger.is_valid_root(root_before_batch),
+        "The historical root should be the pre-batch root"
     );
+
+    // Compare to individual adds at same block height
+    let mut ledger2 = FileLedger::new();
+    ledger2
+        .add_file(&dummy_metadata("file_0", 50, 3), 999)
+        .unwrap();
+
+    // Add same files individually at same block height
+    for i in 1..=5 {
+        ledger2
+            .add_file(
+                &dummy_metadata(&format!("batch_file_{}", i), i as u64 * 100, 3),
+                1000,
+            )
+            .unwrap();
+    }
+
+    // Individual adds should create 5 historical roots (one per add)
+    assert_eq!(
+        ledger2.historical_root_count(),
+        5,
+        "Individual adds should create one historical root per operation"
+    );
+
+    // Both ledgers should have the same final root
+    assert_eq!(
+        ledger.tree.root(),
+        ledger2.tree.root(),
+        "Final root should be identical regardless of batch vs individual"
+    );
+}
+
+#[test]
+fn test_save_load_preserves_historical_roots_vec_format() {
+    // CRITICAL: Verify that save/load correctly handles the Vec<[u8; 32]> format
+    // for historical roots, especially with multiple roots at the same block height.
+    let mut ledger = FileLedger::new();
+
+    // Add files at block 1000 - this will create multiple historical roots at same height
+    ledger
+        .add_file(&dummy_metadata("file_1", 100, 3), 1000)
+        .unwrap();
+    let root_1 = ledger.tree.root();
+
+    ledger
+        .add_file(&dummy_metadata("file_2", 200, 3), 1000)
+        .unwrap();
+    let root_2 = ledger.tree.root();
+
+    ledger
+        .add_file(&dummy_metadata("file_3", 300, 3), 1000)
+        .unwrap();
+    let root_3 = ledger.tree.root();
+
+    // Add file at block 1001
+    ledger
+        .add_file(&dummy_metadata("file_4", 400, 3), 1001)
+        .unwrap();
+
+    // Verify initial state
+    assert_eq!(ledger.historical_root_count(), 3);
+    assert_eq!(ledger.historical_block_count(), 2);
+    assert!(ledger.is_valid_root(root_1));
+    assert!(ledger.is_valid_root(root_2));
+    assert!(ledger.is_valid_root(root_3));
+
+    // Save to temp file
+    let temp_path = std::env::temp_dir().join("test_historical_roots_vec.bin");
+    ledger.save(&temp_path).expect("Should save ledger");
+
+    // Load it back
+    let loaded = FileLedger::load(&temp_path).expect("Should load ledger");
+
+    // Clean up
+    std::fs::remove_file(&temp_path).ok();
+
+    // Verify historical roots are preserved
+    assert_eq!(
+        loaded.historical_root_count(),
+        ledger.historical_root_count(),
+        "Historical root count should be preserved"
+    );
+    assert_eq!(
+        loaded.historical_block_count(),
+        ledger.historical_block_count(),
+        "Historical block count should be preserved"
+    );
+
+    // All historical roots should still be valid
+    assert!(
+        loaded.is_valid_root(root_1),
+        "root_1 should be valid after load"
+    );
+    assert!(
+        loaded.is_valid_root(root_2),
+        "root_2 should be valid after load"
+    );
+    assert!(
+        loaded.is_valid_root(root_3),
+        "root_3 should be valid after load"
+    );
+
+    // Current root should match
+    assert_eq!(loaded.tree.root(), ledger.tree.root());
+}
+
+#[test]
+fn test_historical_roots_across_multiple_blocks() {
+    // Test that roots are correctly organized by block height
+    let mut ledger = FileLedger::new();
+
+    // Block 1000: add 3 files
+    ledger
+        .add_file(&dummy_metadata("file_1", 100, 3), 1000)
+        .unwrap();
+    let root_1 = ledger.tree.root();
+
+    ledger
+        .add_file(&dummy_metadata("file_2", 200, 3), 1000)
+        .unwrap();
+    let root_2 = ledger.tree.root();
+
+    ledger
+        .add_file(&dummy_metadata("file_3", 300, 3), 1000)
+        .unwrap();
+    let root_3 = ledger.tree.root();
+
+    // Block 1001: add 2 files
+    ledger
+        .add_file(&dummy_metadata("file_4", 400, 3), 1001)
+        .unwrap();
+    let root_4 = ledger.tree.root();
+
+    ledger
+        .add_file(&dummy_metadata("file_5", 500, 3), 1001)
+        .unwrap();
+    let _root_5 = ledger.tree.root();
+
+    // Check counts
+    // Block 1000: roots before file_2, file_3 = 2 roots (root after file_1, root after file_2)
+    // Block 1001: roots before file_4, file_5 = 2 roots (root_3, root_4)
+    // Total = 4 historical roots across 2 block heights
+    assert_eq!(ledger.historical_root_count(), 4);
+    assert_eq!(ledger.historical_block_count(), 2);
+
+    // All intermediate roots should be valid
+    assert!(ledger.is_valid_root(root_1), "root_1 should be valid");
+    assert!(ledger.is_valid_root(root_2), "root_2 should be valid");
+    assert!(ledger.is_valid_root(root_3), "root_3 should be valid");
+    assert!(ledger.is_valid_root(root_4), "root_4 should be valid");
+
+    // Prune block 1000 - should remove 2 roots
+    ledger.prune_historical_roots_older_than(1001);
+
+    assert_eq!(
+        ledger.historical_root_count(),
+        2,
+        "Should have 2 roots after pruning block 1000"
+    );
+    assert_eq!(
+        ledger.historical_block_count(),
+        1,
+        "Should have 1 block height after pruning"
+    );
+
+    // Block 1000 roots should no longer be valid (except current)
+    assert!(!ledger.is_valid_root(root_1), "root_1 should be pruned");
+    assert!(!ledger.is_valid_root(root_2), "root_2 should be pruned");
+
+    // Block 1001 roots should still be valid
+    assert!(ledger.is_valid_root(root_3), "root_3 should still be valid");
+    assert!(ledger.is_valid_root(root_4), "root_4 should still be valid");
 }

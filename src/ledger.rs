@@ -69,9 +69,10 @@ struct LedgerData {
     /// Stored root for validation on load
     root: F,
     /// Historical roots retained for proof validation (keyed by block height).
+    /// Each block height maps to a list of roots captured during that block's operations.
     /// This is optional for backward compatibility with older serialized ledgers.
     #[serde(default)]
-    historical_roots: BTreeMap<u64, [u8; 32]>,
+    historical_roots: BTreeMap<u64, Vec<[u8; 32]>>,
 }
 
 /// The `FileLedger` manages the aggregated Merkle tree of all file roots.
@@ -83,9 +84,13 @@ struct LedgerData {
 /// ## Historical Root Tracking
 ///
 /// The ledger maintains a set of historical roots for proof validation.
-/// When files are added/removed, the old root is preserved in `historical_roots`.
-/// Verifiers check that a proof's `ledger_root` is in this set before accepting it.
-/// This enables cross-block aggregation without proof regeneration.
+/// When files are added, the pre-modification root is appended to `historical_roots`.
+/// Each block height maps to a list of roots, capturing every intermediate state
+/// within that block. Verifiers check that a proof's `ledger_root` is in this set
+/// before accepting it. This enables cross-block aggregation without proof regeneration.
+///
+/// Pruning is by block height: when old block heights are pruned, all roots
+/// associated with those heights are removed together.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileLedger {
     /// Unified map from file identifier to complete file information.
@@ -96,14 +101,18 @@ pub struct FileLedger {
     pub tree: MerkleTree,
     /// Accepted historical roots for proof validation, keyed by block height.
     ///
+    /// Each block height maps to a Vec of roots captured during operations in that block.
+    /// This preserves every intermediate state, allowing proofs generated at any point
+    /// to remain valid.
+    ///
     /// Proofs generated against a ledger root are valid as long as that root is either:
     /// - the current root, or
-    /// - present in this map.
+    /// - present in any of the Vec entries in this map.
     ///
     /// Callers are expected to prune this map according to their consensus rules
     /// (typically a sliding window tied to block height).
     #[serde(default)]
-    pub historical_roots: BTreeMap<u64, [u8; 32]>,
+    pub historical_roots: BTreeMap<u64, Vec<[u8; 32]>>,
 }
 
 impl Default for FileLedger {
@@ -134,7 +143,8 @@ impl FileLedger {
     /// Records the current root as a valid historical root at the given block height.
     ///
     /// Call this before modifying the ledger (e.g., before adding files) to preserve the
-    /// old root for proof validation.
+    /// old root for proof validation. Each call appends to the list of roots for that
+    /// block height, preserving all intermediate states within a block.
     ///
     /// Using a height-keyed map makes pruning unambiguous: old roots are invalidated by
     /// time (block height), not by the number of file additions.
@@ -142,7 +152,10 @@ impl FileLedger {
         use ff::PrimeField;
         let root = self.tree.root();
         let repr: [u8; 32] = root.to_repr().into();
-        self.historical_roots.insert(block_height, repr);
+        self.historical_roots
+            .entry(block_height)
+            .or_default()
+            .push(repr);
     }
 
     /// Checks if a root is valid (either current or in historical set).
@@ -153,9 +166,11 @@ impl FileLedger {
         if root == self.tree.root() {
             return true;
         }
-        // Check historical roots
+        // Check historical roots (each block height has a Vec of roots)
         let repr: [u8; 32] = root.to_repr().into();
-        self.historical_roots.values().any(|r| r == &repr)
+        self.historical_roots
+            .values()
+            .any(|roots| roots.iter().any(|r| r == &repr))
     }
 
     /// Prunes historical roots strictly older than `min_block_height`.
@@ -187,8 +202,13 @@ impl FileLedger {
         self.historical_roots.clear();
     }
 
-    /// Returns the number of historical roots being tracked.
+    /// Returns the total number of historical roots being tracked across all block heights.
     pub fn historical_root_count(&self) -> usize {
+        self.historical_roots.values().map(|v| v.len()).sum()
+    }
+
+    /// Returns the number of block heights with historical roots.
+    pub fn historical_block_count(&self) -> usize {
         self.historical_roots.len()
     }
 
