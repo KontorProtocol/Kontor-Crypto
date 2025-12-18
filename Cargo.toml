@@ -10,6 +10,7 @@ homepage = "https://github.com/KontorProtocol/Kontor-Crypto"
 keywords = ["cryptography", "snark", "por", "storage", "zero-knowledge"]
 categories = ["cryptography", "algorithms"]
 readme = "README.md"
+autobenches = false
 exclude = [
     ".github/",
     ".githooks/",
@@ -43,6 +44,7 @@ thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
 tracing-tree = "0.3"
+peak_alloc = { version = "0.2", optional = true }
 
 # --- Erasure Coding Dependencies ---
 
@@ -53,9 +55,12 @@ reed-solomon-erasure = "6.0"
 clap = { version = "4.5.10", features = ["derive"] }
 rand = "0.8.5"
 statrs = "0.18.0"
+divan = { version = "4.1", package = "codspeed-divan-compat" }
 
 [features]
 default = []
+memory-profiling = ["peak_alloc"]
+bench-smoke = []
 
 # Documentation configuration for docs.rs
 [package.metadata.docs.rs]
@@ -72,6 +77,6 @@ opt-level = 3
 [profile.bench]
 opt-level = 3
 
-[[bin]]
-name = "bench"
-path = "src/bench.rs"
+[[bench]]
+name = "bench_main"
+harness = false

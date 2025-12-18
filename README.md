@@ -12,13 +12,19 @@ The system uses [Nova](https://eprint.iacr.org/2021/370) recursive SNARKs via Mi
 
 ## Core Capabilities
 
--   Partition files into fixed 31-byte symbols for direct field element encoding.
--   Apply multi-codeword Reed-Solomon (GF(2^8)) for fault tolerance.
--   Generate Poseidon Merkle trees over all symbols (data + parity).
--   Create recursive SNARKs proving possession of randomly sampled symbols.
--   Compress proofs to constant ~10 kB size regardless of file count or challenge count.
--   Support dynamic circuit parameters with in-memory caching.
--   Reconstruct original files from partial symbol availability (≥90% per codeword).
+- Partition files into fixed 31-byte symbols for direct field element encoding.
+- Apply multi-codeword Reed-Solomon (GF(2^8)) for fault tolerance.
+- Generate Poseidon Merkle trees over all symbols (data + parity).
+- Create recursive SNARKs proving possession of randomly sampled symbols.
+- Compress proofs to constant ~10 kB size regardless of file count or challenge count.
+- Support dynamic circuit parameters with in-memory caching.
+- Reconstruct original files from partial symbol availability (≥90% per codeword).
+
+## Performance Characteristics
+
+- **Proof Size:** ~10 kB (constant across challenge count and file set within a shape).
+- **Verification Time:** ~50 ms for compressed SNARK verification.
+- **Proving Time:** Approximately linear in the number of recursive steps.
 
 ## API Reference
 
@@ -72,9 +78,9 @@ use kontor_crypto::FileLedger;
 let my_data = b"This is a test file for the PoR system.";
 let (prepared_file, metadata) = prepare_file(my_data, "test.dat").unwrap();
 
-// 2. Create ledger and add the file
+// 2. Create ledger and add the file (block_height for historical root tracking)
 let mut ledger = FileLedger::new();
-ledger.add_file(metadata.file_id.clone(), metadata.root, tree_depth_from_metadata(&metadata)).unwrap();
+ledger.add_file(&metadata).unwrap();
 
 // 3. Create PorSystem and challenge
 let system = PorSystem::new(&ledger);
@@ -93,8 +99,77 @@ assert!(is_valid, "Proof verification failed!");
 println!("Proof successfully generated and verified with Nova PoR API.");
 ```
 
+## CLI & Simulation
+
+The project includes a CLI that simulates storage node operations with heterogeneous file sizes, staggered challenges, and multi-file proof aggregation.
+
+### Usage
+
+```bash
+# Default: small demo (100 files in ledger, node stores 10, 5 challenges)
+cargo run
+
+# Large-scale test with memory profiling
+cargo run --features memory-profiling -- \
+  --total-files-in-ledger 1000 \
+  --files-stored-by-node 100 \
+  --challenges-to-simulate 20 \
+  --profile-memory
+```
+
+### Flags
+
+- `--total-files-in-ledger <N>`: Network size (default: 100).
+- `--files-stored-by-node <N>`: Files this node stores (default: 10).
+- `--challenges-to-simulate <N>`: Challenges to batch (default: 5).
+- `--file-size-distribution <TYPE>`: "uniform", "mixed", or "large-heavy" (default: mixed).
+- `--no-verify`: Skip verification phase.
+- `--profile-memory`: Track peak memory usage.
+- `-v`, `-vv`: Increase verbosity (debug/trace).
+
+## Benchmark Suite
+
+Run performance benchmarks with statistical analysis and CI integration via CodSpeed:
+
+```bash
+# Run all benchmarks locally
+cargo bench
+
+# For CI/CD integration with CodSpeed (optional):
+cargo install cargo-codspeed --locked
+cargo codspeed build
+cargo codspeed run
+```
+
+## Development
+
+### Test Suite
+
+Run the extensive unit and integration test suite:
+
+```bash
+cargo install cargo-nextest
+cargo nextest run
+```
+
+### Git Hooks
+
+Enable the pre-push hook to automatically run formatting, clippy, tests, and security audits:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+### Errors and Failure Modes
+
+Key error variants surfaced at API boundaries (see `KontorPoRError`):
+
+- `InvalidInput`, `InvalidChallengeCount`, `ChallengeMismatch` (e.g., non-uniform `num_challenges` across the batch).
+- `FileNotFound`, `FileNotInLedger`, `MetadataMismatch`.
+- `MerkleTree`, `Circuit`, `Snark`.
+- `Serialization`, `IO`.
+
 ## Documentation
 
--   **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
--   **[Technical Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design
--   **[Developer Guide](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/DEVELOPER_GUIDE.md)** - CLI usage, testing, and benchmarking
+- **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
+- **[Library Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design

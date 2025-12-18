@@ -1,0 +1,49 @@
+name: CodSpeed Performance Monitoring
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:  # Allow manual triggers for baseline generation
+
+permissions:
+  contents: read
+
+jobs:
+  benchmarks:
+    name: Benchmarks (${{ matrix.shard }})
+    runs-on: codspeed-macro
+    timeout-minutes: 600
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - primitives
+          - file_preparation
+          - proving
+          - verification
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: "benchmarks-${{ runner.arch }}"
+
+      - name: Prepare CodSpeed tooling
+        run: |
+          cargo install cargo-codspeed --locked
+          cargo codspeed build -m walltime
+
+      - name: Run benchmarks with CodSpeed
+        # v4.4.1 (tag v4) pinned to commit for supply-chain safety
+        uses: CodSpeedHQ/action@346a2d8a8d9d38909abd0bc3d23f773110f076ad
+        with:
+          mode: walltime
+          run: cargo codspeed run -- ${{ matrix.shard }}
