@@ -131,11 +131,7 @@ mod proving {
                         api::prepare_file(&data, &format!("f{}", i)).unwrap();
 
                     ledger
-                        .add_file(
-                            metadata.file_id.clone(),
-                            metadata.root,
-                            api::tree_depth_from_metadata(&metadata),
-                        )
+                        .add_file(&metadata)
                         .unwrap();
 
                     let challenge = Challenge::new(
@@ -184,11 +180,7 @@ mod verification {
                 let (prepared, metadata) = api::prepare_file(&data, "v.dat").unwrap();
                 let mut ledger = FileLedger::new();
                 ledger
-                    .add_file(
-                        metadata.file_id.clone(),
-                        metadata.root,
-                        api::tree_depth_from_metadata(&metadata),
-                    )
+                    .add_file(&metadata)
                     .unwrap();
 
                 let challenge = Challenge::new(
