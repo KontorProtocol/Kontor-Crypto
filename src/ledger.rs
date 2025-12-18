@@ -299,6 +299,14 @@ impl FileLedger {
         files: impl IntoIterator<Item = &'a T>,
         block_height: u64,
     ) -> Result<(), KontorPoRError> {
+        // Collect files first to check if batch is empty
+        let files_to_add: Vec<_> = files.into_iter().collect();
+
+        // Early return for empty batch - no state change needed
+        if files_to_add.is_empty() {
+            return Ok(());
+        }
+
         // Snapshot current state for rollback on failure
         let old_files = self.files.clone();
         let old_tree = self.tree.clone();
@@ -310,7 +318,7 @@ impl FileLedger {
         }
 
         // Insert all new files
-        for entry in files {
+        for entry in files_to_add {
             self.files
                 .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
         }

@@ -759,7 +759,7 @@ fn test_add_files_atomicity_state_consistency() {
 #[test]
 fn test_empty_batch_does_not_record_historical_root() {
     // Adding an empty batch to a non-empty ledger should NOT record a historical root
-    // because nothing actually changed
+    // because nothing actually changed - this is a no-op
     let mut ledger = FileLedger::new();
 
     ledger
@@ -769,27 +769,79 @@ fn test_empty_batch_does_not_record_historical_root() {
     let root_before = ledger.tree.root();
     let historical_count_before = ledger.historical_root_count();
 
-    // Add empty batch
+    // Add empty batch - should be a complete no-op
     let empty: Vec<api::FileMetadata> = vec![];
     ledger.add_files(&empty, 1001).unwrap();
 
-    // Historical root should still be recorded since ledger was non-empty
-    // (the operation still "commits" at the block height even if no files added)
-    // This is the current behavior - if you want to skip recording for empty batches,
-    // that would be a different design decision
+    // Root should not change
     assert_eq!(
         ledger.tree.root(),
         root_before,
         "Root should not change for empty batch"
     );
 
-    // Note: Current implementation DOES record historical root even for empty batch
-    // because the check is `if !self.files.is_empty()` not `if !files_to_add.is_empty()`
-    // This may or may not be desired behavior
+    // Historical root count should NOT change for empty batch
+    // Empty batches are early-returned without any state modification
     assert_eq!(
         ledger.historical_root_count(),
-        historical_count_before + 1,
-        "Historical root is recorded even for empty batch (current behavior)"
+        historical_count_before,
+        "Empty batch should NOT record historical root"
+    );
+}
+
+#[test]
+fn test_empty_batch_is_true_noop() {
+    // Verify that an empty batch is a complete no-op at all stages:
+    // - Empty ledger: no change
+    // - Non-empty ledger: no change, no historical root recorded
+
+    // Case 1: Empty batch on empty ledger
+    let mut ledger_empty = FileLedger::new();
+    let root_before_empty = ledger_empty.tree.root();
+
+    let empty: Vec<api::FileMetadata> = vec![];
+    ledger_empty.add_files(&empty, 1000).unwrap();
+
+    assert_eq!(
+        ledger_empty.files.len(),
+        0,
+        "Empty ledger should stay empty"
+    );
+    assert_eq!(
+        ledger_empty.tree.root(),
+        root_before_empty,
+        "Root unchanged"
+    );
+    assert_eq!(
+        ledger_empty.historical_root_count(),
+        0,
+        "No historical roots"
+    );
+
+    // Case 2: Empty batch on non-empty ledger
+    let mut ledger = FileLedger::new();
+    ledger
+        .add_file(&dummy_metadata("file_1", 100, 3), 1000)
+        .unwrap();
+    ledger
+        .add_file(&dummy_metadata("file_2", 200, 3), 1001)
+        .unwrap();
+
+    let files_before = ledger.files.len();
+    let root_before = ledger.tree.root();
+    let historical_before = ledger.historical_root_count();
+
+    // Multiple empty batches should all be no-ops
+    for block in 1002..1005 {
+        ledger.add_files(&empty, block).unwrap();
+    }
+
+    assert_eq!(ledger.files.len(), files_before, "File count unchanged");
+    assert_eq!(ledger.tree.root(), root_before, "Root unchanged");
+    assert_eq!(
+        ledger.historical_root_count(),
+        historical_before,
+        "No new historical roots from empty batches"
     );
 }
 
