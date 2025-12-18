@@ -226,9 +226,7 @@ pub const DEFAULT_ERASURE_PARITY_SHARDS: usize = 1;
 pub const MAX_LEDGER_SIZE_BYTES: usize = 100 * 1024 * 1024;
 
 /// Current ledger format version
-/// v1: Initial format with single root per block height
-/// v2: Multiple roots per block height (Vec) to preserve intermediate states
-pub const LEDGER_FORMAT_VERSION: u16 = 2;
+pub const LEDGER_FORMAT_VERSION: u16 = 1;
 
 // --- Test-related Constants ---
 
