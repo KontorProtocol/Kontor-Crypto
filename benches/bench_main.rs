@@ -130,9 +130,7 @@ mod proving {
                     let (prepared, metadata) =
                         api::prepare_file(&data, &format!("f{}", i)).unwrap();
 
-                    ledger
-                        .add_file(&metadata)
-                        .unwrap();
+                    ledger.add_file(&metadata).unwrap();
 
                     let challenge = Challenge::new(
                         metadata,
@@ -179,9 +177,7 @@ mod verification {
                 let data = generate_test_data(16 * 1024, 42);
                 let (prepared, metadata) = api::prepare_file(&data, "v.dat").unwrap();
                 let mut ledger = FileLedger::new();
-                ledger
-                    .add_file(&metadata)
-                    .unwrap();
+                ledger.add_file(&metadata).unwrap();
 
                 let challenge = Challenge::new(
                     metadata,

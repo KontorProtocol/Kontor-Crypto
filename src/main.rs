@@ -268,9 +268,7 @@ fn setup_network(
         rng.fill_bytes(&mut data);
 
         let (_, metadata) = api::prepare_file(&data, &format!("network_file_{}.dat", i)).unwrap();
-        ledger
-            .add_file(&metadata)
-            .unwrap();
+        ledger.add_file(&metadata).unwrap();
     }
 
     // Find depth range across all node files
