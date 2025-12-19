@@ -105,6 +105,38 @@ fn file_preparation(bencher: Bencher, size_kb: usize) {
 mod proving {
     use super::*;
 
+    /// Pre-generate ledger, files, and challenges for proving benchmark.
+    /// This avoids regenerating expensive fixtures on each iteration.
+    fn setup_proving_fixture(
+        size_kb: usize,
+        num_files: usize,
+        num_challenges: usize,
+    ) -> (FileLedger, Vec<api::PreparedFile>, Vec<Challenge>) {
+        let mut prepared_files = Vec::new();
+        let mut challenges = Vec::new();
+        let mut ledger = FileLedger::new();
+
+        for i in 0..num_files {
+            let data = generate_test_data(size_kb * 1024, 42 + i as u64);
+            let (prepared, metadata) = api::prepare_file(&data, &format!("f{}", i)).unwrap();
+
+            ledger.add_file(&metadata).unwrap();
+
+            let challenge = Challenge::new(
+                metadata,
+                1000,
+                num_challenges,
+                FieldElement::from(config::TEST_RANDOM_SEED),
+                String::from("bench"),
+            );
+
+            prepared_files.push(prepared);
+            challenges.push(challenge);
+        }
+
+        (ledger, prepared_files, challenges)
+    }
+
     #[cfg_attr(
         feature = "bench-smoke",
         divan::bench(sample_count = 1, sample_size = 1, args = [(10, 1, 2)]) // 10KB, 1 file, 2 challenges
@@ -125,40 +157,16 @@ mod proving {
     fn prove(bencher: Bencher, args: (usize, usize, usize)) {
         let (size_kb, num_files, num_challenges) = args;
 
-        bencher
-            .with_inputs(|| {
-                let mut prepared_files = Vec::new();
-                let mut challenges = Vec::new();
-                let mut ledger = FileLedger::new();
+        // Generate fixture once, outside the benchmark loop
+        let (ledger, files, challenges) = setup_proving_fixture(size_kb, num_files, num_challenges);
 
-                for i in 0..num_files {
-                    let data = generate_test_data(size_kb * 1024, 42 + i as u64);
-                    let (prepared, metadata) =
-                        api::prepare_file(&data, &format!("f{}", i)).unwrap();
-
-                    ledger.add_file(&metadata).unwrap();
-
-                    let challenge = Challenge::new(
-                        metadata,
-                        1000,
-                        num_challenges,
-                        FieldElement::from(config::TEST_RANDOM_SEED),
-                        String::from("bench"),
-                    );
-
-                    prepared_files.push(prepared);
-                    challenges.push(challenge);
-                }
-
-                (ledger, prepared_files, challenges)
-            })
-            .bench_values(|(ledger, files, challenges)| {
-                let system = PorSystem::new(&ledger);
-                let files_ref: Vec<&_> = files.iter().collect();
-                system
-                    .prove(black_box(files_ref), black_box(&challenges))
-                    .unwrap();
-            });
+        bencher.bench(|| {
+            let system = PorSystem::new(&ledger);
+            let files_ref: Vec<&_> = files.iter().collect();
+            system
+                .prove(black_box(files_ref), black_box(&challenges))
+                .unwrap();
+        });
     }
 }
 

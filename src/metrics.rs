@@ -262,18 +262,18 @@ pub enum FileSizeCategory {
 }
 
 impl FileSizeCategory {
-    /// Get a size within this category's range
-    pub fn sample_size(&self, rng_seed: u64) -> usize {
-        use std::collections::hash_map::RandomState;
-        use std::hash::BuildHasher;
+    /// Get a size within this category's range.
+    /// Uses seeded RNG for reproducible results.
+    pub fn sample_size(&self, seed: u64) -> usize {
+        use rand::{rngs::StdRng, Rng, SeedableRng};
 
-        let hash = RandomState::new().hash_one(rng_seed);
+        let mut rng = StdRng::seed_from_u64(seed);
 
         match self {
-            FileSizeCategory::Small => 10 * 1024 + (hash % (40 * 1024)) as usize,
-            FileSizeCategory::Medium => 50 * 1024 + (hash % (450 * 1024)) as usize,
-            FileSizeCategory::Large => 500 * 1024 + (hash % (9500 * 1024)) as usize,
-            FileSizeCategory::XLarge => 10 * 1024 * 1024 + (hash % (90 * 1024 * 1024)) as usize,
+            FileSizeCategory::Small => rng.gen_range(10 * 1024..50 * 1024),
+            FileSizeCategory::Medium => rng.gen_range(50 * 1024..500 * 1024),
+            FileSizeCategory::Large => rng.gen_range(500 * 1024..10 * 1024 * 1024),
+            FileSizeCategory::XLarge => rng.gen_range(10 * 1024 * 1024..100 * 1024 * 1024),
         }
     }
 
