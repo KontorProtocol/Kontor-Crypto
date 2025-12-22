@@ -67,30 +67,84 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // Create unified preprocessing plan (derives root internally for security)
     let plan = Plan::make_plan(challenges, ledger)?;
 
-    // Validate proof's ledger_root for multi-file proofs
-    // For multi-file proofs (aggregated_tree_depth > 0), the proof's ledger_root must be
-    // in the ledger's set of valid roots (current or historical).
+    // --- Proof shape + index sanity checks ---
     //
-    // The proof includes the ledger indices at proof generation time, so we don't need
-    // to recompute them from the current ledger state. The SNARK proves the indices
-    // are correct for the claimed root.
-    //
-    // For single-file proofs (aggregated_tree_depth == 0), we skip this check because the
-    // circuit uses the file's Merkle root directly, not the ledger root.
-    if proof.aggregated_tree_depth > 0 {
-        if !ledger.is_valid_root(proof.ledger_root) {
-            debug!(
-                "Proof ledger_root {:?} is not in ledger's valid roots (current: {:?}, historical count: {})",
-                proof.ledger_root,
-                ledger.root(),
-                ledger.historical_root_count()
-            );
-            return Err(KontorPoRError::InvalidLedgerRoot {
-                proof_root: format!("{:?}", proof.ledger_root),
-                reason: "Proof's ledger_root is not in the set of valid historical roots"
-                    .to_string(),
-            });
+    // The circuit consumes `ledger_root` and `ledger_indices` as public inputs. It uses the
+    // low `aggregated_tree_depth` bits of each ledger index to select the aggregation path.
+    // Enforcing index range here makes the statement canonical (avoids equivalent indices
+    // differing only in high bits).
+    let is_multi_file = plan.files_per_step > 1;
+
+    if is_multi_file {
+        if proof.aggregated_tree_depth == 0 {
+            return Err(KontorPoRError::InvalidInput(
+                "Multi-file proof must have non-zero aggregated_tree_depth".to_string(),
+            ));
         }
+
+        // A verifier cannot accept a proof claiming an aggregation depth larger than the
+        // verifier's current ledger depth.
+        let current_ledger_depth = ledger.tree.layers.len().saturating_sub(1);
+        if proof.aggregated_tree_depth > current_ledger_depth {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "Proof aggregated_tree_depth {} exceeds current ledger depth {}",
+                proof.aggregated_tree_depth, current_ledger_depth
+            )));
+        }
+    } else if proof.aggregated_tree_depth != 0 {
+        return Err(KontorPoRError::InvalidInput(
+            "Single-file proof must have aggregated_tree_depth = 0".to_string(),
+        ));
+    }
+
+    if proof.ledger_indices.len() != plan.files_per_step {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "Proof ledger_indices length {} does not match circuit files_per_step {}",
+            proof.ledger_indices.len(),
+            plan.files_per_step
+        )));
+    }
+
+    if is_multi_file {
+        let max_leaf_count = 1usize
+            .checked_shl(proof.aggregated_tree_depth as u32)
+            .ok_or_else(|| {
+                KontorPoRError::InvalidInput(format!(
+                    "Invalid aggregated_tree_depth {}: too large for host usize",
+                    proof.aggregated_tree_depth
+                ))
+            })?;
+
+        for (i, idx) in proof.ledger_indices.iter().enumerate() {
+            if *idx >= max_leaf_count {
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "Proof ledger_indices[{}] = {} is out of range for aggregated_tree_depth {} (max {})",
+                    i,
+                    idx,
+                    proof.aggregated_tree_depth,
+                    max_leaf_count - 1
+                )));
+            }
+        }
+    }
+
+    // --- Historical root validation (multi-file only) ---
+    //
+    // For multi-file proofs, `proof.ledger_root` must be either the current root or a retained
+    // historical root. For single-file proofs, the circuit uses the file's root directly.
+    if is_multi_file && !ledger.is_valid_root(proof.ledger_root) {
+        debug!(
+            "Proof ledger_root {:?} is not in ledger's valid roots (current: {:?}, historical count: {})",
+            proof.ledger_root,
+            ledger.root(),
+            ledger.historical_root_count()
+        );
+        return Err(KontorPoRError::InvalidLedgerRoot {
+            proof_root: format!("{:?}", proof.ledger_root),
+            reason: "Proof's ledger_root is not in the set of valid historical roots".to_string(),
+        });
+    }
+    if is_multi_file {
         debug!(
             "Proof ledger_root {:?} validated as historical root",
             proof.ledger_root
@@ -161,7 +215,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     tracing::Span::current().record("num_iterations", num_iterations);
     tracing::Span::current().record("files_per_step", plan.files_per_step);
 
-    if proof.aggregated_tree_depth == 0 {
+    if plan.aggregated_tree_depth == 0 {
         debug!("verify() - Single-file verification:");
     } else {
         debug!("verify() - Multi-file verification:");

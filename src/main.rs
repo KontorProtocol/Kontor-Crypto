@@ -352,7 +352,7 @@ fn simulate_challenges(node_files: &[StoredFile], num_challenges: usize) -> Vec<
         let seed = FieldElement::from(u64::from_le_bytes(block_hash_seed[..8].try_into().unwrap()));
 
         // Protocol default: s_chal = 100 symbols per challenge
-        let num_symbols_to_prove = 100;
+        let num_symbols_to_prove = config::S_CHAL;
 
         let challenge = Challenge::new(
             file.metadata.clone(),
@@ -387,8 +387,8 @@ fn display_challenge_info(challenges: &[Challenge]) {
     );
     info!("  ✓ Received {} challenges:", challenges.len());
     for challenge in challenges {
-        let expiration = challenge.block_height + 2016; // W_proof from protocol
-                                                        // Show file ID prefix to identify which file is being challenged
+        let expiration = challenge.block_height + config::W_PROOF; // W_proof from protocol
+                                                                   // Show file ID prefix to identify which file is being challenged
         info!(
             "    • File {} at block {} (expires: {})",
             &challenge.file_metadata.file_id[..8],

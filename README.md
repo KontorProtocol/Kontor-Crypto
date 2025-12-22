@@ -81,6 +81,7 @@ let (prepared_file, metadata) = prepare_file(my_data, "test.dat").unwrap();
 // 2. Create ledger and add the file (block_height for historical root tracking)
 let mut ledger = FileLedger::new();
 ledger.add_file(&metadata, 1000).unwrap();
+ledger.add_file(&metadata, 1000).unwrap();
 
 // 3. Create PorSystem and challenge
 let system = PorSystem::new(&ledger);
