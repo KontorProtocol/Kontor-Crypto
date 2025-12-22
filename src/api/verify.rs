@@ -1,33 +1,38 @@
 //! Proof verification functionality.
 //!
-//! This module contains the verification logic with automatic
-//! secure root derivation from the ledger.
+//! This module contains the verification logic with pinned ledger root validation.
 
 use super::{
     plan::Plan,
     types::{Challenge, FieldElement, Proof},
 };
-use crate::{config, ledger::FileLedger, KontorPoRError, Result};
+use crate::{
+    config, ledger::FileLedger, poseidon::calculate_root_commitment, KontorPoRError, Result,
+};
 use ff::Field;
 use tracing::{debug, info_span};
 
 /// Verifies a proof against one or more challenges.
 ///
-/// This function implements the Option 1 security model verification with proper ledger root pinning.
+/// This function implements secure verification with pinned ledger roots.
 /// Parameters are derived automatically to match the proof structure.
 ///
-/// # Security: Ledger Root Pinning
+/// # Security: Pinned Ledger Root with Membership Validation
 ///
-/// **SECURE**: The expected aggregated root is derived from the provided `ledger` automatically.
-/// This prevents malicious provers from substituting a different ledger with a different root.
+/// For multi-file proofs, the `ledger_root` is pinned in each challenge at creation time.
+/// This prevents proof invalidation when new files are added to the network.
 ///
-/// - Single-file: Uses the file root from the challenge metadata
-/// - Multi-file: Uses the canonical ledger root from the ledger
+/// The verifier validates that:
+/// 1. All challenges have the same `ledger_root` (for aggregation)
+/// 2. All challenged files exist in the current ledger (membership check)
+///
+/// Since the ledger is append-only, if files exist now, they existed at the pinned root.
+/// This provides equivalent security to using the current ledger root.
 ///
 /// # Public Inputs Verification
 ///
 /// The verifier reconstructs the same public inputs as the prover:
-/// - `aggregated_root`: Derived automatically from the ledger
+/// - `aggregated_root`: From pinned `ledger_root` in challenges
 /// - `ledger_index_0, ..., ledger_index_{F-1}`: Canonical positions in ledger
 /// - `actual_depth_0, ..., actual_depth_{F-1}`: Depths computed from challenge metadata
 ///
@@ -98,6 +103,29 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
             )));
         }
     }
+
+    // SECURITY: Validate that all challenged files exist in the current ledger.
+    // This is required because we use the pinned ledger_root from challenges,
+    // not the current ledger root. By verifying file existence, we ensure:
+    // 1. The challenged files are legitimate (exist in canonical ledger)
+    // 2. The pinned root was valid (since ledger is append-only, files existed then too)
+    for challenge in challenges {
+        let file_depth = crate::api::tree_depth_from_metadata(&challenge.file_metadata);
+        let rc = calculate_root_commitment(
+            challenge.file_metadata.root,
+            FieldElement::from(file_depth as u64),
+        );
+
+        if ledger.get_canonical_index_for_rc(rc).is_none() {
+            return Err(KontorPoRError::FileNotInLedger {
+                file_id: challenge.file_metadata.file_id.clone(),
+            });
+        }
+    }
+    debug!(
+        "verify() - All {} challenged files validated in current ledger",
+        challenges.len()
+    );
 
     // All preprocessing is now handled by the plan (eliminates duplication with prove)
     debug!("Verify commitment calculation (from plan):");

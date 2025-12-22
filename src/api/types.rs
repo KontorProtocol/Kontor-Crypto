@@ -275,16 +275,30 @@ pub struct Challenge {
     pub seed: FieldElement,
     /// Identifier of the Storage Node being challenged
     pub prover_id: String,
+    /// The ledger root at the time this challenge was created.
+    /// This pins the proof to a specific ledger state, preventing invalidation
+    /// when new files are added to the network.
+    pub ledger_root: FieldElement,
 }
 
 impl Challenge {
     /// Create a new challenge for a file
+    ///
+    /// # Arguments
+    ///
+    /// * `file_metadata` - The public metadata of the file being challenged
+    /// * `block_height` - The block height when this challenge was created
+    /// * `num_challenges` - The number of proof iterations requested
+    /// * `seed` - A deterministic seed used to generate challenges (e.g., from block hash)
+    /// * `prover_id` - Identifier of the Storage Node being challenged
+    /// * `ledger_root` - The ledger root at challenge creation time (pins the proof state)
     pub fn new(
         file_metadata: FileMetadata,
         block_height: u64,
         num_challenges: usize,
         seed: FieldElement,
         prover_id: String,
+        ledger_root: FieldElement,
     ) -> Self {
         Self {
             file_metadata,
@@ -292,6 +306,7 @@ impl Challenge {
             num_challenges,
             seed,
             prover_id,
+            ledger_root,
         }
     }
 
@@ -302,6 +317,7 @@ impl Challenge {
         block_height: u64,
         num_challenges: usize,
         seed: FieldElement,
+        ledger_root: FieldElement,
     ) -> Self {
         Self::new(
             file_metadata,
@@ -309,6 +325,7 @@ impl Challenge {
             num_challenges,
             seed,
             String::from("test_prover"),
+            ledger_root,
         )
     }
 
@@ -339,6 +356,9 @@ impl Challenge {
 
         // Add prover_id
         hasher.update(self.prover_id.as_bytes());
+
+        // Add ledger_root (pins challenge to specific ledger state)
+        hasher.update(self.ledger_root.to_repr());
 
         let result = hasher.finalize();
         ChallengeID(result.into())

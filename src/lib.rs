@@ -38,7 +38,8 @@
 //!
 //! // 3. Create PorSystem and generate proof
 //! let system = PorSystem::new(&ledger);
-//! let challenge = api::Challenge::new(metadata.clone(), 1000, 3, api::FieldElement::from(42u64), String::from("node_1"));
+//! let ledger_root = ledger.tree.root();  // Pin ledger root at challenge creation
+//! let challenge = api::Challenge::new(metadata.clone(), 1000, 3, api::FieldElement::from(42u64), String::from("node_1"), ledger_root);
 //! let proof = system.prove(vec![&prepared], &[challenge.clone()])?;
 //!
 //! // 4. Verify the proof
@@ -62,9 +63,10 @@
 //!
 //! // 3. Create challenges and prove (different seeds supported for multi-batch aggregation)
 //! let system = PorSystem::new(&ledger);
+//! let ledger_root = ledger.tree.root();  // Pin ledger root at challenge creation
 //! let challenges = vec![
-//!     api::Challenge::new(metadata1.clone(), 1000, 2, api::FieldElement::from(42u64), String::from("node_1")),
-//!     api::Challenge::new(metadata2.clone(), 1001, 2, api::FieldElement::from(43u64), String::from("node_1")),
+//!     api::Challenge::new(metadata1.clone(), 1000, 2, api::FieldElement::from(42u64), String::from("node_1"), ledger_root),
+//!     api::Challenge::new(metadata2.clone(), 1001, 2, api::FieldElement::from(43u64), String::from("node_1"), ledger_root),
 //! ];
 //!
 //! let files = vec![&prepared1, &prepared2];

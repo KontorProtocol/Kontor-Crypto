@@ -113,26 +113,36 @@ mod proving {
         num_challenges: usize,
     ) -> (FileLedger, Vec<api::PreparedFile>, Vec<Challenge>) {
         let mut prepared_files = Vec::new();
-        let mut challenges = Vec::new();
+        let mut metadatas = Vec::new();
         let mut ledger = FileLedger::new();
 
+        // First pass: prepare files and add to ledger
         for i in 0..num_files {
             let data = generate_test_data(size_kb * 1024, 42 + i as u64);
             let (prepared, metadata) = api::prepare_file(&data, &format!("f{}", i)).unwrap();
 
             ledger.add_file(&metadata).unwrap();
-
-            let challenge = Challenge::new(
-                metadata,
-                1000,
-                num_challenges,
-                FieldElement::from(config::TEST_RANDOM_SEED),
-                String::from("bench"),
-            );
-
             prepared_files.push(prepared);
-            challenges.push(challenge);
+            metadatas.push(metadata);
         }
+
+        // Get ledger root after all files are added
+        let ledger_root = ledger.tree.root();
+
+        // Second pass: create challenges with pinned ledger root
+        let challenges: Vec<Challenge> = metadatas
+            .into_iter()
+            .map(|metadata| {
+                Challenge::new(
+                    metadata,
+                    1000,
+                    num_challenges,
+                    FieldElement::from(config::TEST_RANDOM_SEED),
+                    String::from("bench"),
+                    ledger_root,
+                )
+            })
+            .collect();
 
         (ledger, prepared_files, challenges)
     }
@@ -184,6 +194,7 @@ mod verification {
         let (prepared, metadata) = api::prepare_file(&data, "v.dat").unwrap();
         let mut ledger = FileLedger::new();
         ledger.add_file(&metadata).unwrap();
+        let ledger_root = ledger.tree.root();
 
         let challenge = Challenge::new(
             metadata,
@@ -191,6 +202,7 @@ mod verification {
             num_challenges,
             FieldElement::from(config::TEST_RANDOM_SEED),
             "v".into(),
+            ledger_root,
         );
 
         let system = PorSystem::new(&ledger);

@@ -96,7 +96,7 @@ fn main() {
 
     // Phase 2: Challenge Simulation
     info!("[2/4] Challenge Simulation");
-    let challenges = simulate_challenges(&node_files, cli.challenges_to_simulate);
+    let challenges = simulate_challenges(&node_files, cli.challenges_to_simulate, &ledger);
     display_challenge_info(&challenges);
     info!("");
 
@@ -329,7 +329,11 @@ fn setup_network(
 }
 
 /// Simulate challenges arriving over time with staggered block heights
-fn simulate_challenges(node_files: &[StoredFile], num_challenges: usize) -> Vec<Challenge> {
+fn simulate_challenges(
+    node_files: &[StoredFile],
+    num_challenges: usize,
+    ledger: &FileLedger,
+) -> Vec<Challenge> {
     let _span = info_span!("challenge_simulation").entered();
 
     // Use protocol challenge frequency for realistic spacing
@@ -337,6 +341,10 @@ fn simulate_challenges(node_files: &[StoredFile], num_challenges: usize) -> Vec<
     // For simulation, use shorter spacing
     let spacing = config::CHALLENGE_SPACING_BLOCKS;
     let base_block = 1000u64;
+
+    // Pin the ledger root at challenge creation time
+    // This prevents proof invalidation when new files are added later
+    let ledger_root = ledger.tree.root();
 
     let mut challenges = Vec::new();
     let mut rng = StdRng::seed_from_u64(config::TEST_RANDOM_SEED);
@@ -358,6 +366,7 @@ fn simulate_challenges(node_files: &[StoredFile], num_challenges: usize) -> Vec<
             num_symbols_to_prove,
             seed,
             String::from("node_1"),
+            ledger_root,
         );
 
         challenges.push(challenge);

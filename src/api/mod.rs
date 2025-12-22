@@ -9,7 +9,7 @@
 //!    and a `FileMetadata` object (public commitment). Data is erasure coded, concatenated,
 //!    chunked, and built into a Merkle tree.
 //! 2. **`Challenge::new()`**: Creates a challenge object specifying the file to be proven,
-//!    the number of proof iterations, deterministic seed, and prover ID.
+//!    the number of proof iterations, deterministic seed, prover ID, and pinned ledger root.
 //! 3. **`prove()`**: Generates a succinct `Proof` for one or more file challenges.
 //!    Supports any number of files with automatic padding to the next power of two.
 //!    Challenges may have different seeds (enables multi-batch aggregation).
@@ -50,7 +50,8 @@
 //! let system = PorSystem::new(&ledger);
 //! let num_challenges = 5;
 //! let seed = FieldElement::from(12345u64); // Deterministic seed
-//! let challenge = Challenge::new(metadata.clone(), 1000, num_challenges, seed, String::from("node_1"));
+//! let ledger_root = ledger.tree.root();    // Pin ledger root at challenge creation
+//! let challenge = Challenge::new(metadata.clone(), 1000, num_challenges, seed, String::from("node_1"), ledger_root);
 //!
 //! // 4. Generate proof using the unified API
 //! let files = vec![&prepared_file];

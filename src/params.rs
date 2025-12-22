@@ -59,39 +59,47 @@ fn generate_params_for_shape(
         files_per_step, file_tree_depth, aggregated_tree_depth
     );
 
+    // Create dummy ledger first (needed for ledger_root in challenges)
+    let mut dummy_ledger = FileLedger::new();
+    let dummy_metadatas: Vec<FileMetadata> = (0..files_per_step)
+        .map(|i| FileMetadata {
+            root: FieldElement::ZERO,
+            file_id: format!("dummy{}", i),
+            padded_len: if i == 0 {
+                1 << file_tree_depth // First file at max depth
+            } else {
+                1 // Other files at minimal depth for diversity
+            },
+            original_size: 0,
+            filename: format!("dummy{}.dat", i),
+        })
+        .collect();
+
+    for metadata in &dummy_metadatas {
+        dummy_ledger
+            .add_file(metadata)
+            .expect("Dummy ledger operations should never fail during parameter generation");
+    }
+
+    // Get the ledger root to pin in challenges
+    let dummy_ledger_root = dummy_ledger.tree.root();
+
     // Create dummy challenges for parameter generation
-    let dummy_challenges = (0..files_per_step)
-        .map(|i| {
-            let metadata = FileMetadata {
-                root: FieldElement::ZERO,
-                file_id: format!("dummy{}", i),
-                padded_len: if i == 0 {
-                    1 << file_tree_depth // First file at max depth
-                } else {
-                    1 // Other files at minimal depth for diversity
-                },
-                original_size: 0,
-                filename: format!("dummy{}.dat", i),
-            };
+    let dummy_challenges: Vec<Challenge> = dummy_metadatas
+        .into_iter()
+        .map(|metadata| {
             Challenge::new(
                 metadata,
                 0,
                 1,
                 FieldElement::ZERO,
                 String::from("test_prover"),
+                dummy_ledger_root,
             )
         })
-        .collect::<Vec<_>>();
+        .collect();
 
     let dummy_challenges_refs: Vec<&Challenge> = dummy_challenges.iter().collect();
-
-    // Create dummy ledger for parameter generation
-    let mut dummy_ledger = FileLedger::new();
-    for challenge in &dummy_challenges {
-        dummy_ledger
-            .add_file(&challenge.file_metadata)
-            .expect("Dummy ledger operations should never fail during parameter generation");
-    }
 
     // Generate witness using the canonical function
     // For parameter generation, ledger indices don't matter (all zeros)

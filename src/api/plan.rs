@@ -18,7 +18,7 @@ pub(crate) struct Plan {
     pub(crate) file_tree_depth: usize,
     /// Aggregated tree depth (0 for single-file)
     pub(crate) aggregated_tree_depth: usize,
-    /// Aggregated root (derived from ledger and challenge count)
+    /// Aggregated root (pinned from challenge, not current ledger state)
     pub(crate) aggregated_root: FieldElement,
     /// Challenges sorted by file hash for deterministic processing
     pub(crate) sorted_challenges: Vec<Challenge>,
@@ -41,12 +41,24 @@ impl Plan {
             ));
         }
 
-        // Derive aggregated root internally based on number of challenges
-        // Single challenge = single-file proof (use file root)
-        // Multiple challenges = multi-file proof (use ledger root)
+        // Derive aggregated root from pinned ledger_root in challenges
+        // Single challenge = single-file proof (use file root directly)
+        // Multiple challenges = multi-file proof (use pinned ledger_root)
         let aggregated_root = if challenges.len() > 1 {
-            // Multi-file case: use ledger root
-            ledger.tree.root()
+            // Multi-file case: use pinned ledger root from challenges
+            // All challenges must have the same ledger_root for aggregation
+            let pinned_root = challenges[0].ledger_root;
+            for (i, c) in challenges.iter().enumerate().skip(1) {
+                if c.ledger_root != pinned_root {
+                    return Err(KontorPoRError::ChallengeMismatch {
+                        field: format!(
+                            "ledger_root (challenge 0 has {:?}, challenge {} has {:?})",
+                            pinned_root, i, c.ledger_root
+                        ),
+                    });
+                }
+            }
+            pinned_root
         } else {
             // Single-file case: always use file root (even if ledger is provided)
             challenges[0].file_metadata.root
