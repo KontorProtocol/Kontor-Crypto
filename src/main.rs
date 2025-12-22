@@ -1,344 +1,567 @@
-use bincode::serialize;
+//! Kontor Storage Node Simulator
+//!
+//! This binary simulates realistic storage node operation, showcasing:
+//! - Heterogeneous file sizes (10KB - 100MB)
+//! - Multi-file proof aggregation
+//! - Staggered challenge arrival over time
+//! - Bitcoin transaction fee economics
+//!
+//! Run with: cargo run --release
+
 use clap::{ArgAction, Parser};
 use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},
-    config, params, FileLedger,
+    config,
+    metrics::{EconomicMetrics, FileSizeCategory, ProofMetrics, VerificationMetrics},
+    FileLedger,
 };
-use rand::rngs::OsRng;
-use rand::RngCore;
-use std::time::Instant;
-use tracing::{error, info, info_span, warn};
+use rand::{rngs::StdRng, RngCore, SeedableRng};
+use std::time::{Duration, Instant};
+use tracing::{error, info, info_span};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-/// Command-line arguments for the aggregated PoR benchmark.
+/// Command-line arguments for the storage node simulator
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Total number of files to store in the ledger.
-    #[arg(long, default_value_t = 3)]
-    total_files: usize,
+    /// Total number of files in the network ledger
+    #[arg(long, default_value_t = 100)]
+    total_files_in_ledger: usize,
 
-    /// Number of files to challenge (prove storage for).
-    #[arg(long, default_value_t = 2)]
-    challenged_files: usize,
+    /// Number of files this storage node stores
+    #[arg(long, default_value_t = 10)]
+    files_stored_by_node: usize,
 
-    /// Number of challenges (e.g., sectors) to prove for EACH challenged file.
-    #[arg(long, default_value_t = 3)]
-    num_challenges: usize,
+    /// Number of challenges to simulate receiving
+    #[arg(long, default_value_t = 5)]
+    challenges_to_simulate: usize,
 
-    /// Size (bytes) of each file to simulate.
-    #[arg(long, default_value_t = config::DEFAULT_FILE_SIZE)]
-    file_size: usize,
+    /// File size distribution: "uniform", "mixed", "large-heavy"
+    #[arg(long, default_value = "mixed")]
+    file_size_distribution: String,
 
-    /// If set, skip verification to focus on proving throughput.
+    /// Skip verification to focus on proving performance
     #[arg(long, default_value_t = false)]
     no_verify: bool,
+
+    /// Enable memory profiling (requires memory-profiling feature)
+    #[arg(long, default_value_t = false)]
+    profile_memory: bool,
 
     /// Increase output verbosity (-v for DEBUG, -vv for TRACE)
     #[arg(short, long, action = ArgAction::Count)]
     verbose: u8,
 }
 
+/// Information about a file stored by this node
+struct StoredFile {
+    prepared: api::PreparedFile,
+    metadata: api::FileMetadata,
+    #[allow(dead_code)]
+    category: FileSizeCategory,
+}
+
 fn main() {
     let cli = Cli::parse();
 
-    // Initialize global tracing/logging
+    // Initialize tracing
     init_tracing(cli.verbose);
 
-    let total_files = cli.total_files;
-    let challenged_files = cli.challenged_files;
-    let num_challenges = cli.num_challenges;
-    let file_size = cli.file_size;
-    let no_verify = cli.no_verify;
+    // Validate inputs
+    if cli.files_stored_by_node > cli.total_files_in_ledger {
+        error!("Error: --files-stored-by-node cannot exceed --total-files-in-ledger");
+        std::process::exit(1);
+    }
+    if cli.challenges_to_simulate > cli.files_stored_by_node {
+        error!("Error: --challenges-to-simulate cannot exceed --files-stored-by-node");
+        std::process::exit(1);
+    }
 
-    // Print welcome message
+    // Print welcome banner
     info!("");
-    info!("╔══════════════════════════════════════════════════════╗");
-    info!("║   Kontor Proof of Retrievability (PoR)               ║");
-    info!("╚══════════════════════════════════════════════════════╝");
-    info!("  Demonstrating cryptographic proof of data possession");
+    info!("╔══════════════════════════════════════════════════════════════╗");
+    info!("║   Kontor Storage Node Simulator                              ║");
+    info!("║   Realistic Multi-File Proof Aggregation Demo                ║");
+    info!("╚══════════════════════════════════════════════════════════════╝");
+    info!("");
 
-    if challenged_files > total_files {
-        error!("Error: --challenged-files cannot exceed --total-files.");
-        std::process::exit(1);
-    }
-    if challenged_files == 0 {
-        error!("Error: --challenged-files must be greater than zero.");
-        std::process::exit(1);
-    }
-    if num_challenges == 0 {
-        error!("Error: --num-challenges must be greater than zero.");
-        std::process::exit(1);
-    }
+    // Phase 1: Network Setup
+    info!("[1/4] Network Setup");
+    let (ledger, node_files) = setup_network(
+        cli.total_files_in_ledger,
+        cli.files_stored_by_node,
+        &cli.file_size_distribution,
+    );
+    info!("");
 
-    info!("┌─────────────────────────────────────────────────────────────┐");
-    info!("│ Configuration:                                              │");
+    // Phase 2: Challenge Simulation
+    info!("[2/4] Challenge Simulation");
+    let challenges = simulate_challenges(&node_files, cli.challenges_to_simulate);
+    display_challenge_info(&challenges);
+    info!("");
+
+    // Phase 3: Proof Generation
+    info!("[3/4] Proof Generation");
+    info!("");
+
+    let (proof_metrics, proof) =
+        generate_proof(&node_files, &challenges, &ledger, cli.profile_memory);
+
+    info!("{}", proof_metrics.format_table());
+    info!("");
     info!(
-        "│   • Total files in system: {:>8}                         │",
-        total_files
+        "  ✓ Generated aggregated proof: {:.1} KB",
+        proof_metrics.proof_size_kb()
     );
     info!(
-        "│   • Files to challenge:    {:>8}                         │",
-        challenged_files
+        "  ✓ Covers {} file challenges ({} symbols each, {} total symbols proven)",
+        proof_metrics.num_files,
+        proof_metrics.num_challenges_per_file,
+        proof_metrics.num_files * proof_metrics.num_challenges_per_file
+    );
+    info!("");
+
+    info!("  Circuit Details:");
+    info!(
+        "    • File slots: {} ({} used + {} padding)",
+        proof_metrics.files_per_step,
+        proof_metrics.num_files,
+        proof_metrics.files_per_step - proof_metrics.num_files
     );
     info!(
-        "│   • Sectors challenged per file:      {:>8}              │",
-        num_challenges
+        "    • Max tree depth: {}",
+        proof_metrics.max_file_tree_depth
     );
     info!(
-        "│   • Total sectors proven:  {:>8}                         │",
-        challenged_files * num_challenges
+        "    • Aggregated tree depth: {}",
+        proof_metrics.aggregated_tree_depth
     );
     info!(
-        "│   • File size:             {:>8} bytes                   │",
-        file_size
+        "    • Circuit cost: {} constraints ({} × depth {})",
+        proof_metrics.circuit_cost(),
+        config::CIRCUIT_COST_PER_DEPTH,
+        proof_metrics.max_file_tree_depth
     );
-    info!(
-        "│   • Verification:           {}                         │",
-        if no_verify { "SKIPPED " } else { "ENABLED" }
-    );
-    info!("└─────────────────────────────────────────────────────────────┘");
+    info!("    • IVC steps: {} per file", proof_metrics.total_steps);
+    info!("");
 
-    // Prepare containers and state used across spans
-    let mut ledger = FileLedger::new();
-    let mut prepared_files = Vec::new();
-    let mut metadatas = Vec::new();
-    let total_prove_time;
-    let proof_bytes;
-    let proof;
-    let challenges;
-
-    // --- Step 1: Prepare all files and build ledger ---
-    {
-        let _setup_span = info_span!("setup_phase").entered();
-        let start_prepare = Instant::now();
-
-        info!("Setting up: preparing {} files...", total_files);
-
-        // Generate and prepare all files
-        for i in 0..total_files {
-            // Create random test data
-            let mut data = vec![0u8; file_size];
-            OsRng.fill_bytes(&mut data);
-
-            let (prepared_file, metadata) = api::prepare_file(&data, &format!("file_{}.dat", i))
-                .unwrap_or_else(|e| {
-                    error!("Error preparing file {}: {}", i, e);
-                    std::process::exit(1);
-                });
-
-            // Add to ledger
-            ledger.add_file(&metadata).unwrap_or_else(|e| {
-                error!("Error adding file {} to ledger: {}", i, e);
-                std::process::exit(1);
-            });
-
-            prepared_files.push(prepared_file);
-            metadatas.push(metadata);
-
-            if i % 10 == 0 || i == total_files - 1 {
-                // Log progress periodically
-                info!("  Prepared {}/{} files", i + 1, total_files);
-            }
-        }
-
-        let setup_time = start_prepare.elapsed();
-        info!(
-            "Setup complete: {} files prepared and added to ledger in {:.2}s",
-            total_files,
-            setup_time.as_secs_f64()
-        );
-    }
-
-    // --- Step 2: Verifier challenges random files ---
-    // Select which files to challenge
-    // For testing: always select files in order [0, 1, 2, ...]
-    let challenged_indices: Vec<usize> = (0..challenged_files).collect();
-
-    // --- Step 3: Create PorSystem and generate proof for ALL challenged files ---
-
-    // Create PorSystem with the populated ledger
-    let system = PorSystem::new(&ledger);
-
-    {
-        let _prove_span = info_span!("prove_phase").entered();
-        let start_prove_total = Instant::now();
-
-        info!("Proving: generating parameters...");
-
-        // Build challenges and file map for all challenged files
-        let mut challenges_vec = Vec::new();
-        let mut files_map = std::collections::BTreeMap::new();
-
-        // Assume all files have same tree depth for now (requirement of current implementation)
-        let first_metadata = &metadatas[challenged_indices[0]];
-        let actual_tree_depth = first_metadata.padded_len.trailing_zeros() as usize;
-        // Use a minimum tree depth of 3 for parameter generation to ensure proper circuit operation
-        let _tree_depth = actual_tree_depth.max(config::DEFAULT_TEST_TREE_DEPTH);
-
-        // Suppress this info message during progress bar display
-
-        for &file_idx in &challenged_indices {
-            let metadata = &metadatas[file_idx];
-            let prepared_file = &prepared_files[file_idx];
-
-            // Verify all files have same tree depth
-            if metadata.padded_len.trailing_zeros() as usize != actual_tree_depth {
-                error!(
-                    "Error: All challenged files must have same tree depth for multi-file proof"
-                );
-                std::process::exit(1);
-            }
-
-            // Create challenge for this file
-            let seed = FieldElement::from(config::TEST_RANDOM_SEED);
-            let challenge = Challenge::new(
-                metadata.clone(),
-                1000,
-                num_challenges,
-                seed,
-                String::from("node_1"),
-            );
-
-            challenges_vec.push(challenge);
-            files_map.insert(metadata.file_id.clone(), prepared_file);
-        }
-
-        // Derive the exact circuit shape from challenges
-        let max_file_depth = challenges_vec
-            .iter()
-            .map(|c| api::tree_depth_from_metadata(&c.file_metadata))
-            .max()
-            .unwrap_or(1);
-        let (files_per_step, file_tree_depth) =
-            config::derive_shape(challenges_vec.len(), max_file_depth);
-        let aggregated_tree_depth = ledger.tree.layers.len() - 1;
-
-        // Generate or load parameters for the exact shape
-        let param_start = Instant::now();
-        {
-            let _param_span = info_span!(
-                "load_params",
-                files_per_step,
-                file_tree_depth,
-                aggregated_tree_depth
-            )
-            .entered();
-            match params::load_or_generate_params(
-                files_per_step,
-                file_tree_depth,
-                aggregated_tree_depth,
-            ) {
-                Ok(params) => params,
-                Err(e) => {
-                    error!("Failed to load or generate parameters: {:?}", e);
-                    std::process::exit(1);
-                }
-            }
-        };
-        let param_time = param_start.elapsed();
-        challenges = challenges_vec;
-
-        info!(
-            "Parameters ready in {:.2}s (shape: {}x{}), executing {} recursive steps...",
-            param_time.as_secs_f64(),
-            files_per_step,
-            file_tree_depth,
-            num_challenges.saturating_sub(1)
-        );
-        info!("Starting recursive proving...");
-
-        // Convert to Vec for PorSystem API
-        let files_vec: Vec<&_> = challenged_indices
-            .iter()
-            .map(|&i| &prepared_files[i])
-            .collect();
-
-        proof = {
-            let _proof_span = info_span!(
-                "PorSystem::prove",
-                challenged_files,
-                num_challenges,
-                total_steps = num_challenges
-            )
-            .entered();
-            system.prove(files_vec, &challenges)
-        }
-        .unwrap_or_else(|e| {
-            error!("Failed to generate multi-file proof: {:?}", e);
-            std::process::exit(1);
-        });
-
-        info!("Proof generation complete");
-        total_prove_time = start_prove_total.elapsed();
-
-        // Track proof size
-        proof_bytes = serialize(&proof)
-            .map(|bytes| bytes.len())
-            .unwrap_or_else(|e| {
-                warn!("Failed to serialize proof for size tracking: {:?}", e);
-                0
-            });
-    }
-
-    // --- Step 4: Verification ---
-    if !no_verify {
-        let _verify_span = info_span!("verify_phase").entered();
-        let start_verify = Instant::now();
-
-        info!("Verifying proof...");
-
-        let is_valid = match system.verify(&proof, &challenges) {
-            Ok(valid) => valid,
-            Err(e) => {
-                error!("Verification check failed unexpectedly: {:?}", e);
-                std::process::exit(1);
-            }
-        };
-
-        let verify_time = start_verify.elapsed();
-        if is_valid {
-            info!(
-                "✓ Proof verification: VALID (took {:.2}s)",
-                verify_time.as_secs_f64()
-            );
+    // Show per-file coverage
+    info!("  Per-File Coverage:");
+    for challenge in challenges.iter() {
+        let total_symbols = challenge.file_metadata.total_symbols();
+        let tested_symbols = challenge.num_challenges;
+        let coverage_pct = if total_symbols > 0 {
+            (tested_symbols as f64 / total_symbols as f64) * 100.0
         } else {
-            error!(
-                "✗ Proof verification: INVALID (took {:.2}s)",
-                verify_time.as_secs_f64()
-            );
-        }
+            0.0
+        };
+        info!(
+            "    • File {}: {}/{} symbols tested ({:.1}%)",
+            &challenge.file_metadata.file_id[..8],
+            tested_symbols,
+            total_symbols,
+            coverage_pct
+        );
+    }
+    info!("");
+
+    // Phase 4: Verification
+    if !cli.no_verify {
+        info!("[4/4] Verification");
+        let verify_metrics = verify_proof(&proof, &challenges, &ledger);
+        info!("  ✓ {}", verify_metrics.format());
+        info!("");
     }
 
-    // --- Results Summary ---
-    let proof_size_kb = proof_bytes as f64 / 1024.0;
+    // Proof Economics
+    display_economic_analysis(&proof_metrics);
+}
 
-    info!("--- RESULTS ---");
-    info!("{:<35} | {:>15}", "Metric", "Value");
-    info!("{:-<35}-|-{:-<15}", "", "");
-    info!("{:<35} | {:>15}", "Total Files in Ledger", total_files);
-    info!("{:<35} | {:>15}", "Files Challenged", challenged_files);
-    info!(
-        "{:<35} | {:>15}",
-        "Sectors Challenged per File", num_challenges
-    );
-    info!(
-        "{:<35} | {:>15.3} s",
-        "Total Proof Generation Time",
-        total_prove_time.as_secs_f64()
-    );
-    info!("{:<35} | {:>15.2} KB", "Proof Size", proof_size_kb);
+/// Setup realistic network with heterogeneous file sizes
+fn setup_network(
+    total_files: usize,
+    files_stored: usize,
+    distribution: &str,
+) -> (FileLedger, Vec<StoredFile>) {
+    let _span = info_span!("network_setup").entered();
 
-    info!("--- SUCCESS ---");
+    // Determine file size distribution
+    let categories = match distribution {
+        "uniform" => vec![FileSizeCategory::Medium; total_files],
+        "large-heavy" => {
+            let mut cats = vec![];
+            for i in 0..total_files {
+                let cat = if i % 4 == 0 {
+                    FileSizeCategory::Large
+                } else if i % 4 == 1 {
+                    FileSizeCategory::XLarge
+                } else {
+                    FileSizeCategory::Medium
+                };
+                cats.push(cat);
+            }
+            cats
+        }
+        _ => {
+            // "mixed" - default distribution
+            let mut cats = vec![];
+            for i in 0..total_files {
+                let cat = match i % 10 {
+                    0..=2 => FileSizeCategory::Small,
+                    3..=6 => FileSizeCategory::Medium,
+                    7..=8 => FileSizeCategory::Large,
+                    _ => FileSizeCategory::XLarge,
+                };
+                cats.push(cat);
+            }
+            cats
+        }
+    };
+
+    // Create files that this node stores (subset of network)
+    let mut node_files = Vec::new();
+    let mut category_counts = [0usize; 4]; // Small, Medium, Large, XLarge
+    let mut rng = StdRng::seed_from_u64(config::TEST_RANDOM_SEED);
+
+    for (i, &category) in categories.iter().enumerate().take(files_stored) {
+        let size = category.sample_size(i as u64);
+
+        let mut data = vec![0u8; size];
+        rng.fill_bytes(&mut data);
+
+        let (prepared, metadata) =
+            api::prepare_file(&data, &format!("node_file_{}.dat", i)).unwrap();
+
+        let idx = match category {
+            FileSizeCategory::Small => 0,
+            FileSizeCategory::Medium => 1,
+            FileSizeCategory::Large => 2,
+            FileSizeCategory::XLarge => 3,
+        };
+        category_counts[idx] += 1;
+
+        node_files.push(StoredFile {
+            prepared,
+            metadata,
+            category,
+        });
+    }
+
+    // Build ledger with ALL files in network (node files + other files)
+    let mut ledger = FileLedger::new();
+
+    // Add node's files first
+    for file in node_files.iter() {
+        ledger.add_file(&file.metadata).unwrap();
+    }
+
+    // Add additional files to simulate full network (that this node doesn't store)
+    for (i, &category) in categories
+        .iter()
+        .enumerate()
+        .take(total_files)
+        .skip(files_stored)
+    {
+        let size = category.sample_size(i as u64);
+
+        let mut data = vec![0u8; size];
+        rng.fill_bytes(&mut data);
+
+        let (_, metadata) = api::prepare_file(&data, &format!("network_file_{}.dat", i)).unwrap();
+        ledger.add_file(&metadata).unwrap();
+    }
+
+    // Find depth range across all node files
+    let depths: Vec<usize> = node_files
+        .iter()
+        .map(|f| api::tree_depth_from_metadata(&f.metadata))
+        .collect();
+    let min_depth = depths.iter().min().copied().unwrap_or(0);
+
     info!(
-        "Generated a single compact proof covering {} challenged files.",
-        challenged_files
+        "  ✓ Created ledger with {} files (depths {}-22)",
+        total_files, min_depth
     );
-    info!("---------------------------\n");
+    info!("  ✓ Node stores {} files:", files_stored);
+
+    if category_counts[0] > 0 {
+        let (d_min, d_max) = FileSizeCategory::Small.depth_range();
+        info!(
+            "    - {} {} (10-50KB, depth {}-{})",
+            category_counts[0],
+            FileSizeCategory::Small.as_str(),
+            d_min,
+            d_max
+        );
+    }
+    if category_counts[1] > 0 {
+        let (d_min, d_max) = FileSizeCategory::Medium.depth_range();
+        info!(
+            "    - {} {} (50-500KB, depth {}-{})",
+            category_counts[1],
+            FileSizeCategory::Medium.as_str(),
+            d_min,
+            d_max
+        );
+    }
+    if category_counts[2] > 0 {
+        let (d_min, d_max) = FileSizeCategory::Large.depth_range();
+        info!(
+            "    - {} {} (500KB-10MB, depth {}-{})",
+            category_counts[2],
+            FileSizeCategory::Large.as_str(),
+            d_min,
+            d_max
+        );
+    }
+    if category_counts[3] > 0 {
+        let (d_min, d_max) = FileSizeCategory::XLarge.depth_range();
+        info!(
+            "    - {} {} (10-100MB, depth {}-{})",
+            category_counts[3],
+            FileSizeCategory::XLarge.as_str(),
+            d_min,
+            d_max
+        );
+    }
+
+    (ledger, node_files)
+}
+
+/// Simulate challenges arriving over time with staggered block heights
+fn simulate_challenges(node_files: &[StoredFile], num_challenges: usize) -> Vec<Challenge> {
+    let _span = info_span!("challenge_simulation").entered();
+
+    // Use protocol challenge frequency for realistic spacing
+    // 12 challenges/year per file = ~1 every 30 days = ~4,380 blocks
+    // For simulation, use shorter spacing
+    let spacing = config::CHALLENGE_SPACING_BLOCKS;
+    let base_block = 1000u64;
+
+    let mut challenges = Vec::new();
+    let mut rng = StdRng::seed_from_u64(config::TEST_RANDOM_SEED);
+
+    for (i, file) in node_files.iter().enumerate().take(num_challenges) {
+        let block_height = base_block + (i as u64 * spacing);
+
+        // Derive deterministic seed from block hash simulation
+        let mut block_hash_seed = [0u8; 32];
+        rng.fill_bytes(&mut block_hash_seed);
+        let seed = FieldElement::from(u64::from_le_bytes(block_hash_seed[..8].try_into().unwrap()));
+
+        // Protocol default: s_chal = 100 symbols per challenge
+        let num_symbols_to_prove = config::S_CHAL;
+
+        let challenge = Challenge::new(
+            file.metadata.clone(),
+            block_height,
+            num_symbols_to_prove,
+            seed,
+            String::from("node_1"),
+        );
+
+        challenges.push(challenge);
+    }
+
+    challenges
+}
+
+/// Display challenge information showing staggered timing
+fn display_challenge_info(challenges: &[Challenge]) {
+    if challenges.is_empty() {
+        return;
+    }
+
+    let first_block = challenges.first().unwrap().block_height;
+    let last_block = challenges.last().unwrap().block_height;
+    let span_blocks = last_block - first_block;
+
+    // Convert block span to approximate hours (6 blocks/hour)
+    let span_hours = span_blocks / config::BLOCKS_PER_HOUR as u64;
+
+    info!(
+        "  ✓ Randomly selected {} of the node's stored files to challenge",
+        challenges.len()
+    );
+    info!("  ✓ Received {} challenges:", challenges.len());
+    for challenge in challenges {
+        let expiration = challenge.block_height + config::W_PROOF; // W_proof from protocol
+                                                                   // Show file ID prefix to identify which file is being challenged
+        info!(
+            "    • File {} at block {} (expires: {})",
+            &challenge.file_metadata.file_id[..8],
+            challenge.block_height,
+            expiration
+        );
+    }
+
+    info!(
+        "  ✓ Challenges span {} blocks (~{} hours) [simulated; protocol: ~4,380 blocks/challenge]",
+        span_blocks, span_hours
+    );
+    info!("  ✓ All within 2016-block proof window → batching opportunity");
+}
+
+/// Generate proof with metric collection
+fn generate_proof(
+    node_files: &[StoredFile],
+    challenges: &[Challenge],
+    ledger: &FileLedger,
+    profile_memory: bool,
+) -> (ProofMetrics, api::Proof) {
+    let _span = info_span!("proof_generation").entered();
+
+    if profile_memory {
+        kontor_crypto::metrics::reset_peak_memory();
+    }
+
+    let total_start = Instant::now();
+
+    // Phase 1: Parameter Generation
+    let param_start = Instant::now();
+
+    if profile_memory {
+        kontor_crypto::metrics::reset_peak_memory();
+    }
+
+    let max_file_depth = challenges
+        .iter()
+        .map(|c| api::tree_depth_from_metadata(&c.file_metadata))
+        .max()
+        .unwrap_or(1);
+    let (files_per_step, file_tree_depth) = config::derive_shape(challenges.len(), max_file_depth);
+    let aggregated_tree_depth = if files_per_step > 1 {
+        ledger.tree.layers.len() - 1
+    } else {
+        0
+    };
+
+    let cache_size_before = kontor_crypto::params::memory_cache_size();
+    let _params = kontor_crypto::params::load_or_generate_params(
+        files_per_step,
+        file_tree_depth,
+        aggregated_tree_depth,
+    )
+    .unwrap();
+    let cache_size_after = kontor_crypto::params::memory_cache_size();
+    let param_cache_hit = cache_size_after == cache_size_before;
+
+    let param_duration = param_start.elapsed();
+    let param_memory_mb = if profile_memory {
+        Some(kontor_crypto::metrics::get_peak_memory_mb())
+    } else {
+        None
+    };
+
+    // Phase 2: Proof Generation (witness generation happens inside)
+    if profile_memory {
+        kontor_crypto::metrics::reset_peak_memory();
+    }
+
+    let proving_start = Instant::now();
+    let system = PorSystem::new(ledger);
+    let files_vec: Vec<&_> = node_files.iter().map(|f| &f.prepared).collect();
+    let proof = system.prove(files_vec, challenges).unwrap();
+    let proving_duration = proving_start.elapsed();
+
+    let proving_memory_mb = if profile_memory {
+        Some(kontor_crypto::metrics::get_peak_memory_mb())
+    } else {
+        None
+    };
+
+    // Get proof size
+    let proof_bytes = bincode::serialize(&proof)
+        .map(|bytes| bytes.len())
+        .unwrap_or(0);
+
+    let total_duration = total_start.elapsed();
+
+    let total_memory_mb = if profile_memory {
+        param_memory_mb.max(proving_memory_mb)
+    } else {
+        None
+    };
+
+    (
+        ProofMetrics {
+            total_duration,
+            param_gen_duration: param_duration,
+            witness_gen_duration: Duration::from_secs(0), // Not separately measured
+            proving_duration,
+            compression_duration: Duration::from_secs(0), // Not separately measured
+            proof_size_bytes: proof_bytes,
+            num_files: challenges.len(),
+            num_challenges_per_file: challenges.first().map(|c| c.num_challenges).unwrap_or(0),
+            total_steps: challenges.first().map(|c| c.num_challenges).unwrap_or(0),
+            aggregated_tree_depth,
+            max_file_tree_depth: file_tree_depth,
+            memory_peak_mb: total_memory_mb,
+            files_per_step,
+            param_cache_hit,
+            param_gen_memory_mb: param_memory_mb,
+            proving_memory_mb,
+        },
+        proof,
+    )
+}
+
+/// Verify proof and collect metrics
+fn verify_proof(
+    proof: &api::Proof,
+    challenges: &[Challenge],
+    ledger: &FileLedger,
+) -> VerificationMetrics {
+    let _span = info_span!("verification").entered();
+
+    let system = PorSystem::new(ledger);
+
+    let start = Instant::now();
+    let result = system.verify(proof, challenges).unwrap();
+    let duration = start.elapsed();
+
+    if !result {
+        error!("  ✗ Verification failed!");
+        std::process::exit(1);
+    }
+
+    VerificationMetrics {
+        duration,
+        num_files: challenges.len(),
+        num_challenges_per_file: challenges.first().map(|c| c.num_challenges).unwrap_or(0),
+    }
+}
+
+/// Display proof economics
+fn display_economic_analysis(metrics: &ProofMetrics) {
+    info!("═══════════════════════════════════════════════════════════════");
+    info!("PROOF ECONOMICS");
+    info!("═══════════════════════════════════════════════════════════════");
+    info!("");
+
+    let econ = EconomicMetrics::new(
+        metrics.proof_size_bytes,
+        config::BTC_TX_FEE_USD_DEFAULT,
+        metrics.num_files,
+    );
+
+    info!("Aggregated Proof:");
+    info!("  • Proof size: {:.1} KB", econ.proof_size_kb);
+    info!(
+        "  • Covers {} file challenges ({} symbols each)",
+        metrics.num_files, metrics.num_challenges_per_file
+    );
+    info!("  • Bitcoin transaction fee: ${:.2}", econ.btc_tx_fee_usd);
+    info!(
+        "  • Cost per file challenge: ${:.2}",
+        econ.amortized_cost_per_challenge
+    );
+    info!("");
+    info!("═══════════════════════════════════════════════════════════════");
+    info!("");
 }
 
 fn init_tracing(verbosity: u8) {
-    // Default: info, -v: debug, -vv or more: trace
     let level = match verbosity {
         0 => "info,kontor_crypto=info,nova_snark=warn",
         1 => "debug,kontor_crypto=debug,nova_snark=info",
@@ -347,7 +570,6 @@ fn init_tracing(verbosity: u8) {
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
 
-    // Use tracing-tree for hierarchical output with timing
     use tracing_tree::HierarchicalLayer;
 
     tracing_subscriber::registry()

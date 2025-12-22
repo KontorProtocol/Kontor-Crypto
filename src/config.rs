@@ -5,19 +5,6 @@
 
 use ff::Field;
 
-// --- Benchmarking and CLI Defaults ---
-
-/// The default number of challenges to run in the benchmark.
-pub const DEFAULT_NUM_CHALLENGES: usize = 100;
-
-/// The default data size (1 KB) for the main benchmark application.
-pub const DEFAULT_FILE_SIZE: usize = 1024;
-
-/// Default values for CLI arguments
-pub const DEFAULT_TOTAL_FILES: usize = 10;
-pub const DEFAULT_CHALLENGED_FILES: usize = 3;
-pub const DEFAULT_CLI_NUM_CHALLENGES: usize = 10;
-
 /// Maximum practical number of files to prove at once
 pub const PRACTICAL_MAX_FILES: usize = 1024;
 
@@ -246,21 +233,31 @@ pub const LEDGER_FORMAT_VERSION: u16 = 1;
 /// A fixed random seed used in tests to ensure deterministic behavior.
 pub const TEST_RANDOM_SEED: u64 = 42;
 
-// --- Benchmark Configuration ---
+// --- Economic Constants ---
 
-/// Standard file sizes for benchmarking (in KB)
-pub const BENCHMARK_FILE_SIZE_SMALL: usize = 16;
-pub const BENCHMARK_FILE_SIZE_MEDIUM: usize = 32;
+/// Default Bitcoin transaction fee assumption for cost analysis (in USD)
+pub const BTC_TX_FEE_USD_DEFAULT: f64 = 0.50;
 
-/// Default iteration counts for benchmark operations
-pub const BENCHMARK_HASH_ITERATIONS: usize = 10_000;
-pub const BENCHMARK_PROOF_ITERATIONS: usize = 1_000;
-pub const BENCHMARK_VERIFY_ITERATIONS: usize = 10;
+/// Average proof size for single-file proofs (in bytes, approximate)
+pub const SINGLE_PROOF_SIZE_BYTES: usize = 10240; // ~10 KB
 
-/// Tree sizes for benchmarking
-pub const BENCHMARK_TREE_LEAVES: usize = 256;
-pub const BENCHMARK_PROOF_LEAF_INDEX: usize = 42;
-pub const BENCHMARK_TREE_DEPTH: usize = 8;
+/// Blocks per hour (Bitcoin averages ~6 blocks/hour)
+pub const BLOCKS_PER_HOUR: usize = 6;
 
-/// Benchmark seed for deterministic results
-pub const BENCHMARK_SEED: u64 = 12345;
+/// Blocks per day
+pub const BLOCKS_PER_DAY: usize = BLOCKS_PER_HOUR * 24; // 144
+
+/// Challenge window spacing for realistic simulation (blocks between challenges)
+pub const CHALLENGE_SPACING_BLOCKS: u64 = 50;
+
+// --- Circuit Cost Constants (from protocol spec) ---
+
+/// Circuit cost multiplier: C_IVC = CIRCUIT_COST_PER_DEPTH × depth
+/// From protocol spec § Appendix, Parameter Selection table
+pub const CIRCUIT_COST_PER_DEPTH: usize = 100;
+
+/// Number of sectors challenged per proof
+pub const S_CHAL: usize = 100;
+
+/// Proof submission window
+pub const W_PROOF: u64 = 2016;

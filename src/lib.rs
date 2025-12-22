@@ -82,6 +82,7 @@ pub mod erasure;
 pub mod error;
 pub mod ledger;
 pub mod merkle;
+pub mod metrics;
 pub mod params;
 pub mod poseidon;
 pub mod utils;
