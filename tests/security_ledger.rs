@@ -1628,18 +1628,21 @@ fn test_prune_by_height_invalidates_old_multi_file_proof() {
     assert!(historical_root_total(&ledger) > 0);
 
     // Proof should verify while the old root is retained.
-    let system_1001 = api::PorSystem::new(&ledger);
-    assert!(
-        system_1001.verify(&proof, &challenges).unwrap(),
-        "Proof should verify while historical root is retained"
-    );
+    {
+        let system_1001 = api::PorSystem::new(&ledger);
+        assert!(
+            system_1001.verify(&proof, &challenges).unwrap(),
+            "Proof should verify while historical root is retained"
+        );
+    }
 
     // Prune away all historical roots, including the one at height 1001.
     ledger.prune_historical_roots_older_than(1002);
     assert_eq!(ledger.historical_roots.len(), 0);
 
     // Now verification must fail due to invalid ledger root.
-    let res = system_1001.verify(&proof, &challenges);
+    let system_post_prune = api::PorSystem::new(&ledger);
+    let res = system_post_prune.verify(&proof, &challenges);
     assert!(
         matches!(res, Err(KontorPoRError::InvalidLedgerRoot { .. })),
         "Expected InvalidLedgerRoot after pruning, got: {res:?}"
