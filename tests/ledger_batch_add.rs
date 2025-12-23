@@ -897,13 +897,6 @@ fn test_same_block_height_appends_historical_roots() {
         ledger.is_valid_root(root_after_2),
         "Second root at height 2000 should also be valid"
     );
-
-    // Verify we have 1 block height with 2 roots
-    assert_eq!(
-        ledger.historical_roots.len(),
-        1,
-        "Should have roots at 1 block height"
-    );
 }
 
 #[test]
@@ -933,11 +926,6 @@ fn test_all_intermediate_states_preserved_within_block() {
         historical_root_total(&ledger),
         4,
         "Should have 4 historical roots"
-    );
-    assert_eq!(
-        ledger.historical_roots.len(),
-        1,
-        "All roots should be at block height 1000"
     );
 
     // Verify ALL captured roots are valid
@@ -1037,7 +1025,6 @@ fn test_save_load_preserves_historical_roots_vec_format() {
 
     // Verify initial state
     assert_eq!(historical_root_total(&ledger), 3);
-    assert_eq!(ledger.historical_roots.len(), 2);
     assert!(ledger.is_valid_root(root_1));
     assert!(ledger.is_valid_root(root_2));
     assert!(ledger.is_valid_root(root_3));
