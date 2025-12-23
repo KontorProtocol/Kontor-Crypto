@@ -120,7 +120,8 @@ mod proving {
             let data = generate_test_data(size_kb * 1024, 42 + i as u64);
             let (prepared, metadata) = api::prepare_file(&data, &format!("f{}", i)).unwrap();
 
-            ledger.add_file(&metadata).unwrap();
+            // Bench-only: stable, deterministic block heights for historical-root tracking.
+            ledger.add_file(&metadata, i as u64).unwrap();
 
             let challenge = Challenge::new(
                 metadata,
@@ -183,7 +184,8 @@ mod verification {
         let data = generate_test_data(16 * 1024, 42);
         let (prepared, metadata) = api::prepare_file(&data, "v.dat").unwrap();
         let mut ledger = FileLedger::new();
-        ledger.add_file(&metadata).unwrap();
+        // Bench-only: stable, deterministic block height.
+        ledger.add_file(&metadata, 0).unwrap();
 
         let challenge = Challenge::new(
             metadata,
