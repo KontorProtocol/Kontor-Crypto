@@ -148,11 +148,6 @@ fn setup_proving_environment(
     tracing::Span::current().record("file_tree_depth", plan.file_tree_depth);
     tracing::Span::current().record("aggregated_tree_depth", plan.aggregated_tree_depth);
 
-    // Record shape metrics in span for extraction
-    tracing::Span::current().record("files_per_step", plan.files_per_step);
-    tracing::Span::current().record("file_tree_depth", plan.file_tree_depth);
-    tracing::Span::current().record("aggregated_tree_depth", plan.aggregated_tree_depth);
-
     if plan.aggregated_tree_depth == 0 {
         debug!("[DEBUG] prove() - Single-file proof:");
         debug!("  - Number of challenges: {}", plan.sorted_challenges.len());

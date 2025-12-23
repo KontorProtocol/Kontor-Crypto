@@ -277,7 +277,6 @@ fn setup_network(
         .map(|f| api::tree_depth_from_metadata(&f.metadata))
         .collect();
     let min_depth = depths.iter().min().copied().unwrap_or(0);
-    let _max_depth = depths.iter().max().copied().unwrap_or(0);
 
     info!(
         "  ✓ Created ledger with {} files (depths {}-22)",

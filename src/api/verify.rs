@@ -81,16 +81,6 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
                 "Multi-file proof must have non-zero aggregated_tree_depth".to_string(),
             ));
         }
-
-        // A verifier cannot accept a proof claiming an aggregation depth larger than the
-        // verifier's current ledger depth.
-        let current_ledger_depth = ledger.tree.layers.len().saturating_sub(1);
-        if proof.aggregated_tree_depth > current_ledger_depth {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "Proof aggregated_tree_depth {} exceeds current ledger depth {}",
-                proof.aggregated_tree_depth, current_ledger_depth
-            )));
-        }
     } else if proof.aggregated_tree_depth != 0 {
         return Err(KontorPoRError::InvalidInput(
             "Single-file proof must have aggregated_tree_depth = 0".to_string(),
