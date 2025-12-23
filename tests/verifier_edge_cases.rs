@@ -1,18 +1,88 @@
 //! Tests for malicious or non-standard verifier inputs and edge cases
 
 use kontor_crypto::api::{self, Challenge, FieldElement};
+use kontor_crypto::KontorPoRError;
 use std::collections::BTreeMap;
 
 #[test]
-fn test_duplicate_file_challenges() {
-    // VERIF-01: Test behavior when verifier requests same file multiple times
+fn test_verifier_rejects_out_of_range_ledger_index() {
+    // Verifier should reject ledger_indices >= 2^aggregated_tree_depth, since the circuit
+    // only consumes low bits and would otherwise permit non-canonical indices.
+    let data_a = vec![1u8; 100];
+    let data_b = vec![2u8; 100];
+    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a.dat").unwrap();
+    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b.dat").unwrap();
+
+    let mut ledger = kontor_crypto::FileLedger::new();
+    ledger.add_file(&meta_a).unwrap();
+    ledger.add_file(&meta_b).unwrap();
+
+    let challenges = vec![
+        Challenge::new_test(meta_a.clone(), 1000, 1, FieldElement::from(1u64)),
+        Challenge::new_test(meta_b.clone(), 1000, 1, FieldElement::from(2u64)),
+    ];
+
+    let system = kontor_crypto::api::PorSystem::new(&ledger);
+    let mut proof = system
+        .prove(vec![&prepared_a, &prepared_b], &challenges)
+        .expect("Should generate a valid multi-file proof");
+
+    assert!(proof.aggregated_tree_depth > 0, "Must be multi-file proof");
+
+    // Make ledger_index out of range: max is (1<<depth)-1, so choose 1<<depth.
+    let out_of_range = 1usize << proof.aggregated_tree_depth;
+    proof.ledger_indices[0] = out_of_range;
+
+    let res = system.verify(&proof, &challenges);
+    assert!(
+        matches!(res, Err(KontorPoRError::InvalidInput(_))),
+        "Expected InvalidInput for out-of-range ledger index, got: {res:?}"
+    );
+}
+
+#[test]
+fn test_verifier_rejects_ledger_indices_length_mismatch() {
+    // Verifier should reject proofs whose ledger_indices length doesn't match files_per_step.
+    let data_a = vec![3u8; 100];
+    let data_b = vec![4u8; 100];
+    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a2.dat").unwrap();
+    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b2.dat").unwrap();
+
+    let mut ledger = kontor_crypto::FileLedger::new();
+    ledger.add_file(&meta_a).unwrap();
+    ledger.add_file(&meta_b).unwrap();
+
+    let challenges = vec![
+        Challenge::new_test(meta_a.clone(), 1000, 1, FieldElement::from(11u64)),
+        Challenge::new_test(meta_b.clone(), 1000, 1, FieldElement::from(22u64)),
+    ];
+
+    let system = kontor_crypto::api::PorSystem::new(&ledger);
+    let mut proof = system
+        .prove(vec![&prepared_a, &prepared_b], &challenges)
+        .expect("Should generate a valid multi-file proof");
+
+    // Corrupt the proof: remove one index so the length doesn't match files_per_step.
+    proof.ledger_indices.pop();
+
+    let res = system.verify(&proof, &challenges);
+    assert!(
+        matches!(res, Err(KontorPoRError::InvalidInput(_))),
+        "Expected InvalidInput for ledger_indices length mismatch, got: {res:?}"
+    );
+}
+
+#[test]
+fn test_duplicate_file_challenges_fail_verification() {
+    // VERIF-01: Duplicate challenges (same file, same params) produce invalid proofs.
+    // This is expected - duplicate challenges are not a supported use case.
+    // The verifier correctly rejects these proofs.
     println!("Testing duplicate file challenges in multi-file proof");
 
     let data = vec![1u8; 100];
-
     let (prepared, metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
 
-    // Create challenges for the same file multiple times [A, A, A]
+    // Create identical challenges for the same file [A, A, A]
     let seed = FieldElement::from(42u64);
     let challenges = vec![
         Challenge::new_test(metadata.clone(), 1000, 1, seed),
@@ -20,46 +90,22 @@ fn test_duplicate_file_challenges() {
         Challenge::new_test(metadata.clone(), 1000, 1, seed),
     ];
 
-    let mut files = BTreeMap::new();
-    files.insert(metadata.file_id.clone(), &prepared);
-
-    // Create ledger (for multi-file proof)
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
     ledger.add_file(&metadata).unwrap();
 
-    // Try to prove with duplicate challenges
     let system = kontor_crypto::api::PorSystem::new(&ledger);
-    let files_vec = vec![&prepared];
-    let result = system.prove(files_vec, &challenges);
+    let proof = system
+        .prove(vec![&prepared], &challenges)
+        .expect("Prove accepts duplicate challenges");
 
-    // Document the actual behavior (should either error or handle gracefully)
-    match result {
-        Ok(proof) => {
-            println!("  System allows duplicate file challenges (deduplication or repetition)");
+    // Verification should fail - duplicate challenges produce invalid proofs
+    let verify_result = system.verify(&proof, &challenges);
+    assert!(
+        matches!(verify_result, Ok(false) | Err(_)),
+        "Duplicate challenges MUST fail verification"
+    );
 
-            // If it succeeds, verify the proof works
-            let verify_result = system.verify(&proof, &challenges);
-            match verify_result {
-                Ok(true) => {
-                    println!("  Duplicate challenges verified successfully");
-                    println!("✓ Duplicate file challenges handled gracefully (proof verifies)");
-                }
-                Ok(false) => {
-                    println!("  Duplicate challenges failed verification");
-                    println!("✓ Duplicate challenges handled but verification failed (acceptable edge case)");
-                }
-                Err(e) => {
-                    println!("  Verification error with duplicates: {:?}", e);
-                    println!("✓ Duplicate challenges cause verification error (acceptable edge case behavior)");
-                    // This is acceptable - duplicate challenges are an edge case
-                }
-            }
-        }
-        Err(e) => {
-            println!("✓ Duplicate file challenges rejected with error: {}", e);
-            // This is also acceptable behavior
-        }
-    }
+    println!("✓ Duplicate challenges correctly rejected by verifier");
 }
 
 #[test]

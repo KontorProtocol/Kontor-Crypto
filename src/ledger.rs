@@ -68,6 +68,8 @@ struct LedgerData {
     files: BTreeMap<String, FileLedgerEntry>,
     /// Stored root for validation on load
     root: F,
+    #[serde(default)]
+    historical_roots: Vec<[u8; 32]>,
 }
 
 /// The `FileLedger` manages the aggregated Merkle tree of all file roots.
@@ -75,6 +77,15 @@ struct LedgerData {
 ///
 /// In Option 1, the ledger tree is built from rc values (root commitments)
 /// where rc = Poseidon(TAG_RC, root, depth), not raw roots.
+///
+/// ## Historical Root Tracking
+///
+/// The ledger maintains a set of historical roots for proof validation.
+/// When files are added, the pre-modification root is appended to `historical_roots`.
+/// Verifiers check that a proof's `ledger_root` is in this set before accepting it.
+/// This enables cross-block aggregation without proof regeneration.
+///
+/// Use [`Self::set_historical_roots`] to replace the historical roots when needed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileLedger {
     /// Unified map from file identifier to complete file information.
@@ -83,6 +94,15 @@ pub struct FileLedger {
     /// The aggregated Merkle tree built from rc values (not raw roots).
     #[serde(skip)]
     pub tree: MerkleTree,
+    /// Accepted historical roots for proof validation.
+    ///
+    /// Proofs generated against a ledger root are valid as long as that root is either:
+    /// - the current root, or
+    /// - present in this list.
+    ///
+    /// Use [`Self::set_historical_roots`] to replace this list.
+    #[serde(default)]
+    pub historical_roots: Vec<[u8; 32]>,
 }
 
 impl Default for FileLedger {
@@ -92,6 +112,7 @@ impl Default for FileLedger {
             tree: MerkleTree {
                 layers: vec![vec![]],
             },
+            historical_roots: Vec::new(),
         }
     }
 }
@@ -102,7 +123,50 @@ impl FileLedger {
         Self::default()
     }
 
+    // --- Historical Root Management ---
+
+    /// Returns the current root of the aggregated Merkle tree.
+    pub fn root(&self) -> F {
+        self.tree.root()
+    }
+
+    /// Records the current root as a valid historical root.
+    ///
+    /// Call this before modifying the ledger (e.g., before adding files) to preserve the
+    /// old root for proof validation.
+    pub fn record_current_root(&mut self) {
+        use ff::PrimeField;
+        let root = self.tree.root();
+        let repr: [u8; 32] = root.to_repr().into();
+        self.historical_roots.push(repr);
+    }
+
+    /// Checks if a root is valid (either current or in historical set).
+    /// Use this to validate `proof.ledger_root` before verification.
+    pub fn is_valid_root(&self, root: F) -> bool {
+        use ff::PrimeField;
+        // Current root is always valid
+        if root == self.tree.root() {
+            return true;
+        }
+        // Check historical roots
+        let repr: [u8; 32] = root.to_repr().into();
+        self.historical_roots.iter().any(|r| r == &repr)
+    }
+
+    /// Sets the historical roots to the given list.
+    ///
+    /// This replaces any existing historical roots with the provided values.
+    pub fn set_historical_roots(&mut self, roots: Vec<[u8; 32]>) {
+        self.historical_roots = roots;
+    }
+
+    // --- File Management ---
+
     /// Adds a new file to the ledger and rebuilds the aggregated tree.
+    ///
+    /// On success, the pre-modification root is recorded as a historical root
+    /// (unless the ledger was empty).
     ///
     /// # Arguments
     ///
@@ -120,15 +184,35 @@ impl FileLedger {
     /// ledger.add_file(&metadata).unwrap();
     /// ```
     pub fn add_file(&mut self, entry: &impl FileDescriptor) -> Result<(), KontorPoRError> {
+        use ff::PrimeField;
+
+        // Capture the old root before modifications (only meaningful if non-empty)
+        let was_empty = self.files.is_empty();
+        let old_root_repr: [u8; 32] = self.tree.root().to_repr().into();
+
+        // Insert the new file
         self.files
             .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
-        self.rebuild_tree()
+
+        // Rebuild tree
+        self.rebuild_tree()?;
+
+        // Record historical root only on success and if ledger wasn't empty before
+        if !was_empty {
+            self.historical_roots.push(old_root_repr);
+        }
+
+        Ok(())
     }
 
     /// Adds multiple files to the ledger in a single batch, rebuilding the tree only once.
     ///
     /// This is more efficient than calling [`Self::add_file`] in a loop when adding
-    /// many files, as the aggregated Merkle tree is rebuilt only once at the end.
+    /// many files, as the aggregated Merkle tree is rebuilt only once at the end,
+    /// and only one historical root entry is created.
+    ///
+    /// On success, the pre-modification root is recorded as a historical root
+    /// (unless the ledger was empty).
     ///
     /// # Arguments
     ///
@@ -143,11 +227,35 @@ impl FileLedger {
         &mut self,
         files: impl IntoIterator<Item = &'a T>,
     ) -> Result<(), KontorPoRError> {
-        for entry in files {
+        use ff::PrimeField;
+
+        // Collect files first to check if batch is empty
+        let files_to_add: Vec<_> = files.into_iter().collect();
+
+        // Early return for empty batch - no state change needed
+        if files_to_add.is_empty() {
+            return Ok(());
+        }
+
+        // Capture the old root before modifications (only meaningful if non-empty)
+        let was_empty = self.files.is_empty();
+        let old_root_repr: [u8; 32] = self.tree.root().to_repr().into();
+
+        // Insert all new files
+        for entry in files_to_add {
             self.files
                 .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
         }
-        self.rebuild_tree()
+
+        // Rebuild tree
+        self.rebuild_tree()?;
+
+        // Record historical root only on success and if ledger wasn't empty before
+        if !was_empty {
+            self.historical_roots.push(old_root_repr);
+        }
+
+        Ok(())
     }
 
     /// Rebuilds the aggregated Merkle tree from rc values (root commitments).
@@ -184,6 +292,7 @@ impl FileLedger {
             version: crate::config::LEDGER_FORMAT_VERSION,
             files: self.files.clone(),
             root: self.tree.root(),
+            historical_roots: self.historical_roots.clone(),
         };
 
         let encoded = bincode::serialize(&data).map_err(|e| {
@@ -240,6 +349,7 @@ impl FileLedger {
         let mut ledger = FileLedger {
             files: data.files,
             tree: MerkleTree::default(),
+            historical_roots: data.historical_roots,
         };
         ledger.rebuild_tree()?;
 

@@ -233,7 +233,6 @@ fn test_single_file_ignores_ledger() {
 }
 
 #[test]
-#[ignore] // This is informational/speculative
 fn test_proof_determinism() {
     // A-20: Check if proofs are deterministic (informational test)
     println!("Testing proof determinism (informational)");

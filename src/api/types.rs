@@ -43,6 +43,24 @@ pub struct Proof {
     pub compressed_snark: CompressedSNARK<E1, E2, C, S1, S2>,
     /// Exact ordered set of challenges covered by this proof
     pub challenge_ids: Vec<ChallengeID>,
+    /// The ledger root used during proof generation.
+    /// Verifiers must validate this root is in their accepted historical roots set
+    /// before verification. This enables cross-block aggregation without requiring
+    /// provers to regenerate proofs when new files activate.
+    pub ledger_root: FieldElement,
+    /// The ledger indices for each file at proof generation time.
+    /// These are the positions of each file's root commitment (rc) in the ledger tree.
+    ///
+    /// Important: indices are *relative to the ledger_root*. Adding files can change
+    /// canonical positions in later ledger states (because ordering is by file_id),
+    /// so verifiers must use the indices bundled in the proof together with the
+    /// proof's ledger_root.
+    ///
+    /// The SNARK proves these indices are correct for the claimed ledger_root.
+    pub ledger_indices: Vec<usize>,
+    /// The aggregated tree depth at proof generation time.
+    /// Required for verification to load the correct circuit parameters.
+    pub aggregated_tree_depth: usize,
 }
 
 /// Constants for proof serialization format

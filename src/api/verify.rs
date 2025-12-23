@@ -13,38 +13,46 @@ use tracing::{debug, info_span};
 
 /// Verifies a proof against one or more challenges.
 ///
-/// This function implements the Option 1 security model verification with proper ledger root pinning.
+/// This function implements secure verification with historical root validation.
 /// Parameters are derived automatically to match the proof structure.
 ///
-/// # Security: Ledger Root Pinning
+/// # Historical Root Validation
 ///
-/// **SECURE**: The expected aggregated root is derived from the provided `ledger` automatically.
-/// This prevents malicious provers from substituting a different ledger with a different root.
+/// For multi-file proofs (k > 1), this function validates that `proof.ledger_root` is
+/// in the ledger's set of valid roots (current or historical). This enables cross-block
+/// aggregation: proofs generated against older ledger states remain valid as long as
+/// the root is in the historical set.
 ///
-/// - Single-file: Uses the file root from the challenge metadata
-/// - Multi-file: Uses the canonical ledger root from the ledger
+/// The proof includes the ledger indices at proof generation time. The SNARK proves
+/// these indices are correct for the claimed root, so the verifier doesn't need to
+/// recompute them from the current ledger state.
 ///
-/// # Public Inputs Verification
+/// For single-file proofs (k = 1), the ledger root check is skipped because the circuit
+/// uses the file's Merkle root directly instead of the ledger root.
 ///
-/// The verifier reconstructs the same public inputs as the prover:
-/// - `aggregated_root`: Derived automatically from the ledger
-/// - `ledger_index_0, ..., ledger_index_{F-1}`: Canonical positions in ledger
-/// - `actual_depth_0, ..., actual_depth_{F-1}`: Depths computed from challenge metadata
+/// # Security
+///
+/// The SNARK cryptographically proves that:
+/// - Each file exists at the claimed index in the tree with the claimed root
+/// - The Merkle paths are valid
+///
+/// A prover cannot lie about indices - invalid indices would cause SNARK verification to fail.
 ///
 /// # Arguments
 ///
 /// * `challenges` - Vector of challenges to verify against
-/// * `proof` - The proof to verify
-/// * `ledger` - The file ledger containing the file(s) being verified
+/// * `proof` - The proof to verify (includes ledger_root and ledger_indices)
+/// * `ledger` - The file ledger (used for historical root validation, not index computation)
 ///
 /// # Returns
 ///
 /// Returns `Ok(true)` if the proof is valid, `Ok(false)` if invalid, or an error
-/// if verification fails due to invalid inputs or unexpected errors.
+/// if verification fails due to invalid inputs, invalid ledger root, or unexpected errors.
 pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> Result<bool> {
     let _span = info_span!(
         "verify",
         num_challenges = challenges.len(),
+        has_ledger = true,
         num_iterations = tracing::field::Empty,
         files_per_step = tracing::field::Empty,
     )
@@ -59,6 +67,79 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // Create unified preprocessing plan (derives root internally for security)
     let plan = Plan::make_plan(challenges, ledger)?;
 
+    // --- Proof shape + index sanity checks ---
+    //
+    // The circuit consumes `ledger_root` and `ledger_indices` as public inputs. It uses the
+    // low `aggregated_tree_depth` bits of each ledger index to select the aggregation path.
+    // Enforcing index range here makes the statement canonical (avoids equivalent indices
+    // differing only in high bits).
+    let is_multi_file = plan.files_per_step > 1;
+
+    if is_multi_file {
+        if proof.aggregated_tree_depth == 0 {
+            return Err(KontorPoRError::InvalidInput(
+                "Multi-file proof must have non-zero aggregated_tree_depth".to_string(),
+            ));
+        }
+    } else if proof.aggregated_tree_depth != 0 {
+        return Err(KontorPoRError::InvalidInput(
+            "Single-file proof must have aggregated_tree_depth = 0".to_string(),
+        ));
+    }
+
+    if proof.ledger_indices.len() != plan.files_per_step {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "Proof ledger_indices length {} does not match circuit files_per_step {}",
+            proof.ledger_indices.len(),
+            plan.files_per_step
+        )));
+    }
+
+    if is_multi_file {
+        let max_leaf_count = 1usize
+            .checked_shl(proof.aggregated_tree_depth as u32)
+            .ok_or_else(|| {
+                KontorPoRError::InvalidInput(format!(
+                    "Invalid aggregated_tree_depth {}: too large for host usize",
+                    proof.aggregated_tree_depth
+                ))
+            })?;
+
+        for (i, idx) in proof.ledger_indices.iter().enumerate() {
+            if *idx >= max_leaf_count {
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "Proof ledger_indices[{}] = {} is out of range for aggregated_tree_depth {} (max {})",
+                    i,
+                    idx,
+                    proof.aggregated_tree_depth,
+                    max_leaf_count - 1
+                )));
+            }
+        }
+    }
+
+    // --- Historical root validation (multi-file only) ---
+    //
+    // For multi-file proofs, `proof.ledger_root` must be either the current root or a retained
+    // historical root. For single-file proofs, the circuit uses the file's root directly.
+    if is_multi_file && !ledger.is_valid_root(proof.ledger_root) {
+        debug!(
+            "Proof ledger_root {:?} is not in ledger's valid roots (current: {:?})",
+            proof.ledger_root,
+            ledger.root()
+        );
+        return Err(KontorPoRError::InvalidLedgerRoot {
+            proof_root: format!("{:?}", proof.ledger_root),
+            reason: "Proof's ledger_root is not in the set of valid historical roots".to_string(),
+        });
+    }
+    if is_multi_file {
+        debug!(
+            "Proof ledger_root {:?} validated as historical root",
+            proof.ledger_root
+        );
+    }
+
     // Basic validation
     let num_challenges = challenges[0].num_challenges;
     if num_challenges == 0 || num_challenges > config::MAX_NUM_CHALLENGES {
@@ -68,15 +149,16 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     }
 
     // Load or generate parameters for the exact shape (same as prover)
+    // Use proof.aggregated_tree_depth to ensure we match the prover's circuit
     let params = crate::params::load_or_generate_params(
         plan.files_per_step,
         plan.file_tree_depth,
-        plan.aggregated_tree_depth,
+        proof.aggregated_tree_depth,
     )?;
 
     debug!(
         "verify() - Using shape: files_per_step={}, file_tree_depth={}, aggregated_tree_depth={}",
-        plan.files_per_step, plan.file_tree_depth, plan.aggregated_tree_depth
+        plan.files_per_step, plan.file_tree_depth, proof.aggregated_tree_depth
     );
 
     // Verify all challenges have the same num_challenges and seed
@@ -99,22 +181,23 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         }
     }
 
-    // All preprocessing is now handled by the plan (eliminates duplication with prove)
-    debug!("Verify commitment calculation (from plan):");
-    debug!(
-        "  - Number of sorted challenges: {}",
-        plan.sorted_challenges.len()
-    );
-    debug!("  - Depths: {:?}", plan.depths);
+    // Build public inputs using:
+    // - proof.ledger_root and proof.ledger_indices (from proof, enables historical validation)
+    // - depths and seeds from plan (derived from challenges)
+    debug!("Verify: building z0_primary from proof + challenges");
+    debug!("  - Using proof.ledger_root: {:?}", proof.ledger_root);
+    debug!("  - Using proof.ledger_indices: {:?}", proof.ledger_indices);
+    debug!("  - Depths from challenges: {:?}", plan.depths);
 
-    // Build public inputs using the plan
-    let z0_primary = plan.build_z0_primary();
+    // Build z0_primary with proof's values for root/indices
+    let z0_primary = plan.public_io_layout.build_z0_primary(
+        proof.ledger_root,
+        &proof.ledger_indices,
+        &plan.depths,
+        &plan.seeds,
+    );
     debug!("VERIFIER z0_primary: {:?}", z0_primary);
 
-    // In our implementation:
-    // - RecursiveSNARK::new() executes step 0
-    // - We call prove_step num_challenges times, but the first call is a no-op
-    // - So we have num_challenges total synthesized steps (0 through num_challenges-1)
     let num_iterations = plan.sorted_challenges[0].num_challenges;
 
     // Record metrics in span
@@ -128,12 +211,9 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     }
     debug!("  - Number of files: {}", plan.sorted_challenges.len());
     debug!("  - Number of iterations to verify: {}", num_iterations);
-    debug!(
-        "  - z0_primary[0] aggregated_root: {:?}",
-        plan.aggregated_root
-    );
+    debug!("  - z0_primary[0] aggregated_root: {:?}", proof.ledger_root);
     debug!("  - z0_primary[1] initial_state: {:?}", FieldElement::ZERO);
-    for (i, idx) in plan.ledger_indices.iter().enumerate() {
+    for (i, idx) in proof.ledger_indices.iter().enumerate() {
         debug!("  - z0_primary[{}] ledger_index_{}: {}", 2 + i, i, idx);
     }
     for (i, depth) in plan.depths.iter().enumerate() {

@@ -27,7 +27,7 @@ fn test_file_removal_invalidates_proof() {
 
     // Create initial ledger with all 3 files
     let mut ledger_full = FileLedger::new();
-    for metadata in &metadatas {
+    for metadata in metadatas.iter() {
         ledger_full
             .add_file(metadata)
             .expect("Failed to add file to ledger");

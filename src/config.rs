@@ -255,6 +255,8 @@ pub const CHALLENGE_SPACING_BLOCKS: u64 = 50;
 /// Circuit cost multiplier: C_IVC = CIRCUIT_COST_PER_DEPTH × depth
 /// From protocol spec § Appendix, Parameter Selection table
 pub const CIRCUIT_COST_PER_DEPTH: usize = 100;
+/// Benchmark seed for deterministic results
+pub const BENCHMARK_SEED: u64 = 12345;
 
 /// Number of sectors challenged per proof
 pub const S_CHAL: usize = 100;
