@@ -69,7 +69,7 @@ struct LedgerData {
     /// Stored root for validation on load
     root: F,
     #[serde(default)]
-    historical_roots: BTreeMap<u64, Vec<[u8; 32]>>,
+    historical_roots: Vec<[u8; 32]>,
 }
 
 /// The `FileLedger` manages the aggregated Merkle tree of all file roots.
@@ -82,12 +82,10 @@ struct LedgerData {
 ///
 /// The ledger maintains a set of historical roots for proof validation.
 /// When files are added, the pre-modification root is appended to `historical_roots`.
-/// Each block height maps to a list of roots, capturing every intermediate state
-/// within that block. Verifiers check that a proof's `ledger_root` is in this set
-/// before accepting it. This enables cross-block aggregation without proof regeneration.
+/// Verifiers check that a proof's `ledger_root` is in this set before accepting it.
+/// This enables cross-block aggregation without proof regeneration.
 ///
-/// Pruning is by block height: when old block heights are pruned, all roots
-/// associated with those heights are removed together.
+/// Use [`Self::set_historical_roots`] to replace the historical roots when needed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileLedger {
     /// Unified map from file identifier to complete file information.
@@ -96,20 +94,15 @@ pub struct FileLedger {
     /// The aggregated Merkle tree built from rc values (not raw roots).
     #[serde(skip)]
     pub tree: MerkleTree,
-    /// Accepted historical roots for proof validation, keyed by block height.
-    ///
-    /// Each block height maps to a Vec of roots captured during operations in that block.
-    /// This preserves every intermediate state, allowing proofs generated at any point
-    /// to remain valid.
+    /// Accepted historical roots for proof validation.
     ///
     /// Proofs generated against a ledger root are valid as long as that root is either:
     /// - the current root, or
-    /// - present in any of the Vec entries in this map.
+    /// - present in this list.
     ///
-    /// Callers are expected to prune this map according to their consensus rules
-    /// (typically a sliding window tied to block height).
+    /// Use [`Self::set_historical_roots`] to replace this list.
     #[serde(default)]
-    pub historical_roots: BTreeMap<u64, Vec<[u8; 32]>>,
+    pub historical_roots: Vec<[u8; 32]>,
 }
 
 impl Default for FileLedger {
@@ -119,7 +112,7 @@ impl Default for FileLedger {
             tree: MerkleTree {
                 layers: vec![vec![]],
             },
-            historical_roots: BTreeMap::new(),
+            historical_roots: Vec::new(),
         }
     }
 }
@@ -137,22 +130,15 @@ impl FileLedger {
         self.tree.root()
     }
 
-    /// Records the current root as a valid historical root at the given block height.
+    /// Records the current root as a valid historical root.
     ///
     /// Call this before modifying the ledger (e.g., before adding files) to preserve the
-    /// old root for proof validation. Each call appends to the list of roots for that
-    /// block height, preserving all intermediate states within a block.
-    ///
-    /// Using a height-keyed map makes pruning unambiguous: old roots are invalidated by
-    /// time (block height), not by the number of file additions.
-    pub fn record_current_root(&mut self, block_height: u64) {
+    /// old root for proof validation.
+    pub fn record_current_root(&mut self) {
         use ff::PrimeField;
         let root = self.tree.root();
         let repr: [u8; 32] = root.to_repr().into();
-        self.historical_roots
-            .entry(block_height)
-            .or_default()
-            .push(repr);
+        self.historical_roots.push(repr);
     }
 
     /// Checks if a root is valid (either current or in historical set).
@@ -163,24 +149,16 @@ impl FileLedger {
         if root == self.tree.root() {
             return true;
         }
-        // Check historical roots (each block height has a Vec of roots)
+        // Check historical roots
         let repr: [u8; 32] = root.to_repr().into();
-        self.historical_roots
-            .values()
-            .any(|roots| roots.iter().any(|r| r == &repr))
+        self.historical_roots.iter().any(|r| r == &repr)
     }
 
-    /// Prunes historical roots strictly older than `min_block_height`.
+    /// Sets the historical roots to the given list.
     ///
-    /// After this call, the retained set satisfies: `height >= min_block_height`.
-    pub fn prune_historical_roots_older_than(&mut self, min_block_height: u64) {
-        self.historical_roots
-            .retain(|h, _root| *h >= min_block_height);
-    }
-
-    /// Returns the number of block heights with historical roots.
-    pub fn historical_block_count(&self) -> usize {
-        self.historical_roots.len()
+    /// This replaces any existing historical roots with the provided values.
+    pub fn set_historical_roots(&mut self, roots: Vec<[u8; 32]>) {
+        self.historical_roots = roots;
     }
 
     // --- File Management ---
@@ -188,7 +166,7 @@ impl FileLedger {
     /// Adds a new file to the ledger and rebuilds the aggregated tree.
     ///
     /// This method atomically:
-    /// 1. Records the current root as a historical root at the given block height
+    /// 1. Records the current root as a historical root
     /// 2. Inserts the new file
     /// 3. Rebuilds the aggregated Merkle tree
     ///
@@ -198,8 +176,6 @@ impl FileLedger {
     ///
     /// * `entry` - Any type that implements [`FileDescriptor`], providing
     ///   the file's ID, root, and depth.
-    /// * `block_height` - The block height at which this file is being added.
-    ///   The current root is recorded as valid at this height before modification.
     ///
     /// # Example
     ///
@@ -209,13 +185,9 @@ impl FileLedger {
     ///
     /// let (prepared, metadata) = prepare_file(b"hello", "test.dat").unwrap();
     /// let mut ledger = FileLedger::new();
-    /// ledger.add_file(&metadata, 100).unwrap();
+    /// ledger.add_file(&metadata).unwrap();
     /// ```
-    pub fn add_file(
-        &mut self,
-        entry: &impl FileDescriptor,
-        block_height: u64,
-    ) -> Result<(), KontorPoRError> {
+    pub fn add_file(&mut self, entry: &impl FileDescriptor) -> Result<(), KontorPoRError> {
         // Snapshot current state for rollback on failure
         let old_files = self.files.clone();
         let old_tree = self.tree.clone();
@@ -223,7 +195,7 @@ impl FileLedger {
 
         // Record current root before modification (only if ledger is non-empty)
         if !self.files.is_empty() {
-            self.record_current_root(block_height);
+            self.record_current_root();
         }
 
         // Insert the new file
@@ -244,7 +216,7 @@ impl FileLedger {
     /// Adds multiple files to the ledger in a single batch, rebuilding the tree only once.
     ///
     /// This method atomically:
-    /// 1. Records the current root as a historical root at the given block height
+    /// 1. Records the current root as a historical root
     /// 2. Inserts all new files
     /// 3. Rebuilds the aggregated Merkle tree once
     ///
@@ -257,8 +229,6 @@ impl FileLedger {
     /// # Arguments
     ///
     /// * `files` - An iterator of references to types that implement [`FileDescriptor`].
-    /// * `block_height` - The block height at which these files are being added.
-    ///   The current root is recorded as valid at this height before modification.
     ///
     /// # Duplicate Handling
     ///
@@ -268,7 +238,6 @@ impl FileLedger {
     pub fn add_files<'a, T: FileDescriptor + 'a>(
         &mut self,
         files: impl IntoIterator<Item = &'a T>,
-        block_height: u64,
     ) -> Result<(), KontorPoRError> {
         // Collect files first to check if batch is empty
         let files_to_add: Vec<_> = files.into_iter().collect();
@@ -285,7 +254,7 @@ impl FileLedger {
 
         // Record current root before modification (only if ledger is non-empty)
         if !self.files.is_empty() {
-            self.record_current_root(block_height);
+            self.record_current_root();
         }
 
         // Insert all new files

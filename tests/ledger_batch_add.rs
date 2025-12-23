@@ -20,7 +20,7 @@ fn dummy_metadata(file_id: &str, root_val: u64, depth: usize) -> FileMetadata {
 }
 
 fn historical_root_total(ledger: &FileLedger) -> usize {
-    ledger.historical_roots.values().map(|v| v.len()).sum()
+    ledger.historical_roots.len()
 }
 
 // ===========================================
@@ -37,9 +37,7 @@ fn test_batch_add_basic() {
         dummy_metadata("file_c", 300, 5),
     ];
 
-    ledger
-        .add_files(&files, 0)
-        .expect("Batch add should succeed");
+    ledger.add_files(&files).expect("Batch add should succeed");
 
     assert_eq!(ledger.files.len(), 3, "Should have 3 files");
     assert!(ledger.files.contains_key("file_a"));
@@ -53,13 +51,13 @@ fn test_batch_add_empty() {
 
     // Add a file first
     let existing = dummy_metadata("existing", 1, 3);
-    ledger.add_file(&existing, 0).unwrap();
+    ledger.add_file(&existing).unwrap();
     let root_before = ledger.tree.root();
 
     // Empty batch should succeed and not change anything
     let empty: Vec<FileMetadata> = vec![];
     ledger
-        .add_files(&empty, 0)
+        .add_files(&empty)
         .expect("Empty batch should succeed");
 
     assert_eq!(ledger.files.len(), 1, "Should still have 1 file");
@@ -72,7 +70,7 @@ fn test_batch_add_single_file() {
 
     let files = vec![dummy_metadata("only_file", 999, 5)];
     ledger
-        .add_files(&files, 0)
+        .add_files(&files)
         .expect("Single file batch should succeed");
 
     assert_eq!(ledger.files.len(), 1);
@@ -99,13 +97,13 @@ fn test_batch_add_equivalent_to_individual_adds() {
 
     // Method 1: Individual adds
     let mut ledger_individual = FileLedger::new();
-    for (i, metadata) in files.iter().enumerate() {
-        ledger_individual.add_file(metadata, i as u64).unwrap();
+    for metadata in files.iter() {
+        ledger_individual.add_file(metadata).unwrap();
     }
 
     // Method 2: Batch add
     let mut ledger_batch = FileLedger::new();
-    ledger_batch.add_files(&files, 0).unwrap();
+    ledger_batch.add_files(&files).unwrap();
 
     // Both should produce identical cryptographic results
     assert_eq!(
@@ -151,10 +149,10 @@ fn test_batch_add_order_independence() {
     ];
 
     let mut ledger1 = FileLedger::new();
-    ledger1.add_files(&files_order1, 0).unwrap();
+    ledger1.add_files(&files_order1).unwrap();
 
     let mut ledger2 = FileLedger::new();
-    ledger2.add_files(&files_order2, 0).unwrap();
+    ledger2.add_files(&files_order2).unwrap();
 
     assert_eq!(
         ledger1.tree.root(),
@@ -183,7 +181,7 @@ fn test_batch_add_with_duplicates_in_batch() {
         dummy_metadata("dup_file", 999, 5), // Same file_id, different values
     ];
 
-    ledger.add_files(&files, 0).unwrap();
+    ledger.add_files(&files).unwrap();
 
     assert_eq!(ledger.files.len(), 2, "Should have 2 unique files");
 
@@ -203,7 +201,7 @@ fn test_batch_add_overwrites_existing_files() {
 
     // Add initial file
     let existing = dummy_metadata("existing", 100, 3);
-    ledger.add_file(&existing, 0).unwrap();
+    ledger.add_file(&existing).unwrap();
     let original_root = ledger.tree.root();
 
     // Batch add with same file_id but different values
@@ -211,7 +209,7 @@ fn test_batch_add_overwrites_existing_files() {
         dummy_metadata("existing", 999, 5), // Overwrite
         dummy_metadata("new_file", 200, 4),
     ];
-    ledger.add_files(&files, 0).unwrap();
+    ledger.add_files(&files).unwrap();
 
     assert_eq!(ledger.files.len(), 2);
     assert_eq!(
@@ -236,10 +234,10 @@ fn test_batch_add_after_individual_adds() {
 
     // Add files individually first
     ledger
-        .add_file(&dummy_metadata("individual_1", 100, 3), 0)
+        .add_file(&dummy_metadata("individual_1", 100, 3))
         .unwrap();
     ledger
-        .add_file(&dummy_metadata("individual_2", 200, 4), 1)
+        .add_file(&dummy_metadata("individual_2", 200, 4))
         .unwrap();
 
     // Then batch add more files
@@ -247,7 +245,7 @@ fn test_batch_add_after_individual_adds() {
         dummy_metadata("batch_1", 300, 5),
         dummy_metadata("batch_2", 400, 3),
     ];
-    ledger.add_files(&batch_files, 0).unwrap();
+    ledger.add_files(&batch_files).unwrap();
 
     assert_eq!(ledger.files.len(), 4, "Should have 4 files total");
     assert!(ledger.files.contains_key("individual_1"));
@@ -265,11 +263,11 @@ fn test_individual_add_after_batch_add() {
         dummy_metadata("batch_1", 100, 3),
         dummy_metadata("batch_2", 200, 4),
     ];
-    ledger.add_files(&files, 0).unwrap();
+    ledger.add_files(&files).unwrap();
 
     // Then add individually
     ledger
-        .add_file(&dummy_metadata("individual_1", 300, 5), 1)
+        .add_file(&dummy_metadata("individual_1", 300, 5))
         .unwrap();
 
     assert_eq!(ledger.files.len(), 3, "Should have 3 files total");
@@ -288,7 +286,7 @@ fn test_lookup_after_batch_add() {
         dummy_metadata("banana", 200, 4),
         dummy_metadata("cherry", 300, 5),
     ];
-    ledger.add_files(&files, 0).unwrap();
+    ledger.add_files(&files).unwrap();
 
     // Indices should be in lexicographic order
     let (idx_apple, rc_apple) = ledger.lookup("apple").expect("apple should be found");
@@ -318,7 +316,7 @@ fn test_aggregation_proof_after_batch_add() {
         dummy_metadata("file_3", 300, 5),
         dummy_metadata("file_4", 400, 3),
     ];
-    ledger.add_files(&files, 0).unwrap();
+    ledger.add_files(&files).unwrap();
 
     // Get aggregation proof for each file
     for file_id in ["file_1", "file_2", "file_3", "file_4"] {
@@ -361,7 +359,7 @@ fn test_batch_add_tree_depth_progression() {
             .map(|i| dummy_metadata(&format!("file_{}", i), i as u64, 3))
             .collect();
 
-        ledger.add_files(&files, 0).unwrap();
+        ledger.add_files(&files).unwrap();
 
         assert_eq!(
             ledger.depth(),
@@ -387,7 +385,7 @@ fn test_batch_add_large_batch() {
         .collect();
 
     ledger
-        .add_files(&files, 0)
+        .add_files(&files)
         .expect("Large batch should succeed");
 
     assert_eq!(ledger.files.len(), 100);
@@ -409,13 +407,13 @@ fn test_batch_vs_individual_large_dataset() {
 
     // Individual adds
     let mut ledger_individual = FileLedger::new();
-    for (i, metadata) in files.iter().enumerate() {
-        ledger_individual.add_file(metadata, i as u64).unwrap();
+    for metadata in files.iter() {
+        ledger_individual.add_file(metadata).unwrap();
     }
 
     // Batch add
     let mut ledger_batch = FileLedger::new();
-    ledger_batch.add_files(&files, 0).unwrap();
+    ledger_batch.add_files(&files).unwrap();
 
     // Verify identical results
     assert_eq!(ledger_individual.tree.root(), ledger_batch.tree.root());
@@ -447,7 +445,7 @@ fn test_batch_add_with_iter() {
 
     // Using .iter() explicitly
     let mut ledger = FileLedger::new();
-    ledger.add_files(files.iter(), 0).unwrap();
+    ledger.add_files(files.iter()).unwrap();
 
     assert_eq!(ledger.files.len(), 3);
 }
@@ -465,7 +463,7 @@ fn test_batch_add_with_filter() {
     // Filter to only add files with depth > 3
     let mut ledger = FileLedger::new();
     ledger
-        .add_files(files.iter().filter(|m| m.depth() > 3), 0)
+        .add_files(files.iter().filter(|m| m.depth() > 3))
         .unwrap();
 
     assert_eq!(ledger.files.len(), 2);
@@ -493,13 +491,13 @@ fn test_batch_add_with_real_files() {
 
     // Batch add
     let mut ledger_batch = FileLedger::new();
-    ledger_batch.add_files(&metadatas, 0).unwrap();
+    ledger_batch.add_files(&metadatas).unwrap();
 
     // Individual adds for comparison
     let mut ledger_individual = FileLedger::new();
-    ledger_individual.add_file(&metadata1, 0).unwrap();
-    ledger_individual.add_file(&metadata2, 1).unwrap();
-    ledger_individual.add_file(&metadata3, 2).unwrap();
+    ledger_individual.add_file(&metadata1).unwrap();
+    ledger_individual.add_file(&metadata2).unwrap();
+    ledger_individual.add_file(&metadata3).unwrap();
 
     // Must produce identical results
     assert_eq!(ledger_batch.tree.root(), ledger_individual.tree.root());
@@ -523,7 +521,7 @@ fn test_add_file_no_historical_root_on_empty_ledger() {
     let mut ledger = FileLedger::new();
 
     let metadata = dummy_metadata("first_file", 100, 3);
-    ledger.add_file(&metadata, 1000).unwrap();
+    ledger.add_file(&metadata).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -537,17 +535,13 @@ fn test_add_file_records_historical_root_on_non_empty_ledger() {
     let mut ledger = FileLedger::new();
 
     // First file - no historical root
-    ledger
-        .add_file(&dummy_metadata("file_1", 100, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_1", 100, 3)).unwrap();
     assert_eq!(historical_root_total(&ledger), 0);
 
     let root_before = ledger.tree.root();
 
     // Second file - should record historical root
-    ledger
-        .add_file(&dummy_metadata("file_2", 200, 3), 1001)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_2", 200, 3)).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -570,7 +564,7 @@ fn test_add_files_no_historical_root_on_empty_ledger() {
         dummy_metadata("file_b", 200, 3),
         dummy_metadata("file_c", 300, 3),
     ];
-    ledger.add_files(&files, 1000).unwrap();
+    ledger.add_files(&files).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -586,9 +580,7 @@ fn test_add_files_records_single_historical_root() {
     let mut ledger = FileLedger::new();
 
     // Setup: add initial file
-    ledger
-        .add_file(&dummy_metadata("initial", 100, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("initial", 100, 3)).unwrap();
     let root_before_batch = ledger.tree.root();
 
     // Batch add multiple files
@@ -597,7 +589,7 @@ fn test_add_files_records_single_historical_root() {
         dummy_metadata("file_b", 300, 3),
         dummy_metadata("file_c", 400, 3),
     ];
-    ledger.add_files(&batch, 1001).unwrap();
+    ledger.add_files(&batch).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -619,10 +611,11 @@ fn test_historical_roots_accumulate_correctly() {
     // Add files one by one
     for i in 0..5 {
         ledger
-            .add_file(
-                &dummy_metadata(&format!("file_{}", i), (i + 1) as u64 * 100, 3),
-                (i + 1) as u64 * 1000,
-            )
+            .add_file(&dummy_metadata(
+                &format!("file_{}", i),
+                (i + 1) as u64 * 100,
+                3,
+            ))
             .unwrap();
     }
 
@@ -639,7 +632,7 @@ fn test_historical_roots_accumulate_correctly() {
         dummy_metadata("batch_1", 600, 3),
         dummy_metadata("batch_2", 700, 3),
     ];
-    ledger.add_files(&batch, 6000).unwrap();
+    ledger.add_files(&batch).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -649,30 +642,24 @@ fn test_historical_roots_accumulate_correctly() {
 }
 
 #[test]
-fn test_block_height_recorded_correctly() {
-    // Verify that historical roots are keyed by the correct block height
+fn test_historical_roots_recorded_correctly() {
+    // Verify that historical roots are recorded for each add operation
     let mut ledger = FileLedger::new();
 
-    ledger
-        .add_file(&dummy_metadata("file_1", 100, 3), 100)
-        .unwrap();
-    ledger
-        .add_file(&dummy_metadata("file_2", 200, 3), 200)
-        .unwrap();
-    ledger
-        .add_file(&dummy_metadata("file_3", 300, 3), 300)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_1", 100, 3)).unwrap();
+    ledger.add_file(&dummy_metadata("file_2", 200, 3)).unwrap();
+    ledger.add_file(&dummy_metadata("file_3", 300, 3)).unwrap();
 
-    // We have 2 historical roots at heights 200 and 300
+    // We have 2 historical roots (one before file_2, one before file_3)
     assert_eq!(historical_root_total(&ledger), 2);
 
-    // Prune roots older than 250 - should remove root at height 200
-    ledger.prune_historical_roots_older_than(250);
+    // Test set_historical_roots to clear
+    ledger.set_historical_roots(vec![]);
 
     assert_eq!(
         historical_root_total(&ledger),
-        1,
-        "Should have 1 root after pruning (height 300 >= 250)"
+        0,
+        "Should have 0 roots after clearing"
     );
 }
 
@@ -687,18 +674,14 @@ fn test_add_file_atomicity_state_consistency() {
     let mut ledger = FileLedger::new();
 
     // Add first file
-    ledger
-        .add_file(&dummy_metadata("file_1", 100, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_1", 100, 3)).unwrap();
 
     let files_before = ledger.files.len();
     let root_before = ledger.tree.root();
     let historical_count_before = historical_root_total(&ledger);
 
     // Add second file
-    ledger
-        .add_file(&dummy_metadata("file_2", 200, 3), 1001)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_2", 200, 3)).unwrap();
 
     // State should be fully updated
     assert_eq!(
@@ -726,9 +709,7 @@ fn test_add_files_atomicity_state_consistency() {
     let mut ledger = FileLedger::new();
 
     // Setup initial state
-    ledger
-        .add_file(&dummy_metadata("initial", 100, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("initial", 100, 3)).unwrap();
 
     let files_before = ledger.files.len();
     let root_before = ledger.tree.root();
@@ -740,7 +721,7 @@ fn test_add_files_atomicity_state_consistency() {
         dummy_metadata("batch_2", 300, 3),
         dummy_metadata("batch_3", 400, 3),
     ];
-    ledger.add_files(&batch, 1001).unwrap();
+    ledger.add_files(&batch).unwrap();
 
     // State should be fully updated atomically
     assert_eq!(
@@ -766,16 +747,14 @@ fn test_empty_batch_does_not_record_historical_root() {
     // because nothing actually changed - this is a no-op
     let mut ledger = FileLedger::new();
 
-    ledger
-        .add_file(&dummy_metadata("initial", 100, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("initial", 100, 3)).unwrap();
 
     let root_before = ledger.tree.root();
     let historical_count_before = historical_root_total(&ledger);
 
     // Add empty batch - should be a complete no-op
     let empty: Vec<api::FileMetadata> = vec![];
-    ledger.add_files(&empty, 1001).unwrap();
+    ledger.add_files(&empty).unwrap();
 
     // Root should not change
     assert_eq!(
@@ -804,7 +783,7 @@ fn test_empty_batch_is_true_noop() {
     let root_before_empty = ledger_empty.tree.root();
 
     let empty: Vec<api::FileMetadata> = vec![];
-    ledger_empty.add_files(&empty, 1000).unwrap();
+    ledger_empty.add_files(&empty).unwrap();
 
     assert_eq!(
         ledger_empty.files.len(),
@@ -824,20 +803,16 @@ fn test_empty_batch_is_true_noop() {
 
     // Case 2: Empty batch on non-empty ledger
     let mut ledger = FileLedger::new();
-    ledger
-        .add_file(&dummy_metadata("file_1", 100, 3), 1000)
-        .unwrap();
-    ledger
-        .add_file(&dummy_metadata("file_2", 200, 3), 1001)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_1", 100, 3)).unwrap();
+    ledger.add_file(&dummy_metadata("file_2", 200, 3)).unwrap();
 
     let files_before = ledger.files.len();
     let root_before = ledger.tree.root();
     let historical_before = historical_root_total(&ledger);
 
     // Multiple empty batches should all be no-ops
-    for block in 1002..1005 {
-        ledger.add_files(&empty, block).unwrap();
+    for _ in 1002..1005 {
+        ledger.add_files(&empty).unwrap();
     }
 
     assert_eq!(ledger.files.len(), files_before, "File count unchanged");
@@ -855,35 +830,28 @@ fn test_add_file_and_batch_interleaved() {
     let mut ledger = FileLedger::new();
 
     // Individual add
-    ledger
-        .add_file(&dummy_metadata("ind_1", 100, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("ind_1", 100, 3)).unwrap();
     assert_eq!(ledger.files.len(), 1);
     assert_eq!(historical_root_total(&ledger), 0);
 
     // Batch add
     ledger
-        .add_files(
-            &[
-                dummy_metadata("batch_1", 200, 3),
-                dummy_metadata("batch_2", 300, 3),
-            ],
-            1001,
-        )
+        .add_files(&[
+            dummy_metadata("batch_1", 200, 3),
+            dummy_metadata("batch_2", 300, 3),
+        ])
         .unwrap();
     assert_eq!(ledger.files.len(), 3);
     assert_eq!(historical_root_total(&ledger), 1);
 
     // Individual add
-    ledger
-        .add_file(&dummy_metadata("ind_2", 400, 3), 1002)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("ind_2", 400, 3)).unwrap();
     assert_eq!(ledger.files.len(), 4);
     assert_eq!(historical_root_total(&ledger), 2);
 
     // Another batch
     ledger
-        .add_files(&[dummy_metadata("batch_3", 500, 3)], 1003)
+        .add_files(&[dummy_metadata("batch_3", 500, 3)])
         .unwrap();
     assert_eq!(ledger.files.len(), 5);
     assert_eq!(historical_root_total(&ledger), 3);
@@ -899,15 +867,11 @@ fn test_same_block_height_appends_historical_roots() {
     // preserving every intermediate state for proof validation.
     let mut ledger = FileLedger::new();
 
-    ledger
-        .add_file(&dummy_metadata("file_1", 100, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_1", 100, 3)).unwrap();
 
     let root_after_1 = ledger.tree.root();
 
-    ledger
-        .add_file(&dummy_metadata("file_2", 200, 3), 2000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_2", 200, 3)).unwrap();
 
     // Root at height 2000 is the root BEFORE file_2 was added (i.e., root_after_1)
     assert_eq!(historical_root_total(&ledger), 1);
@@ -916,9 +880,7 @@ fn test_same_block_height_appends_historical_roots() {
     let root_after_2 = ledger.tree.root();
 
     // Add another file with the SAME block height - this APPENDS (not overwrites)
-    ledger
-        .add_file(&dummy_metadata("file_3", 300, 3), 2000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_3", 300, 3)).unwrap();
 
     // Now we have 2 historical roots at height 2000: root_after_1 and root_after_2
     assert_eq!(
@@ -938,7 +900,7 @@ fn test_same_block_height_appends_historical_roots() {
 
     // Verify we have 1 block height with 2 roots
     assert_eq!(
-        ledger.historical_block_count(),
+        ledger.historical_roots.len(),
         1,
         "Should have roots at 1 block height"
     );
@@ -959,10 +921,7 @@ fn test_all_intermediate_states_preserved_within_block() {
         }
 
         ledger
-            .add_file(
-                &dummy_metadata(&format!("file_{}", i), i as u64 * 100, 3),
-                1000,
-            )
+            .add_file(&dummy_metadata(&format!("file_{}", i), i as u64 * 100, 3))
             .unwrap();
     }
 
@@ -976,7 +935,7 @@ fn test_all_intermediate_states_preserved_within_block() {
         "Should have 4 historical roots"
     );
     assert_eq!(
-        ledger.historical_block_count(),
+        ledger.historical_roots.len(),
         1,
         "All roots should be at block height 1000"
     );
@@ -1002,9 +961,7 @@ fn test_batch_add_records_only_one_historical_root() {
     let mut ledger = FileLedger::new();
 
     // Add first file to make ledger non-empty
-    ledger
-        .add_file(&dummy_metadata("file_0", 50, 3), 999)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_0", 50, 3)).unwrap();
 
     let root_before_batch = ledger.tree.root();
     assert_eq!(historical_root_total(&ledger), 0, "No historical roots yet");
@@ -1014,7 +971,7 @@ fn test_batch_add_records_only_one_historical_root() {
         .map(|i| dummy_metadata(&format!("batch_file_{}", i), i as u64 * 100, 3))
         .collect();
 
-    ledger.add_files(&batch, 1000).unwrap();
+    ledger.add_files(&batch).unwrap();
 
     // Should have exactly ONE historical root (the pre-batch root)
     assert_eq!(
@@ -1031,17 +988,16 @@ fn test_batch_add_records_only_one_historical_root() {
 
     // Compare to individual adds at same block height
     let mut ledger2 = FileLedger::new();
-    ledger2
-        .add_file(&dummy_metadata("file_0", 50, 3), 999)
-        .unwrap();
+    ledger2.add_file(&dummy_metadata("file_0", 50, 3)).unwrap();
 
     // Add same files individually at same block height
     for i in 1..=5 {
         ledger2
-            .add_file(
-                &dummy_metadata(&format!("batch_file_{}", i), i as u64 * 100, 3),
-                1000,
-            )
+            .add_file(&dummy_metadata(
+                &format!("batch_file_{}", i),
+                i as u64 * 100,
+                3,
+            ))
             .unwrap();
     }
 
@@ -1067,29 +1023,21 @@ fn test_save_load_preserves_historical_roots_vec_format() {
     let mut ledger = FileLedger::new();
 
     // Add files at block 1000 - this will create multiple historical roots at same height
-    ledger
-        .add_file(&dummy_metadata("file_1", 100, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_1", 100, 3)).unwrap();
     let root_1 = ledger.tree.root();
 
-    ledger
-        .add_file(&dummy_metadata("file_2", 200, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_2", 200, 3)).unwrap();
     let root_2 = ledger.tree.root();
 
-    ledger
-        .add_file(&dummy_metadata("file_3", 300, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_3", 300, 3)).unwrap();
     let root_3 = ledger.tree.root();
 
     // Add file at block 1001
-    ledger
-        .add_file(&dummy_metadata("file_4", 400, 3), 1001)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_4", 400, 3)).unwrap();
 
     // Verify initial state
     assert_eq!(historical_root_total(&ledger), 3);
-    assert_eq!(ledger.historical_block_count(), 2);
+    assert_eq!(ledger.historical_roots.len(), 2);
     assert!(ledger.is_valid_root(root_1));
     assert!(ledger.is_valid_root(root_2));
     assert!(ledger.is_valid_root(root_3));
@@ -1111,8 +1059,8 @@ fn test_save_load_preserves_historical_roots_vec_format() {
         "Historical root count should be preserved"
     );
     assert_eq!(
-        loaded.historical_block_count(),
-        ledger.historical_block_count(),
+        loaded.historical_roots.len(),
+        ledger.historical_roots.len(),
         "Historical block count should be preserved"
     );
 
@@ -1135,43 +1083,29 @@ fn test_save_load_preserves_historical_roots_vec_format() {
 }
 
 #[test]
-fn test_historical_roots_across_multiple_blocks() {
-    // Test that roots are correctly organized by block height
+fn test_historical_roots_accumulate() {
+    // Test that historical roots accumulate with each file addition
     let mut ledger = FileLedger::new();
 
-    // Block 1000: add 3 files
-    ledger
-        .add_file(&dummy_metadata("file_1", 100, 3), 1000)
-        .unwrap();
+    // Add 5 files, capturing roots after each
+    ledger.add_file(&dummy_metadata("file_1", 100, 3)).unwrap();
     let root_1 = ledger.tree.root();
 
-    ledger
-        .add_file(&dummy_metadata("file_2", 200, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_2", 200, 3)).unwrap();
     let root_2 = ledger.tree.root();
 
-    ledger
-        .add_file(&dummy_metadata("file_3", 300, 3), 1000)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_3", 300, 3)).unwrap();
     let root_3 = ledger.tree.root();
 
-    // Block 1001: add 2 files
-    ledger
-        .add_file(&dummy_metadata("file_4", 400, 3), 1001)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_4", 400, 3)).unwrap();
     let root_4 = ledger.tree.root();
 
-    ledger
-        .add_file(&dummy_metadata("file_5", 500, 3), 1001)
-        .unwrap();
+    ledger.add_file(&dummy_metadata("file_5", 500, 3)).unwrap();
     let _root_5 = ledger.tree.root();
 
-    // Check counts
-    // Block 1000: roots before file_2, file_3 = 2 roots (root after file_1, root after file_2)
-    // Block 1001: roots before file_4, file_5 = 2 roots (root_3, root_4)
-    // Total = 4 historical roots across 2 block heights
+    // We should have 4 historical roots (one before each of files 2-5)
     assert_eq!(historical_root_total(&ledger), 4);
-    assert_eq!(ledger.historical_block_count(), 2);
+    assert_eq!(ledger.historical_roots.len(), 4);
 
     // All intermediate roots should be valid
     assert!(ledger.is_valid_root(root_1), "root_1 should be valid");
@@ -1179,25 +1113,22 @@ fn test_historical_roots_across_multiple_blocks() {
     assert!(ledger.is_valid_root(root_3), "root_3 should be valid");
     assert!(ledger.is_valid_root(root_4), "root_4 should be valid");
 
-    // Prune block 1000 - should remove 2 roots
-    ledger.prune_historical_roots_older_than(1001);
+    // Test clearing with set_historical_roots
+    ledger.set_historical_roots(vec![]);
 
     assert_eq!(
         historical_root_total(&ledger),
-        2,
-        "Should have 2 roots after pruning block 1000"
-    );
-    assert_eq!(
-        ledger.historical_block_count(),
-        1,
-        "Should have 1 block height after pruning"
+        0,
+        "Should have 0 roots after clearing"
     );
 
-    // Block 1000 roots should no longer be valid (except current)
-    assert!(!ledger.is_valid_root(root_1), "root_1 should be pruned");
-    assert!(!ledger.is_valid_root(root_2), "root_2 should be pruned");
-
-    // Block 1001 roots should still be valid
-    assert!(ledger.is_valid_root(root_3), "root_3 should still be valid");
-    assert!(ledger.is_valid_root(root_4), "root_4 should still be valid");
+    // After clearing, old roots should no longer be valid
+    assert!(
+        !ledger.is_valid_root(root_1),
+        "root_1 should not be valid after clear"
+    );
+    assert!(
+        !ledger.is_valid_root(root_2),
+        "root_2 should not be valid after clear"
+    );
 }

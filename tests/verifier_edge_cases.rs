@@ -14,8 +14,8 @@ fn test_verifier_rejects_out_of_range_ledger_index() {
     let (prepared_b, meta_b) = api::prepare_file(&data_b, "b.dat").unwrap();
 
     let mut ledger = kontor_crypto::FileLedger::new();
-    ledger.add_file(&meta_a, 1000).unwrap();
-    ledger.add_file(&meta_b, 1000).unwrap();
+    ledger.add_file(&meta_a).unwrap();
+    ledger.add_file(&meta_b).unwrap();
 
     let challenges = vec![
         Challenge::new_test(meta_a.clone(), 1000, 1, FieldElement::from(1u64)),
@@ -49,8 +49,8 @@ fn test_verifier_rejects_ledger_indices_length_mismatch() {
     let (prepared_b, meta_b) = api::prepare_file(&data_b, "b2.dat").unwrap();
 
     let mut ledger = kontor_crypto::FileLedger::new();
-    ledger.add_file(&meta_a, 1000).unwrap();
-    ledger.add_file(&meta_b, 1000).unwrap();
+    ledger.add_file(&meta_a).unwrap();
+    ledger.add_file(&meta_b).unwrap();
 
     let challenges = vec![
         Challenge::new_test(meta_a.clone(), 1000, 1, FieldElement::from(11u64)),
@@ -91,7 +91,7 @@ fn test_duplicate_file_challenges_fail_verification() {
     ];
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_file(&metadata, 0).unwrap();
+    ledger.add_file(&metadata).unwrap();
 
     let system = kontor_crypto::api::PorSystem::new(&ledger);
     let proof = system
@@ -126,7 +126,7 @@ fn test_malformed_metadata_non_power_of_two_padded_len() {
 
     // Create ledger for unified API
     let mut ledger = kontor_crypto::FileLedger::new();
-    ledger.add_file(&valid_metadata, 0).unwrap();
+    ledger.add_file(&valid_metadata).unwrap();
 
     let system = kontor_crypto::api::PorSystem::new(&ledger);
     let files_vec: Vec<&_> = files.values().copied().collect();
@@ -153,7 +153,7 @@ fn test_malformed_metadata_non_power_of_two_padded_len() {
 
     // Create ledger with malformed metadata for verification
     let mut malformed_ledger = kontor_crypto::FileLedger::new();
-    malformed_ledger.add_file(&malformed_metadata, 0).unwrap();
+    malformed_ledger.add_file(&malformed_metadata).unwrap();
 
     // Try to verify with malformed metadata
     let malformed_system = kontor_crypto::api::PorSystem::new(&malformed_ledger);
@@ -189,7 +189,7 @@ fn test_inconsistent_metadata_fields() {
 
     // Create ledger for unified API
     let mut ledger = kontor_crypto::FileLedger::new();
-    ledger.add_file(&valid_metadata, 0).unwrap();
+    ledger.add_file(&valid_metadata).unwrap();
 
     let system = kontor_crypto::api::PorSystem::new(&ledger);
     let files_vec: Vec<&_> = files.values().copied().collect();
@@ -210,7 +210,7 @@ fn test_inconsistent_metadata_fields() {
 
     // Create ledger with inconsistent metadata for verification
     let mut bad_ledger1 = kontor_crypto::FileLedger::new();
-    bad_ledger1.add_file(&inconsistent_meta1, 0).unwrap();
+    bad_ledger1.add_file(&inconsistent_meta1).unwrap();
 
     let bad_system1 = kontor_crypto::api::PorSystem::new(&bad_ledger1);
     let result1 = bad_system1.verify(&proof, &[bad_challenge1]);
@@ -243,7 +243,7 @@ fn test_inconsistent_metadata_fields() {
 
     // Create ledger with zero padded_len metadata
     let mut bad_ledger2 = kontor_crypto::FileLedger::new();
-    bad_ledger2.add_file(&inconsistent_meta2, 0).unwrap();
+    bad_ledger2.add_file(&inconsistent_meta2).unwrap();
 
     let bad_system2 = kontor_crypto::api::PorSystem::new(&bad_ledger2);
     let result2 = bad_system2.verify(&proof, &[bad_challenge2]);

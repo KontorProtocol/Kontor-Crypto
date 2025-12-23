@@ -250,13 +250,12 @@ fn setup_network(
     // Build ledger with ALL files in network (node files + other files)
     let mut ledger = FileLedger::new();
 
-    // Add node's files first (use sequential block heights for simulation)
-    for (idx, file) in node_files.iter().enumerate() {
-        ledger.add_file(&file.metadata, idx as u64 + 1).unwrap();
+    // Add node's files first
+    for file in node_files.iter() {
+        ledger.add_file(&file.metadata).unwrap();
     }
 
     // Add additional files to simulate full network (that this node doesn't store)
-    let base_height = node_files.len() as u64 + 1;
     for (i, &category) in categories
         .iter()
         .enumerate()
@@ -269,7 +268,7 @@ fn setup_network(
         rng.fill_bytes(&mut data);
 
         let (_, metadata) = api::prepare_file(&data, &format!("network_file_{}.dat", i)).unwrap();
-        ledger.add_file(&metadata, base_height + i as u64).unwrap();
+        ledger.add_file(&metadata).unwrap();
     }
 
     // Find depth range across all node files

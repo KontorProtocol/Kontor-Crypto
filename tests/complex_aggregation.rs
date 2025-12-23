@@ -148,9 +148,7 @@ fn test_highly_heterogeneous_depths() {
         );
 
         files.insert(metadata.file_id.clone(), prepared);
-        ledger
-            .add_file(&metadata, i as u64)
-            .expect("Failed to add to ledger");
+        ledger.add_file(&metadata).expect("Failed to add to ledger");
         metadatas.push(metadata);
     }
 
@@ -220,9 +218,7 @@ fn test_maximum_file_aggregation() {
             api::prepare_file(&data, "test_file.dat").expect("Failed to prepare file");
 
         files.insert(metadata.file_id.clone(), prepared);
-        ledger
-            .add_file(&metadata, i as u64)
-            .expect("Failed to add to ledger");
+        ledger.add_file(&metadata).expect("Failed to add to ledger");
         metadatas.push(metadata);
     }
 

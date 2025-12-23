@@ -111,7 +111,7 @@ fn test_proof_serialization_roundtrip() {
 
     // Create ledger
     let mut ledger = FileLedger::new();
-    ledger.add_file(&metadata, 0).unwrap();
+    ledger.add_file(&metadata).unwrap();
 
     let system = PorSystem::new(&ledger);
 
@@ -176,8 +176,8 @@ fn test_batch_seed_validation() {
 
     // Create ledger
     let mut ledger = FileLedger::new();
-    ledger.add_file(&metadata1, 0).unwrap();
-    ledger.add_file(&metadata2, 1).unwrap();
+    ledger.add_file(&metadata1).unwrap();
+    ledger.add_file(&metadata2).unwrap();
 
     let system = PorSystem::new(&ledger);
 
@@ -222,7 +222,7 @@ fn test_porsystem_challenge_id_matching() {
 
     // Create ledger
     let mut ledger = FileLedger::new();
-    ledger.add_file(&metadata, 0).unwrap();
+    ledger.add_file(&metadata).unwrap();
 
     let system = PorSystem::new(&ledger);
 

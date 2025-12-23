@@ -8,7 +8,7 @@ use common::fixtures::{create_test_data, setup_test_scenario, TestConfig};
 use kontor_crypto::KontorPoRError;
 
 fn historical_root_total(ledger: &kontor_crypto::ledger::FileLedger) -> usize {
-    ledger.historical_roots.values().map(|v| v.len()).sum()
+    ledger.historical_roots.len()
 }
 
 /// Helper to create a synthetic FileMetadata for testing.
@@ -71,8 +71,8 @@ fn test_historical_ledger_full_lifecycle() {
         api::prepare_file(&alice_data_2, "alice_doc2.pdf").unwrap();
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_file(&alice_meta_1, 1000).unwrap();
-    ledger.add_file(&alice_meta_2, 1000).unwrap();
+    ledger.add_file(&alice_meta_1).unwrap();
+    ledger.add_file(&alice_meta_2).unwrap();
 
     let root_block_1000 = ledger.root();
     println!("  Ledger root after block 1000: {:?}", root_block_1000);
@@ -123,7 +123,7 @@ fn test_historical_ledger_full_lifecycle() {
     let (_bob_prepared, bob_meta) = api::prepare_file(&bob_data, "bob_contract.pdf").unwrap();
 
     // CRITICAL: add_file atomically records the OLD root before adding the new file
-    ledger.add_file(&bob_meta, 1001).unwrap();
+    ledger.add_file(&bob_meta).unwrap();
 
     let root_block_1001 = ledger.root();
     println!("  Ledger root after block 1001: {:?}", root_block_1001);
@@ -247,7 +247,7 @@ fn test_proofs_against_any_intermediate_state_remain_valid() {
     println!("BLOCK 1000: Adding files and generating proofs at each step\n");
 
     // Add file_1
-    ledger.add_file(&meta_1, 1000).unwrap();
+    ledger.add_file(&meta_1).unwrap();
     let root_after_1 = ledger.root();
     println!(
         "  After file_1: root = {:?}",
@@ -255,7 +255,7 @@ fn test_proofs_against_any_intermediate_state_remain_valid() {
     );
 
     // Add file_2 - generate a multi-file proof at this state
-    ledger.add_file(&meta_2, 1000).unwrap();
+    ledger.add_file(&meta_2).unwrap();
     let root_after_2 = ledger.root();
     println!(
         "  After file_2: root = {:?}",
@@ -278,7 +278,7 @@ fn test_proofs_against_any_intermediate_state_remain_valid() {
     );
 
     // Add file_3 - generate another proof at this state
-    ledger.add_file(&meta_3, 1000).unwrap();
+    ledger.add_file(&meta_3).unwrap();
     let root_after_3 = ledger.root();
     println!(
         "  After file_3: root = {:?}",
@@ -308,7 +308,7 @@ fn test_proofs_against_any_intermediate_state_remain_valid() {
     // =========================================================================
     println!("\nBLOCK 1001: Adding file_4\n");
 
-    ledger.add_file(&meta_4, 1001).unwrap();
+    ledger.add_file(&meta_4).unwrap();
     let root_after_4 = ledger.root();
     println!(
         "  After file_4: root = {:?}",
@@ -329,7 +329,7 @@ fn test_proofs_against_any_intermediate_state_remain_valid() {
     );
     println!(
         "  Block heights with roots: {}",
-        ledger.historical_block_count()
+        ledger.historical_roots.len()
     );
 
     // root_after_1 should be valid (recorded when file_2 was added in block 1000)
@@ -437,7 +437,7 @@ fn test_single_file_proof_survives_ledger_update() {
     let data_c = create_test_data(100, Some(999));
     let (_, metadata_c) = api::prepare_file(&data_c, "test_file.dat").unwrap();
 
-    updated_ledger.add_file(&metadata_c, 1001).unwrap();
+    updated_ledger.add_file(&metadata_c).unwrap();
 
     assert_ne!(
         original_ledger.tree.root(),
@@ -490,7 +490,7 @@ fn test_multi_file_proof_valid_with_historical_root() {
 
     // 3. Create updated ledger with historical root recorded
     let mut updated_ledger = original_ledger.clone();
-    updated_ledger.record_current_root(1_000); // Record original root as historical (height-keyed)
+    updated_ledger.record_current_root(); // Record original root as historical
 
     println!("Original root recorded as historical");
     println!(
@@ -502,7 +502,7 @@ fn test_multi_file_proof_valid_with_historical_root() {
     // Note: add_file automatically records historical root at the given block height
     let data_c = create_test_data(100, Some(999));
     let (_, metadata_c) = api::prepare_file(&data_c, "test_file.dat").unwrap();
-    updated_ledger.add_file(&metadata_c, 1001).unwrap();
+    updated_ledger.add_file(&metadata_c).unwrap();
 
     println!("Added new file, current root changed");
     println!("Proof ledger_root: {:?}", multi_proof.ledger_root);
@@ -547,7 +547,7 @@ fn test_multi_file_proof_fails_without_historical_root() {
     // Add a file to change the root (this will record the old root as historical)
     let data_c = create_test_data(100, Some(999));
     let (_, metadata_c) = api::prepare_file(&data_c, "test_file.dat").unwrap();
-    new_ledger.add_file(&metadata_c, 1001).unwrap();
+    new_ledger.add_file(&metadata_c).unwrap();
 
     // Clear historical roots to simulate not tracking history properly
     new_ledger.historical_roots.clear();
@@ -588,7 +588,7 @@ fn test_ledger_save_load_roundtrip() {
             FieldElement::from(i as u64 * 100),
             3,
         );
-        ledger.add_file(&metadata, i as u64).unwrap();
+        ledger.add_file(&metadata).unwrap();
     }
 
     // Store the original root for comparison
@@ -639,16 +639,10 @@ fn test_ledger_tamper_detected_on_load() {
     // Create and save a valid ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
     ledger
-        .add_file(
-            &synthetic_metadata("file1", FieldElement::from(100u64), 3),
-            0,
-        )
+        .add_file(&synthetic_metadata("file1", FieldElement::from(100u64), 3))
         .unwrap();
     ledger
-        .add_file(
-            &synthetic_metadata("file2", FieldElement::from(200u64), 3),
-            1,
-        )
+        .add_file(&synthetic_metadata("file2", FieldElement::from(200u64), 3))
         .unwrap();
 
     let temp_path = std::env::temp_dir().join("test_tampered_ledger.bin");
@@ -685,22 +679,13 @@ fn test_get_aggregation_proof_missing_returns_none() {
     // Create a ledger with a few files
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
     ledger
-        .add_file(
-            &synthetic_metadata("file1", FieldElement::from(100u64), 3),
-            0,
-        )
+        .add_file(&synthetic_metadata("file1", FieldElement::from(100u64), 3))
         .unwrap();
     ledger
-        .add_file(
-            &synthetic_metadata("file2", FieldElement::from(200u64), 3),
-            1,
-        )
+        .add_file(&synthetic_metadata("file2", FieldElement::from(200u64), 3))
         .unwrap();
     ledger
-        .add_file(
-            &synthetic_metadata("file3", FieldElement::from(300u64), 3),
-            2,
-        )
+        .add_file(&synthetic_metadata("file3", FieldElement::from(300u64), 3))
         .unwrap();
 
     // Try to get proof for a non-existent file
@@ -748,9 +733,9 @@ fn test_ledger_file_ordering_consistency() {
         ),
     ];
 
-    for (i, (hash, root)) in files.iter().enumerate() {
+    for (hash, root) in files.iter() {
         ledger
-            .add_file(&synthetic_metadata(hash, *root, 3), i as u64)
+            .add_file(&synthetic_metadata(hash, *root, 3))
             .unwrap();
     }
 
@@ -780,7 +765,7 @@ fn test_ledger_duplicate_file_updates_entry() {
     let file_id = "duplicate_test";
     let root1 = FieldElement::from(100u64);
 
-    let result1 = ledger.add_file(&synthetic_metadata(file_id, root1, 3), 0);
+    let result1 = ledger.add_file(&synthetic_metadata(file_id, root1, 3));
     assert!(result1.is_ok(), "First add should succeed");
 
     let original_root = ledger.files.get(file_id).unwrap().root;
@@ -788,7 +773,7 @@ fn test_ledger_duplicate_file_updates_entry() {
 
     // Add the same file again with a different root - this should UPDATE
     let root2 = kontor_crypto::api::FieldElement::from(200u64);
-    let result2 = ledger.add_file(&synthetic_metadata(file_id, root2, 3), 1);
+    let result2 = ledger.add_file(&synthetic_metadata(file_id, root2, 3));
 
     assert!(result2.is_ok(), "Second add should succeed (update)");
     assert_eq!(
@@ -825,13 +810,13 @@ fn test_batch_add_produces_identical_cryptographic_commitments() {
 
     // Method 1: Individual adds
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
-    for (i, metadata) in files_data.iter().enumerate() {
-        ledger_individual.add_file(metadata, i as u64).unwrap();
+    for metadata in files_data.iter() {
+        ledger_individual.add_file(metadata).unwrap();
     }
 
     // Method 2: Batch add
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files(&files_data, 0).unwrap();
+    ledger_batch.add_files(&files_data).unwrap();
 
     // Verify cryptographic equivalence
     assert_eq!(
@@ -869,7 +854,7 @@ fn test_batch_add_proof_generation_and_verification() {
 
     // Use batch add to create ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_files([&metadata_1, &metadata_2], 0).unwrap();
+    ledger.add_files([&metadata_1, &metadata_2]).unwrap();
 
     // Generate a proof for file 1
     let challenge = api::Challenge::new(
@@ -916,7 +901,7 @@ fn test_batch_add_multi_file_proof_verification() {
 
     // Batch add all files to ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_files(&metadatas, 0).unwrap();
+    ledger.add_files(&metadatas).unwrap();
 
     // Create challenges for all files
     let challenges: Vec<_> = metadatas
@@ -972,7 +957,7 @@ fn test_batch_add_save_load_roundtrip() {
         })
         .collect();
 
-    ledger.add_files(&files, 0).unwrap();
+    ledger.add_files(&files).unwrap();
     let original_root = ledger.tree.root();
     let original_count = ledger.files.len();
 
@@ -1026,10 +1011,10 @@ fn test_batch_add_canonical_ordering_security() {
     ];
 
     let mut ledger1 = kontor_crypto::ledger::FileLedger::new();
-    ledger1.add_files(&files_order1, 0).unwrap();
+    ledger1.add_files(&files_order1).unwrap();
 
     let mut ledger2 = kontor_crypto::ledger::FileLedger::new();
-    ledger2.add_files(&files_order2, 0).unwrap();
+    ledger2.add_files(&files_order2).unwrap();
 
     // Roots must be identical
     assert_eq!(
@@ -1077,7 +1062,7 @@ fn test_batch_add_aggregation_proof_integrity() {
         synthetic_metadata("file_c", api::FieldElement::from(300u64), 5),
         synthetic_metadata("file_d", api::FieldElement::from(400u64), 3),
     ];
-    ledger.add_files(&files, 0).unwrap();
+    ledger.add_files(&files).unwrap();
 
     // Get aggregation proof for each file and verify structure
     for file_id in ["file_a", "file_b", "file_c", "file_d"] {
@@ -1127,13 +1112,13 @@ fn test_batch_add_ledger_root_changes_with_different_files() {
     ];
 
     let mut ledger_a = kontor_crypto::ledger::FileLedger::new();
-    ledger_a.add_files(&files_a, 0).unwrap();
+    ledger_a.add_files(&files_a).unwrap();
 
     let mut ledger_b = kontor_crypto::ledger::FileLedger::new();
-    ledger_b.add_files(&files_b, 0).unwrap();
+    ledger_b.add_files(&files_b).unwrap();
 
     let mut ledger_c = kontor_crypto::ledger::FileLedger::new();
-    ledger_c.add_files(&files_c, 0).unwrap();
+    ledger_c.add_files(&files_c).unwrap();
 
     // All roots must be different
     assert_ne!(
@@ -1161,12 +1146,12 @@ fn test_batch_add_rc_computation_consistency() {
 
     // Add via individual method
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
-    ledger_individual.add_file(&metadata, 0).unwrap();
+    ledger_individual.add_file(&metadata).unwrap();
     let rc_individual = ledger_individual.files.get("test_file").unwrap().rc;
 
     // Add via batch method
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files([&metadata], 0).unwrap();
+    ledger_batch.add_files([&metadata]).unwrap();
     let rc_batch = ledger_batch.files.get("test_file").unwrap().rc;
 
     assert_eq!(
@@ -1203,14 +1188,12 @@ fn test_batch_add_with_real_files_proof_equivalence() {
 
     // Create ledger via individual adds
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
-    ledger_individual.add_file(&metadata_1, 0).unwrap();
-    ledger_individual.add_file(&metadata_2, 1).unwrap();
+    ledger_individual.add_file(&metadata_1).unwrap();
+    ledger_individual.add_file(&metadata_2).unwrap();
 
     // Create ledger via batch add
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch
-        .add_files([&metadata_1, &metadata_2], 0)
-        .unwrap();
+    ledger_batch.add_files([&metadata_1, &metadata_2]).unwrap();
 
     // Roots must be identical
     assert_eq!(
@@ -1290,13 +1273,13 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
 
     // Build ledger via individual adds (in random order)
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
-    for (i, metadata) in files.iter().enumerate() {
-        ledger_individual.add_file(metadata, i as u64).unwrap();
+    for metadata in files.iter() {
+        ledger_individual.add_file(metadata).unwrap();
     }
 
     // Build ledger via batch add (same order)
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files(&files, 0).unwrap();
+    ledger_batch.add_files(&files).unwrap();
 
     // Verify canonical indices are identical
     let expected_order = ["alpha", "beta", "delta", "gamma"]; // Alphabetical
@@ -1361,7 +1344,7 @@ fn test_add_file_records_historical_root_on_non_empty_ledger() {
 
     // First file: ledger is empty, no historical root should be recorded
     let meta1 = synthetic_metadata("file_1", FieldElement::from(100u64), 3);
-    ledger.add_file(&meta1, 1000).unwrap();
+    ledger.add_file(&meta1).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -1373,7 +1356,7 @@ fn test_add_file_records_historical_root_on_non_empty_ledger() {
 
     // Second file: ledger is non-empty, historical root SHOULD be recorded
     let meta2 = synthetic_metadata("file_2", FieldElement::from(200u64), 3);
-    ledger.add_file(&meta2, 1001).unwrap();
+    ledger.add_file(&meta2).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -1393,7 +1376,7 @@ fn test_add_file_records_historical_root_on_non_empty_ledger() {
 
     // Third file: another historical root should be recorded
     let meta3 = synthetic_metadata("file_3", FieldElement::from(300u64), 3);
-    ledger.add_file(&meta3, 1002).unwrap();
+    ledger.add_file(&meta3).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -1422,7 +1405,7 @@ fn test_add_files_batch_records_single_historical_root() {
 
     // Add initial file
     let meta1 = synthetic_metadata("file_1", FieldElement::from(100u64), 3);
-    ledger.add_file(&meta1, 1000).unwrap();
+    ledger.add_file(&meta1).unwrap();
     let root_before_batch = ledger.root();
 
     assert_eq!(historical_root_total(&ledger), 0);
@@ -1433,7 +1416,7 @@ fn test_add_files_batch_records_single_historical_root() {
         synthetic_metadata("file_3", FieldElement::from(300u64), 3),
         synthetic_metadata("file_4", FieldElement::from(400u64), 3),
     ];
-    ledger.add_files(&batch, 1001).unwrap();
+    ledger.add_files(&batch).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -1449,48 +1432,48 @@ fn test_add_files_batch_records_single_historical_root() {
 }
 
 #[test]
-fn test_historical_root_block_height_keying() {
-    // SECURITY: Historical roots are keyed by block height, allowing
-    // time-based pruning. Verify the heights are recorded correctly.
-    println!("Testing historical root block height keying");
+fn test_historical_roots_accumulate_and_can_be_set() {
+    // SECURITY: Historical roots accumulate with each file addition and
+    // can be set/cleared with set_historical_roots.
+    println!("Testing historical root accumulation and set_historical_roots");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
-    // Add files at different block heights
+    // Add files
     ledger
-        .add_file(
-            &synthetic_metadata("file_1", FieldElement::from(100u64), 3),
-            1000,
-        )
+        .add_file(&synthetic_metadata("file_1", FieldElement::from(100u64), 3))
         .unwrap();
+    let root_1 = ledger.tree.root();
+
     ledger
-        .add_file(
-            &synthetic_metadata("file_2", FieldElement::from(200u64), 3),
-            2000,
-        )
+        .add_file(&synthetic_metadata("file_2", FieldElement::from(200u64), 3))
         .unwrap();
+    let root_2 = ledger.tree.root();
+
     ledger
-        .add_file(
-            &synthetic_metadata("file_3", FieldElement::from(300u64), 3),
-            3000,
-        )
+        .add_file(&synthetic_metadata("file_3", FieldElement::from(300u64), 3))
         .unwrap();
 
     assert_eq!(historical_root_total(&ledger), 2);
 
-    // Prune roots older than block 2500 - should remove the root at height 2000
-    ledger.prune_historical_roots_older_than(2500);
+    // All historical roots should be valid
+    assert!(ledger.is_valid_root(root_1));
+    assert!(ledger.is_valid_root(root_2));
+
+    // Clear historical roots using set_historical_roots
+    ledger.set_historical_roots(vec![]);
 
     assert_eq!(
         historical_root_total(&ledger),
-        1,
-        "Should have one root remaining after pruning (height 3000 >= 2500, but 2000 < 2500)"
+        0,
+        "Should have zero roots after clearing"
     );
 
-    // The remaining root should be the one recorded at height 3000 (when file_3 was added)
-    // Note: height 3000 recorded the root that existed BEFORE file_3 was added
+    // Old roots should no longer be valid
+    assert!(!ledger.is_valid_root(root_1));
+    assert!(!ledger.is_valid_root(root_2));
 
-    println!("✓ Historical roots correctly keyed by block height");
+    println!("✓ Historical roots correctly managed with set_historical_roots");
 }
 
 #[test]
@@ -1506,8 +1489,8 @@ fn test_historical_root_enables_old_proof_verification() {
     let (_prepared2, metadata2) = api::prepare_file(&data2, "file2.dat").unwrap();
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_file(&metadata1, 1000).unwrap();
-    ledger.add_file(&metadata2, 1001).unwrap();
+    ledger.add_file(&metadata1).unwrap();
+    ledger.add_file(&metadata2).unwrap();
 
     // 2. Generate proof against current state
     let challenge = api::Challenge::new_test(metadata1.clone(), 1000, 1, FieldElement::from(42u64));
@@ -1527,7 +1510,7 @@ fn test_historical_root_enables_old_proof_verification() {
     // 3. Add a third file (this changes the current root but records old root as historical)
     let data3 = create_test_data(100, Some(3));
     let (_, metadata3) = api::prepare_file(&data3, "file3.dat").unwrap();
-    ledger.add_file(&metadata3, 1002).unwrap();
+    ledger.add_file(&metadata3).unwrap();
 
     // 4. Verify the old proof still works because the old root is in historical_roots
     let updated_system = api::PorSystem::new(&ledger);
@@ -1551,26 +1534,17 @@ fn test_is_valid_root_checks_current_and_historical() {
 
     // Add files and track roots
     ledger
-        .add_file(
-            &synthetic_metadata("file_1", FieldElement::from(100u64), 3),
-            1000,
-        )
+        .add_file(&synthetic_metadata("file_1", FieldElement::from(100u64), 3))
         .unwrap();
     let root1 = ledger.root();
 
     ledger
-        .add_file(
-            &synthetic_metadata("file_2", FieldElement::from(200u64), 3),
-            1001,
-        )
+        .add_file(&synthetic_metadata("file_2", FieldElement::from(200u64), 3))
         .unwrap();
     let root2 = ledger.root();
 
     ledger
-        .add_file(
-            &synthetic_metadata("file_3", FieldElement::from(300u64), 3),
-            1002,
-        )
+        .add_file(&synthetic_metadata("file_3", FieldElement::from(300u64), 3))
         .unwrap();
     let root3 = ledger.root(); // Current root
 
@@ -1610,8 +1584,8 @@ fn test_prune_by_height_invalidates_old_multi_file_proof() {
     let (_prepared3, meta3) = api::prepare_file(&data3, "p3.dat").unwrap();
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_file(&meta1, 1000).unwrap();
-    ledger.add_file(&meta2, 1000).unwrap();
+    ledger.add_file(&meta1).unwrap();
+    ledger.add_file(&meta2).unwrap();
 
     let challenges = vec![
         api::Challenge::new_test(meta1.clone(), 1000, 1, FieldElement::from(101u64)),
@@ -1624,7 +1598,7 @@ fn test_prune_by_height_invalidates_old_multi_file_proof() {
         .expect("Should generate multi-file proof");
 
     // Add a third file in the next block, recording the old root as historical at height 1001.
-    ledger.add_file(&meta3, 1001).unwrap();
+    ledger.add_file(&meta3).unwrap();
     assert!(historical_root_total(&ledger) > 0);
 
     // Proof should verify while the old root is retained.
@@ -1636,8 +1610,8 @@ fn test_prune_by_height_invalidates_old_multi_file_proof() {
         );
     }
 
-    // Prune away all historical roots, including the one at height 1001.
-    ledger.prune_historical_roots_older_than(1002);
+    // Clear all historical roots.
+    ledger.set_historical_roots(vec![]);
     assert_eq!(ledger.historical_roots.len(), 0);
 
     // Now verification must fail due to invalid ledger root.
@@ -1662,8 +1636,8 @@ fn test_clear_historical_roots_invalidates_old_proofs() {
     let (_prepared2, metadata2) = api::prepare_file(&data2, "file2.dat").unwrap();
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_file(&metadata1, 1000).unwrap();
-    ledger.add_file(&metadata2, 1001).unwrap();
+    ledger.add_file(&metadata1).unwrap();
+    ledger.add_file(&metadata2).unwrap();
 
     // 2. Generate multi-file proof
     let challenges = [
@@ -1678,7 +1652,7 @@ fn test_clear_historical_roots_invalidates_old_proofs() {
     // 3. Add third file (records historical root)
     let data3 = create_test_data(100, Some(3));
     let (_, metadata3) = api::prepare_file(&data3, "file3.dat").unwrap();
-    ledger.add_file(&metadata3, 1002).unwrap();
+    ledger.add_file(&metadata3).unwrap();
 
     // Proof should still work
     let system2 = api::PorSystem::new(&ledger);
@@ -1697,22 +1671,19 @@ fn test_clear_historical_roots_invalidates_old_proofs() {
 }
 
 #[test]
-fn test_prune_historical_roots_by_height() {
-    // Historical root pruning should be governed by block height.
+fn test_set_historical_roots() {
+    // Test that set_historical_roots replaces the historical roots.
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
     // Add 10 files to create 9 historical roots
     for i in 0..10 {
         ledger
-            .add_file(
-                &synthetic_metadata(
-                    &format!("file_{}", i),
-                    FieldElement::from(i as u64 * 100),
-                    3,
-                ),
-                i as u64 * 100,
-            )
+            .add_file(&synthetic_metadata(
+                &format!("file_{}", i),
+                FieldElement::from(i as u64 * 100),
+                3,
+            ))
             .unwrap();
     }
 
@@ -1722,13 +1693,14 @@ fn test_prune_historical_roots_by_height() {
         "Should have 9 historical roots (first add doesn't create one)"
     );
 
-    // Keep only roots recorded at heights >= 700.
-    ledger.prune_historical_roots_older_than(700);
+    // Keep only the last 3 roots by slicing
+    let last_three: Vec<[u8; 32]> = ledger.historical_roots[6..9].to_vec();
+    ledger.set_historical_roots(last_three);
 
     assert_eq!(
         ledger.historical_roots.len(),
         3,
-        "Should retain block heights 700, 800, 900"
+        "Should have 3 roots after set"
     );
     assert_eq!(historical_root_total(&ledger), 3);
 }

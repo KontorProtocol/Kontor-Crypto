@@ -104,8 +104,8 @@ fn test_commitments_match_between_api_and_circuit() {
 
     // Create ledger for multi-file proof
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_file(&meta1, 0).unwrap();
-    ledger.add_file(&meta2, 1).unwrap();
+    ledger.add_file(&meta1).unwrap();
+    ledger.add_file(&meta2).unwrap();
 
     let mut files = BTreeMap::new();
     files.insert(meta1.file_id.clone(), &prep1);
@@ -194,7 +194,7 @@ fn test_single_file_ignores_ledger() {
 
     // Create larger ledger with this file plus another
     let mut larger_ledger = kontor_crypto::ledger::FileLedger::new();
-    larger_ledger.add_file(&metadata, 0).unwrap();
+    larger_ledger.add_file(&metadata).unwrap();
     // Add another file to make the ledger different
     let other_metadata = FileMetadata {
         root: FieldElement::from(999u64),
@@ -203,7 +203,7 @@ fn test_single_file_ignores_ledger() {
         original_size: 100,
         filename: "other.dat".to_string(),
     };
-    larger_ledger.add_file(&other_metadata, 1).unwrap();
+    larger_ledger.add_file(&other_metadata).unwrap();
 
     // Should work with minimal ledger
     let system_minimal = PorSystem::new(&minimal_ledger);
