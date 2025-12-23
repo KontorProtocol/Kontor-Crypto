@@ -134,10 +134,9 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // historical root. For single-file proofs, the circuit uses the file's root directly.
     if is_multi_file && !ledger.is_valid_root(proof.ledger_root) {
         debug!(
-            "Proof ledger_root {:?} is not in ledger's valid roots (current: {:?}, historical count: {})",
+            "Proof ledger_root {:?} is not in ledger's valid roots (current: {:?})",
             proof.ledger_root,
-            ledger.root(),
-            ledger.historical_root_count()
+            ledger.root()
         );
         return Err(KontorPoRError::InvalidLedgerRoot {
             proof_root: format!("{:?}", proof.ledger_root),

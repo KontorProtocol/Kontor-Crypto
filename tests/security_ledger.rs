@@ -5,6 +5,11 @@ use std::collections::BTreeMap;
 
 mod common;
 use common::fixtures::{create_test_data, setup_test_scenario, TestConfig};
+use kontor_crypto::KontorPoRError;
+
+fn historical_root_total(ledger: &kontor_crypto::ledger::FileLedger) -> usize {
+    ledger.historical_roots.values().map(|v| v.len()).sum()
+}
 
 /// Helper to create a synthetic FileMetadata for testing.
 fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> FileMetadata {
@@ -74,7 +79,7 @@ fn test_historical_ledger_full_lifecycle() {
     println!("  Files in ledger: {}", ledger.files.len());
     println!(
         "  Historical roots recorded: {}\n",
-        ledger.historical_root_count()
+        historical_root_total(&ledger)
     );
 
     // =========================================================================
@@ -125,7 +130,7 @@ fn test_historical_ledger_full_lifecycle() {
     println!("  Files in ledger: {}", ledger.files.len());
     println!(
         "  Historical roots recorded: {}",
-        ledger.historical_root_count()
+        historical_root_total(&ledger)
     );
 
     // Verify the roots are different
@@ -193,11 +198,11 @@ fn test_historical_ledger_full_lifecycle() {
 
     // Create a copy of the ledger and clear its historical roots
     let mut ledger_no_history = ledger.clone();
-    ledger_no_history.clear_historical_roots();
+    ledger_no_history.historical_roots.clear();
 
     println!(
         "  Historical roots cleared: count = {}",
-        ledger_no_history.historical_root_count()
+        historical_root_total(&ledger_no_history)
     );
     println!(
         "  Is old root (block 1000) valid now? {}",
@@ -320,7 +325,7 @@ fn test_proofs_against_any_intermediate_state_remain_valid() {
     println!("Checking historical roots are preserved:");
     println!(
         "  Total historical roots: {}",
-        ledger.historical_root_count()
+        historical_root_total(&ledger)
     );
     println!(
         "  Block heights with roots: {}",
@@ -490,7 +495,7 @@ fn test_multi_file_proof_valid_with_historical_root() {
     println!("Original root recorded as historical");
     println!(
         "Historical root count: {}",
-        updated_ledger.historical_root_count()
+        historical_root_total(&updated_ledger)
     );
 
     // Add a third file (this changes the current root)
@@ -545,7 +550,7 @@ fn test_multi_file_proof_fails_without_historical_root() {
     new_ledger.add_file(&metadata_c, 1001).unwrap();
 
     // Clear historical roots to simulate not tracking history properly
-    new_ledger.clear_historical_roots();
+    new_ledger.historical_roots.clear();
 
     // 4. Verify should FAIL because old root not in historical_roots
     let new_system = api::PorSystem::new(&new_ledger);
@@ -1359,7 +1364,7 @@ fn test_add_file_records_historical_root_on_non_empty_ledger() {
     ledger.add_file(&meta1, 1000).unwrap();
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         0,
         "First file should NOT record historical root (ledger was empty)"
     );
@@ -1371,7 +1376,7 @@ fn test_add_file_records_historical_root_on_non_empty_ledger() {
     ledger.add_file(&meta2, 1001).unwrap();
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         1,
         "Second file should record exactly one historical root"
     );
@@ -1391,7 +1396,7 @@ fn test_add_file_records_historical_root_on_non_empty_ledger() {
     ledger.add_file(&meta3, 1002).unwrap();
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         2,
         "Third file should result in two historical roots"
     );
@@ -1420,7 +1425,7 @@ fn test_add_files_batch_records_single_historical_root() {
     ledger.add_file(&meta1, 1000).unwrap();
     let root_before_batch = ledger.root();
 
-    assert_eq!(ledger.historical_root_count(), 0);
+    assert_eq!(historical_root_total(&ledger), 0);
 
     // Batch add multiple files
     let batch = vec![
@@ -1431,7 +1436,7 @@ fn test_add_files_batch_records_single_historical_root() {
     ledger.add_files(&batch, 1001).unwrap();
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         1,
         "Batch add should record exactly ONE historical root, not one per file"
     );
@@ -1471,13 +1476,13 @@ fn test_historical_root_block_height_keying() {
         )
         .unwrap();
 
-    assert_eq!(ledger.historical_root_count(), 2);
+    assert_eq!(historical_root_total(&ledger), 2);
 
     // Prune roots older than block 2500 - should remove the root at height 2000
     ledger.prune_historical_roots_older_than(2500);
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         1,
         "Should have one root remaining after pruning (height 3000 >= 2500, but 2000 < 2500)"
     );
@@ -1593,6 +1598,55 @@ fn test_is_valid_root_checks_current_and_historical() {
 }
 
 #[test]
+fn test_prune_by_height_invalidates_old_multi_file_proof() {
+    // POLICY: proofs against historical roots remain valid only while the root is retained.
+    // Once pruned by height, verification must reject the proof with InvalidLedgerRoot.
+    let data1 = create_test_data(100, Some(10));
+    let data2 = create_test_data(100, Some(20));
+    let data3 = create_test_data(100, Some(30));
+
+    let (prepared1, meta1) = api::prepare_file(&data1, "p1.dat").unwrap();
+    let (prepared2, meta2) = api::prepare_file(&data2, "p2.dat").unwrap();
+    let (_prepared3, meta3) = api::prepare_file(&data3, "p3.dat").unwrap();
+
+    let mut ledger = kontor_crypto::ledger::FileLedger::new();
+    ledger.add_file(&meta1, 1000).unwrap();
+    ledger.add_file(&meta2, 1000).unwrap();
+
+    let challenges = vec![
+        api::Challenge::new_test(meta1.clone(), 1000, 1, FieldElement::from(101u64)),
+        api::Challenge::new_test(meta2.clone(), 1000, 1, FieldElement::from(202u64)),
+    ];
+
+    let system_1000 = api::PorSystem::new(&ledger);
+    let proof = system_1000
+        .prove(vec![&prepared1, &prepared2], &challenges)
+        .expect("Should generate multi-file proof");
+
+    // Add a third file in the next block, recording the old root as historical at height 1001.
+    ledger.add_file(&meta3, 1001).unwrap();
+    assert!(historical_root_total(&ledger) > 0);
+
+    // Proof should verify while the old root is retained.
+    let system_1001 = api::PorSystem::new(&ledger);
+    assert!(
+        system_1001.verify(&proof, &challenges).unwrap(),
+        "Proof should verify while historical root is retained"
+    );
+
+    // Prune away all historical roots, including the one at height 1001.
+    ledger.prune_historical_roots_older_than(1002);
+    assert_eq!(ledger.historical_roots.len(), 0);
+
+    // Now verification must fail due to invalid ledger root.
+    let res = system_1001.verify(&proof, &challenges);
+    assert!(
+        matches!(res, Err(KontorPoRError::InvalidLedgerRoot { .. })),
+        "Expected InvalidLedgerRoot after pruning, got: {res:?}"
+    );
+}
+
+#[test]
 fn test_clear_historical_roots_invalidates_old_proofs() {
     // SECURITY: Clearing historical roots should immediately invalidate
     // proofs against old ledger states.
@@ -1631,8 +1685,8 @@ fn test_clear_historical_roots_invalidates_old_proofs() {
     );
 
     // 4. Clear all historical roots
-    ledger.clear_historical_roots();
-    assert_eq!(ledger.historical_root_count(), 0);
+    ledger.historical_roots.clear();
+    assert_eq!(historical_root_total(&ledger), 0);
 
     // 5. Old proof should now fail (for multi-file proofs that use ledger root)
     // Note: Single-file proofs don't use ledger root, so they may still pass
@@ -1640,9 +1694,8 @@ fn test_clear_historical_roots_invalidates_old_proofs() {
 }
 
 #[test]
-fn test_prune_historical_roots_keep_last() {
-    // Test size-based pruning of historical roots
-    println!("Testing prune_historical_roots_keep_last");
+fn test_prune_historical_roots_by_height() {
+    // Historical root pruning should be governed by block height.
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
@@ -1661,19 +1714,18 @@ fn test_prune_historical_roots_keep_last() {
     }
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         9,
         "Should have 9 historical roots (first add doesn't create one)"
     );
 
-    // Keep only last 3
-    ledger.prune_historical_roots_keep_last(3);
+    // Keep only roots recorded at heights >= 700.
+    ledger.prune_historical_roots_older_than(700);
 
     assert_eq!(
-        ledger.historical_root_count(),
+        ledger.historical_roots.len(),
         3,
-        "Should have 3 historical roots after pruning"
+        "Should retain block heights 700, 800, 900"
     );
-
-    println!("✓ prune_historical_roots_keep_last works correctly");
+    assert_eq!(historical_root_total(&ledger), 3);
 }

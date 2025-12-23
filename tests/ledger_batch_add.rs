@@ -19,6 +19,10 @@ fn dummy_metadata(file_id: &str, root_val: u64, depth: usize) -> FileMetadata {
     }
 }
 
+fn historical_root_total(ledger: &FileLedger) -> usize {
+    ledger.historical_roots.values().map(|v| v.len()).sum()
+}
+
 // ===========================================
 // Basic Functionality Tests
 // ===========================================
@@ -522,7 +526,7 @@ fn test_add_file_no_historical_root_on_empty_ledger() {
     ledger.add_file(&metadata, 1000).unwrap();
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         0,
         "First file should not create historical root (ledger was empty)"
     );
@@ -536,7 +540,7 @@ fn test_add_file_records_historical_root_on_non_empty_ledger() {
     ledger
         .add_file(&dummy_metadata("file_1", 100, 3), 1000)
         .unwrap();
-    assert_eq!(ledger.historical_root_count(), 0);
+    assert_eq!(historical_root_total(&ledger), 0);
 
     let root_before = ledger.tree.root();
 
@@ -546,7 +550,7 @@ fn test_add_file_records_historical_root_on_non_empty_ledger() {
         .unwrap();
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         1,
         "Second file should record one historical root"
     );
@@ -569,7 +573,7 @@ fn test_add_files_no_historical_root_on_empty_ledger() {
     ledger.add_files(&files, 1000).unwrap();
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         0,
         "Batch add to empty ledger should not create historical root"
     );
@@ -596,7 +600,7 @@ fn test_add_files_records_single_historical_root() {
     ledger.add_files(&batch, 1001).unwrap();
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         1,
         "Batch add should record exactly ONE historical root, not one per file"
     );
@@ -625,7 +629,7 @@ fn test_historical_roots_accumulate_correctly() {
     // First add: empty ledger, no historical root
     // Adds 2-5: each records one historical root
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         4,
         "Should have 4 historical roots (first add doesn't record)"
     );
@@ -638,7 +642,7 @@ fn test_historical_roots_accumulate_correctly() {
     ledger.add_files(&batch, 6000).unwrap();
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         5,
         "Batch add should add exactly one more historical root"
     );
@@ -660,13 +664,13 @@ fn test_block_height_recorded_correctly() {
         .unwrap();
 
     // We have 2 historical roots at heights 200 and 300
-    assert_eq!(ledger.historical_root_count(), 2);
+    assert_eq!(historical_root_total(&ledger), 2);
 
     // Prune roots older than 250 - should remove root at height 200
     ledger.prune_historical_roots_older_than(250);
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         1,
         "Should have 1 root after pruning (height 300 >= 250)"
     );
@@ -689,7 +693,7 @@ fn test_add_file_atomicity_state_consistency() {
 
     let files_before = ledger.files.len();
     let root_before = ledger.tree.root();
-    let historical_count_before = ledger.historical_root_count();
+    let historical_count_before = historical_root_total(&ledger);
 
     // Add second file
     ledger
@@ -704,7 +708,7 @@ fn test_add_file_atomicity_state_consistency() {
     );
     assert_ne!(ledger.tree.root(), root_before, "Tree root should change");
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         historical_count_before + 1,
         "Historical root count should increase by 1"
     );
@@ -728,7 +732,7 @@ fn test_add_files_atomicity_state_consistency() {
 
     let files_before = ledger.files.len();
     let root_before = ledger.tree.root();
-    let historical_count_before = ledger.historical_root_count();
+    let historical_count_before = historical_root_total(&ledger);
 
     // Batch add
     let batch = vec![
@@ -746,7 +750,7 @@ fn test_add_files_atomicity_state_consistency() {
     );
     assert_ne!(ledger.tree.root(), root_before, "Tree root should change");
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         historical_count_before + 1,
         "Historical root count should increase by exactly 1 for batch"
     );
@@ -767,7 +771,7 @@ fn test_empty_batch_does_not_record_historical_root() {
         .unwrap();
 
     let root_before = ledger.tree.root();
-    let historical_count_before = ledger.historical_root_count();
+    let historical_count_before = historical_root_total(&ledger);
 
     // Add empty batch - should be a complete no-op
     let empty: Vec<api::FileMetadata> = vec![];
@@ -783,7 +787,7 @@ fn test_empty_batch_does_not_record_historical_root() {
     // Historical root count should NOT change for empty batch
     // Empty batches are early-returned without any state modification
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         historical_count_before,
         "Empty batch should NOT record historical root"
     );
@@ -813,7 +817,7 @@ fn test_empty_batch_is_true_noop() {
         "Root unchanged"
     );
     assert_eq!(
-        ledger_empty.historical_root_count(),
+        historical_root_total(&ledger_empty),
         0,
         "No historical roots"
     );
@@ -829,7 +833,7 @@ fn test_empty_batch_is_true_noop() {
 
     let files_before = ledger.files.len();
     let root_before = ledger.tree.root();
-    let historical_before = ledger.historical_root_count();
+    let historical_before = historical_root_total(&ledger);
 
     // Multiple empty batches should all be no-ops
     for block in 1002..1005 {
@@ -839,7 +843,7 @@ fn test_empty_batch_is_true_noop() {
     assert_eq!(ledger.files.len(), files_before, "File count unchanged");
     assert_eq!(ledger.tree.root(), root_before, "Root unchanged");
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         historical_before,
         "No new historical roots from empty batches"
     );
@@ -855,7 +859,7 @@ fn test_add_file_and_batch_interleaved() {
         .add_file(&dummy_metadata("ind_1", 100, 3), 1000)
         .unwrap();
     assert_eq!(ledger.files.len(), 1);
-    assert_eq!(ledger.historical_root_count(), 0);
+    assert_eq!(historical_root_total(&ledger), 0);
 
     // Batch add
     ledger
@@ -868,21 +872,21 @@ fn test_add_file_and_batch_interleaved() {
         )
         .unwrap();
     assert_eq!(ledger.files.len(), 3);
-    assert_eq!(ledger.historical_root_count(), 1);
+    assert_eq!(historical_root_total(&ledger), 1);
 
     // Individual add
     ledger
         .add_file(&dummy_metadata("ind_2", 400, 3), 1002)
         .unwrap();
     assert_eq!(ledger.files.len(), 4);
-    assert_eq!(ledger.historical_root_count(), 2);
+    assert_eq!(historical_root_total(&ledger), 2);
 
     // Another batch
     ledger
         .add_files(&[dummy_metadata("batch_3", 500, 3)], 1003)
         .unwrap();
     assert_eq!(ledger.files.len(), 5);
-    assert_eq!(ledger.historical_root_count(), 3);
+    assert_eq!(historical_root_total(&ledger), 3);
 
     // Verify all historical roots are valid
     // Current root is always valid
@@ -906,7 +910,7 @@ fn test_same_block_height_appends_historical_roots() {
         .unwrap();
 
     // Root at height 2000 is the root BEFORE file_2 was added (i.e., root_after_1)
-    assert_eq!(ledger.historical_root_count(), 1);
+    assert_eq!(historical_root_total(&ledger), 1);
     assert!(ledger.is_valid_root(root_after_1));
 
     let root_after_2 = ledger.tree.root();
@@ -918,7 +922,7 @@ fn test_same_block_height_appends_historical_roots() {
 
     // Now we have 2 historical roots at height 2000: root_after_1 and root_after_2
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         2,
         "Same block height should append, preserving all intermediate states"
     );
@@ -967,7 +971,7 @@ fn test_all_intermediate_states_preserved_within_block() {
 
     // Historical roots should also be 4 (all at block height 1000)
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         4,
         "Should have 4 historical roots"
     );
@@ -1003,7 +1007,7 @@ fn test_batch_add_records_only_one_historical_root() {
         .unwrap();
 
     let root_before_batch = ledger.tree.root();
-    assert_eq!(ledger.historical_root_count(), 0, "No historical roots yet");
+    assert_eq!(historical_root_total(&ledger), 0, "No historical roots yet");
 
     // Add 5 files in a single batch
     let batch: Vec<_> = (1..=5)
@@ -1014,7 +1018,7 @@ fn test_batch_add_records_only_one_historical_root() {
 
     // Should have exactly ONE historical root (the pre-batch root)
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         1,
         "Batch add should record exactly ONE historical root, not one per file"
     );
@@ -1043,7 +1047,7 @@ fn test_batch_add_records_only_one_historical_root() {
 
     // Individual adds should create 5 historical roots (one per add)
     assert_eq!(
-        ledger2.historical_root_count(),
+        historical_root_total(&ledger2),
         5,
         "Individual adds should create one historical root per operation"
     );
@@ -1084,7 +1088,7 @@ fn test_save_load_preserves_historical_roots_vec_format() {
         .unwrap();
 
     // Verify initial state
-    assert_eq!(ledger.historical_root_count(), 3);
+    assert_eq!(historical_root_total(&ledger), 3);
     assert_eq!(ledger.historical_block_count(), 2);
     assert!(ledger.is_valid_root(root_1));
     assert!(ledger.is_valid_root(root_2));
@@ -1102,8 +1106,8 @@ fn test_save_load_preserves_historical_roots_vec_format() {
 
     // Verify historical roots are preserved
     assert_eq!(
-        loaded.historical_root_count(),
-        ledger.historical_root_count(),
+        historical_root_total(&loaded),
+        historical_root_total(&ledger),
         "Historical root count should be preserved"
     );
     assert_eq!(
@@ -1166,7 +1170,7 @@ fn test_historical_roots_across_multiple_blocks() {
     // Block 1000: roots before file_2, file_3 = 2 roots (root after file_1, root after file_2)
     // Block 1001: roots before file_4, file_5 = 2 roots (root_3, root_4)
     // Total = 4 historical roots across 2 block heights
-    assert_eq!(ledger.historical_root_count(), 4);
+    assert_eq!(historical_root_total(&ledger), 4);
     assert_eq!(ledger.historical_block_count(), 2);
 
     // All intermediate roots should be valid
@@ -1179,7 +1183,7 @@ fn test_historical_roots_across_multiple_blocks() {
     ledger.prune_historical_roots_older_than(1001);
 
     assert_eq!(
-        ledger.historical_root_count(),
+        historical_root_total(&ledger),
         2,
         "Should have 2 roots after pruning block 1000"
     );

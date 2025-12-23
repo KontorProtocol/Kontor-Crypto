@@ -68,9 +68,6 @@ struct LedgerData {
     files: BTreeMap<String, FileLedgerEntry>,
     /// Stored root for validation on load
     root: F,
-    /// Historical roots retained for proof validation (keyed by block height).
-    /// Each block height maps to a list of roots captured during that block's operations.
-    /// This is optional for backward compatibility with older serialized ledgers.
     #[serde(default)]
     historical_roots: BTreeMap<u64, Vec<[u8; 32]>>,
 }
@@ -179,32 +176,6 @@ impl FileLedger {
     pub fn prune_historical_roots_older_than(&mut self, min_block_height: u64) {
         self.historical_roots
             .retain(|h, _root| *h >= min_block_height);
-    }
-
-    /// Keeps only the newest `max_entries` historical roots by block height.
-    ///
-    /// This is a size-based safeguard. Consensus rules should generally prune by height
-    /// using `prune_historical_roots_older_than`.
-    pub fn prune_historical_roots_keep_last(&mut self, max_entries: usize) {
-        while self.historical_roots.len() > max_entries {
-            if let Some((&oldest, _)) = self.historical_roots.iter().next() {
-                self.historical_roots.remove(&oldest);
-            } else {
-                break;
-            }
-        }
-    }
-
-    /// Clears all historical roots.
-    ///
-    /// Use with caution: this invalidates proofs against old roots immediately.
-    pub fn clear_historical_roots(&mut self) {
-        self.historical_roots.clear();
-    }
-
-    /// Returns the total number of historical roots being tracked across all block heights.
-    pub fn historical_root_count(&self) -> usize {
-        self.historical_roots.values().map(|v| v.len()).sum()
     }
 
     /// Returns the number of block heights with historical roots.
