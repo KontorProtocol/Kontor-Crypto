@@ -217,3 +217,184 @@ fn test_proof_invalidation_with_file_update() {
 
     println!("✓ Option 1: File content changes correctly invalidate proofs via rc mismatch");
 }
+
+#[test]
+fn test_historical_roots_not_recorded_on_empty_ledger() {
+    // Adding to an empty ledger should NOT record a historical root
+    // (there's no meaningful "previous" state to preserve)
+    println!("Testing that first file addition doesn't record historical root");
+
+    let data = vec![1u8; 100];
+    let (_prepared, metadata) =
+        api::prepare_file(&data, "test_file.dat").expect("Failed to prepare file");
+
+    let mut ledger = FileLedger::new();
+    assert!(
+        ledger.historical_roots.is_empty(),
+        "New ledger should have no historical roots"
+    );
+
+    ledger.add_file(&metadata).unwrap();
+
+    assert!(
+        ledger.historical_roots.is_empty(),
+        "First file addition should not record historical root"
+    );
+
+    println!("✓ Empty ledger correctly skips historical root recording");
+}
+
+#[test]
+fn test_historical_roots_recorded_on_new_file() {
+    // Adding a new file to a non-empty ledger should record the old root
+    println!("Testing that new file additions record historical roots");
+
+    let data1 = vec![1u8; 100];
+    let data2 = vec![2u8; 100];
+    let (_prepared1, metadata1) =
+        api::prepare_file(&data1, "test_file.dat").expect("Failed to prepare file 1");
+    let (_prepared2, metadata2) =
+        api::prepare_file(&data2, "test_file.dat").expect("Failed to prepare file 2");
+
+    let mut ledger = FileLedger::new();
+    ledger.add_file(&metadata1).unwrap();
+
+    let root_after_first: [u8; 32] = {
+        use ff::PrimeField;
+        ledger.tree.root().to_repr().into()
+    };
+
+    assert!(
+        ledger.historical_roots.is_empty(),
+        "Should have no historical roots after first file"
+    );
+
+    // Add second file - this should record the previous root
+    ledger.add_file(&metadata2).unwrap();
+
+    assert_eq!(
+        ledger.historical_roots.len(),
+        1,
+        "Should have one historical root after second file"
+    );
+    assert_eq!(
+        ledger.historical_roots[0], root_after_first,
+        "Historical root should be the root before second file was added"
+    );
+
+    println!("✓ New file additions correctly record historical roots");
+}
+
+#[test]
+fn test_historical_roots_not_duplicated_on_identical_readdition() {
+    // Re-adding the exact same file should NOT record a historical root
+    // because the ledger root doesn't change
+    println!("Testing that re-adding identical file doesn't duplicate historical roots");
+
+    let data = vec![1u8; 100];
+    let (_prepared, metadata) =
+        api::prepare_file(&data, "test_file.dat").expect("Failed to prepare file");
+
+    let mut ledger = FileLedger::new();
+    ledger.add_file(&metadata).unwrap();
+
+    // Add a second different file to have a historical root
+    let data2 = vec![2u8; 100];
+    let (_prepared2, metadata2) =
+        api::prepare_file(&data2, "test_file.dat").expect("Failed to prepare file 2");
+    ledger.add_file(&metadata2).unwrap();
+
+    let historical_count_before = ledger.historical_roots.len();
+    assert_eq!(
+        historical_count_before, 1,
+        "Should have exactly one historical root"
+    );
+
+    // Re-add the first file (same file_id, same root, same depth)
+    // This replaces the entry but doesn't change the tree
+    ledger.add_file(&metadata).unwrap();
+
+    assert_eq!(
+        ledger.historical_roots.len(),
+        historical_count_before,
+        "Re-adding identical file should NOT add duplicate historical root"
+    );
+
+    println!("✓ Identical file re-addition correctly avoids duplicate historical roots");
+}
+
+#[test]
+fn test_historical_roots_batch_add_files() {
+    // Batch adding files should only record one historical root
+    println!("Testing historical roots with batch add_files");
+
+    let data1 = vec![1u8; 100];
+    let data2 = vec![2u8; 100];
+    let data3 = vec![3u8; 100];
+    let (_p1, metadata1) = api::prepare_file(&data1, "file1.dat").expect("prep 1");
+    let (_p2, metadata2) = api::prepare_file(&data2, "file2.dat").expect("prep 2");
+    let (_p3, metadata3) = api::prepare_file(&data3, "file3.dat").expect("prep 3");
+
+    let mut ledger = FileLedger::new();
+    ledger.add_file(&metadata1).unwrap();
+
+    let root_before_batch: [u8; 32] = {
+        use ff::PrimeField;
+        ledger.tree.root().to_repr().into()
+    };
+
+    assert!(
+        ledger.historical_roots.is_empty(),
+        "First file shouldn't record historical root"
+    );
+
+    // Batch add two more files
+    ledger
+        .add_files(&[metadata2, metadata3])
+        .expect("Batch add should succeed");
+
+    assert_eq!(
+        ledger.historical_roots.len(),
+        1,
+        "Batch add should record exactly one historical root"
+    );
+    assert_eq!(
+        ledger.historical_roots[0], root_before_batch,
+        "Historical root should be the root before batch add"
+    );
+
+    println!("✓ Batch add_files correctly records single historical root");
+}
+
+#[test]
+fn test_historical_roots_batch_add_empty() {
+    // Batch adding empty set should NOT record historical root
+    println!("Testing that empty batch add doesn't record historical root");
+
+    let data1 = vec![1u8; 100];
+    let (_p1, metadata1) = api::prepare_file(&data1, "file1.dat").expect("prep 1");
+
+    let mut ledger = FileLedger::new();
+    ledger.add_file(&metadata1).unwrap();
+
+    // Add second file so we have one historical root
+    let data2 = vec![2u8; 100];
+    let (_p2, metadata2) = api::prepare_file(&data2, "file2.dat").expect("prep 2");
+    ledger.add_file(&metadata2).unwrap();
+
+    let historical_count_before = ledger.historical_roots.len();
+
+    // Empty batch add
+    let empty: Vec<FileMetadata> = vec![];
+    ledger
+        .add_files(&empty)
+        .expect("Empty batch should succeed");
+
+    assert_eq!(
+        ledger.historical_roots.len(),
+        historical_count_before,
+        "Empty batch add should not record historical root"
+    );
+
+    println!("✓ Empty batch add correctly skips historical root recording");
+}
