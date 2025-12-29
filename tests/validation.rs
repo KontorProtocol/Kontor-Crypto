@@ -172,48 +172,47 @@ fn test_challenge_seed_overflow_handling() {
 // ================== Setup and Configuration Validation Tests ==================
 
 #[test]
-fn test_empty_file_specs_fails() {
-    // Test that empty file specs fails during setup
+fn test_empty_file_specs_succeeds_with_empty_setup() {
+    // Test that empty file specs creates an empty but valid setup.
+    // This is the expected behavior: the setup infrastructure handles edge cases
+    // gracefully rather than failing. An empty setup is valid (though not useful).
     let config = TestConfig {
         file_specs: vec![], // No files
         ..Default::default()
     };
 
     let result = setup_test_scenario(&config);
-    match result {
-        Ok(setup) => {
-            // If it succeeds, it should have 0 files (empty)
-            assert_eq!(setup.files.len(), 0);
-            assert_eq!(setup.metadatas.len(), 0);
-            println!("✓ Empty file specs handled gracefully with 0 files");
-        }
-        Err(_) => {
-            println!("✓ Empty file specs correctly rejected");
-        }
-    }
+    let setup = result.expect("Empty file specs should create valid (but empty) setup");
+
+    assert_eq!(setup.files.len(), 0, "Should have 0 files");
+    assert_eq!(setup.metadatas.len(), 0, "Should have 0 metadatas");
+    assert_eq!(setup.challenges.len(), 0, "Should have 0 challenges");
+
+    println!("✓ Empty file specs creates valid empty setup");
 }
 
 #[test]
-fn test_zero_size_file_handling() {
-    // Test edge case with zero-size file
+fn test_zero_size_file_rejected() {
+    // Test that zero-size files are explicitly rejected.
+    // The prepare_file function returns EmptyData error for empty data.
     let config = TestConfig {
         file_specs: vec![FileSpec::from_size(0)],
         ..Default::default()
     };
 
     let result = setup_test_scenario(&config);
-    // This might succeed or fail depending on implementation
-    // The important thing is that it doesn't panic
-    match result {
-        Ok(setup) => {
-            // If it succeeds, verification should work
-            assert_prove_and_verify_succeeds(setup);
-            println!("✓ Zero-size file handled gracefully");
-        }
-        Err(_) => {
-            println!("✓ Zero-size file correctly rejected during setup");
-        }
-    }
+    let error = match result {
+        Err(e) => e,
+        Ok(_) => panic!("Zero-size files MUST be rejected - prepare_file returns EmptyData error"),
+    };
+    let error_msg = format!("{}", error);
+    assert!(
+        error_msg.contains("empty") || error_msg.contains("Empty"),
+        "Error should mention empty data: {}",
+        error_msg
+    );
+
+    println!("✓ Zero-size file correctly rejected with EmptyData error");
 }
 
 #[test]

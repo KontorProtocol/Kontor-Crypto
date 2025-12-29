@@ -10,7 +10,6 @@ use rand::{rngs::StdRng, SeedableRng};
 use statrs::distribution::{ChiSquared, ContinuousCDF};
 
 #[test]
-#[ignore] // This test is slow and should be run manually.
 fn test_challenge_distribution_is_uniform() {
     // Use a tree depth that's large enough for statistical significance
     // but small enough to run quickly. Depth 8 =
@@ -88,7 +87,6 @@ fn test_challenge_distribution_is_uniform() {
 }
 
 #[test]
-#[ignore] // Slow statistical test for non-power-of-two leaf counts
 fn test_unbiased_index_derivation_non_power_of_two() {
     println!("Testing unbiased index derivation for non-power-of-two leaf count...");
 

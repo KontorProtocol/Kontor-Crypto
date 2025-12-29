@@ -59,6 +59,10 @@ pub enum KontorPoRError {
     #[error("Ledger validation failed: {reason}")]
     LedgerValidation { reason: String },
 
+    /// Invalid ledger root in proof (not in historical roots)
+    #[error("Invalid ledger root in proof: {proof_root} - {reason}")]
+    InvalidLedgerRoot { proof_root: String, reason: String },
+
     /// Cryptographic operation failed
     #[error("Cryptographic error: {0}")]
     Cryptographic(String),

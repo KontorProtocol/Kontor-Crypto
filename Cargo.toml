@@ -1,6 +1,6 @@
 [package]
 name = "kontor-crypto"
-version = "0.1.1"
+version = "0.1.4"
 edition = "2021"
 default-run = "kontor-crypto"
 license = "MIT"

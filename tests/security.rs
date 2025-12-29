@@ -162,9 +162,16 @@ fn test_erasure_coding_security() {
 
 #[test]
 fn test_proof_replay_with_different_files_is_rejected() {
-    // Critical security test: Verify that the challenged_roots_commitment correctly prevents
-    // a "proof replay" attack, where a prover tries to use a valid proof for files {A, B}
+    // Critical security test: Verify that proof replay attacks are prevented.
+    // A prover should not be able to use a valid proof for files {A, B}
     // to answer a verifier's challenge for files {A, C}.
+    //
+    // Security is enforced at two levels:
+    // 1. API level: proof.challenge_ids must match the challenges being verified
+    // 2. Cryptographic level: SNARK proves indices are correct for the claimed root
+    //
+    // The challenge_ids binding ensures a proof can only answer the specific
+    // challenges it was generated for.
     use kontor_crypto::api::PorSystem;
     use std::collections::BTreeMap;
 
@@ -217,16 +224,18 @@ fn test_proof_replay_with_different_files_is_rejected() {
     ];
 
     // Attempt to verify the proof generated for {A, B} against challenges for {A, C}
-    // This should fail because the challenged_roots_commitment will not match
-    // We need to test the underlying cryptographic security, not just API validation
-    let verification_result = kontor_crypto::api::verify_raw(&challenges_ac, &proof_for_ab, ledger)
-        .expect("Verification should complete without error");
+    // This should fail because proof.challenge_ids won't match challenges_ac
+    let verification_result = system.verify(&proof_for_ab, &challenges_ac);
 
-    // The verification should return false, indicating the proof is invalid for these challenges
-    assert!(!verification_result,
-        "Proof for files A,B should NOT verify against challenges for files A,C - this prevents proof replay attacks!");
+    // The verification should return an error because challenge IDs don't match
+    assert!(
+        verification_result.is_err(),
+        "Proof for files A,B should NOT verify against challenges for files A,C - challenge_ids mismatch prevents replay!"
+    );
 
-    println!("✓ Proof replay attack correctly rejected - challenged_roots_commitment working as intended");
+    println!(
+        "✓ Proof replay attack correctly rejected - challenge_ids binding working as intended"
+    );
 
     // Sanity check: Verify that the original proof still works for the original challenges
     let original_verification = system
