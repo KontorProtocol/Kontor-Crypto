@@ -197,9 +197,12 @@ impl FileLedger {
         // Rebuild tree
         self.rebuild_tree()?;
 
-        // Record historical root only on success and if ledger wasn't empty before
+        // Record historical root only if it changed and ledger wasn't empty before
         if !was_empty {
-            self.historical_roots.push(old_root_repr);
+            let new_root_repr: [u8; 32] = self.tree.root().to_repr().into();
+            if old_root_repr != new_root_repr {
+                self.historical_roots.push(old_root_repr);
+            }
         }
 
         Ok(())
@@ -250,9 +253,12 @@ impl FileLedger {
         // Rebuild tree
         self.rebuild_tree()?;
 
-        // Record historical root only on success and if ledger wasn't empty before
+        // Record historical root only if it changed and ledger wasn't empty before
         if !was_empty {
-            self.historical_roots.push(old_root_repr);
+            let new_root_repr: [u8; 32] = self.tree.root().to_repr().into();
+            if old_root_repr != new_root_repr {
+                self.historical_roots.push(old_root_repr);
+            }
         }
 
         Ok(())
