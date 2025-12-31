@@ -122,7 +122,7 @@ fn test_historical_ledger_full_lifecycle() {
     let bob_data = create_test_data(100, Some(2001));
     let (_bob_prepared, bob_meta) = api::prepare_file(&bob_data, "bob_contract.pdf").unwrap();
 
-    // CRITICAL: add_file atomically records the OLD root before adding the new file
+    // add_file records the current root after adding the new file
     ledger.add_file(&bob_meta).unwrap();
 
     let root_block_1001 = ledger.root();
@@ -788,6 +788,182 @@ fn test_ledger_duplicate_file_updates_entry() {
     println!("✓ Duplicate file correctly updates existing entry");
 }
 
+#[test]
+fn test_duplicate_file_with_different_content_records_historical_root() {
+    // When updating a file (same file_id, different content), the ledger root changes
+    // and a new historical root should be recorded.
+    println!("Testing that updating a file (different content) records historical root");
+
+    let mut ledger = kontor_crypto::ledger::FileLedger::new();
+
+    // Add initial file
+    let file_id = "updatable_file";
+    let meta_v1 = synthetic_metadata(file_id, FieldElement::from(100u64), 3);
+    ledger.add_file(&meta_v1).unwrap();
+
+    let root_after_v1 = ledger.root();
+    assert_eq!(historical_root_total(&ledger), 1);
+
+    // Update file with different content (different root value)
+    let meta_v2 = synthetic_metadata(file_id, FieldElement::from(200u64), 3);
+    ledger.add_file(&meta_v2).unwrap();
+
+    let root_after_v2 = ledger.root();
+
+    // Roots should be different
+    assert_ne!(
+        root_after_v1, root_after_v2,
+        "Ledger root must change when file content changes"
+    );
+
+    // Should have 2 historical roots (one per add_file)
+    assert_eq!(
+        historical_root_total(&ledger),
+        2,
+        "Updating file with different content should record new historical root"
+    );
+
+    // Both roots should be valid
+    assert!(ledger.is_valid_root(root_after_v1));
+    assert!(ledger.is_valid_root(root_after_v2));
+
+    // File entry should have the new root
+    assert_eq!(
+        ledger.files.get(file_id).unwrap().root,
+        FieldElement::from(200u64),
+        "File should have updated root"
+    );
+
+    println!("✓ File update with different content correctly records historical root");
+}
+
+#[test]
+fn test_duplicate_file_with_same_content_still_records_historical_root() {
+    // Re-adding the exact same file (same file_id, same content) doesn't change
+    // the ledger root, but add_file still records the current root.
+    // This is intentional - every add_file call records the current root.
+    println!("Testing that re-adding identical file still records historical root");
+
+    let mut ledger = kontor_crypto::ledger::FileLedger::new();
+
+    // Add initial file
+    let file_id = "identical_file";
+    let meta = synthetic_metadata(file_id, FieldElement::from(100u64), 3);
+    ledger.add_file(&meta).unwrap();
+
+    let root_after_first = ledger.root();
+    assert_eq!(historical_root_total(&ledger), 1);
+
+    // Re-add the exact same file
+    ledger.add_file(&meta).unwrap();
+
+    let root_after_second = ledger.root();
+
+    // Roots should be IDENTICAL (same file, same content)
+    assert_eq!(
+        root_after_first, root_after_second,
+        "Ledger root should NOT change when re-adding identical file"
+    );
+
+    // Should have 2 historical roots - add_file always records
+    assert_eq!(
+        historical_root_total(&ledger),
+        2,
+        "Re-adding identical file still records historical root (every add_file records)"
+    );
+
+    // Both entries are the same root
+    use ff::PrimeField;
+    let first_recorded: [u8; 32] = ledger.historical_roots[0];
+    let second_recorded: [u8; 32] = ledger.historical_roots[1];
+    let expected: [u8; 32] = root_after_first.to_repr().into();
+
+    assert_eq!(first_recorded, expected);
+    assert_eq!(second_recorded, expected);
+
+    println!("✓ Re-adding identical file correctly records historical root");
+}
+
+#[test]
+fn test_duplicate_file_with_different_depth_records_historical_root() {
+    // Same file_id but different depth should change the rc (root commitment)
+    // and therefore change the ledger root.
+    println!("Testing that updating file depth records historical root");
+
+    let mut ledger = kontor_crypto::ledger::FileLedger::new();
+
+    let file_id = "depth_change_file";
+
+    // Add file with depth 3
+    let meta_depth3 = synthetic_metadata(file_id, FieldElement::from(100u64), 3);
+    ledger.add_file(&meta_depth3).unwrap();
+    let root_depth3 = ledger.root();
+    let rc_depth3 = ledger.files.get(file_id).unwrap().rc;
+
+    // Update to depth 5 (same root value, different depth)
+    let meta_depth5 = synthetic_metadata(file_id, FieldElement::from(100u64), 5);
+    ledger.add_file(&meta_depth5).unwrap();
+    let root_depth5 = ledger.root();
+    let rc_depth5 = ledger.files.get(file_id).unwrap().rc;
+
+    // RC should change because rc = H(TAG_RC, root, depth)
+    assert_ne!(rc_depth3, rc_depth5, "RC must change when depth changes");
+
+    // Ledger root should change
+    assert_ne!(
+        root_depth3, root_depth5,
+        "Ledger root must change when file depth changes"
+    );
+
+    // Should have 2 historical roots
+    assert_eq!(historical_root_total(&ledger), 2);
+    assert!(ledger.is_valid_root(root_depth3));
+    assert!(ledger.is_valid_root(root_depth5));
+
+    println!("✓ File update with different depth correctly records historical root");
+}
+
+#[test]
+fn test_multiple_updates_to_same_file_accumulate_historical_roots() {
+    // Multiple updates to the same file should accumulate historical roots
+    println!("Testing that multiple file updates accumulate historical roots");
+
+    let mut ledger = kontor_crypto::ledger::FileLedger::new();
+
+    let file_id = "frequently_updated";
+    let mut captured_roots = Vec::new();
+
+    // Add and update the file 5 times
+    for i in 0..5 {
+        let meta = synthetic_metadata(file_id, FieldElement::from(i as u64 * 100), 3);
+        ledger.add_file(&meta).unwrap();
+        captured_roots.push(ledger.root());
+    }
+
+    // Should have 5 historical roots (one per add_file)
+    assert_eq!(
+        historical_root_total(&ledger),
+        5,
+        "Multiple updates should accumulate historical roots"
+    );
+
+    // All roots should be valid
+    for root in &captured_roots {
+        assert!(ledger.is_valid_root(*root));
+    }
+
+    // Only one file entry exists
+    assert_eq!(ledger.files.len(), 1);
+
+    // File has the last update's root
+    assert_eq!(
+        ledger.files.get(file_id).unwrap().root,
+        FieldElement::from(400u64)
+    );
+
+    println!("✓ Multiple file updates correctly accumulate historical roots");
+}
+
 // ===========================================
 // Security Tests for add_files()
 // ===========================================
@@ -1331,82 +1507,83 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
 // =============================================================================
 
 #[test]
-fn test_add_file_records_historical_root_on_non_empty_ledger() {
-    // SECURITY: When adding a file to a non-empty ledger, the old root must be
-    // recorded as a historical root to allow proofs against the old state to remain valid.
-    println!("Testing that add_file records historical root on non-empty ledger");
+fn test_add_file_always_records_historical_root() {
+    // SECURITY: add_file records the current root after every addition,
+    // ensuring all valid states are tracked for proof validation.
+    println!("Testing that add_file always records the current root");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
-    // First file: ledger is empty, no historical root should be recorded
+    // First file: records current root after adding
     let meta1 = synthetic_metadata("file_1", FieldElement::from(100u64), 3);
     ledger.add_file(&meta1).unwrap();
-
-    assert_eq!(
-        historical_root_total(&ledger),
-        0,
-        "First file should NOT record historical root (ledger was empty)"
-    );
-
     let root_after_first = ledger.root();
-
-    // Second file: ledger is non-empty, historical root SHOULD be recorded
-    let meta2 = synthetic_metadata("file_2", FieldElement::from(200u64), 3);
-    ledger.add_file(&meta2).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
         1,
-        "Second file should record exactly one historical root"
+        "First file should record one historical root"
     );
     assert!(
         ledger.is_valid_root(root_after_first),
-        "Root after first file should be valid as historical root"
+        "Root after first file should be valid"
     );
 
+    // Second file: records current root after adding
+    let meta2 = synthetic_metadata("file_2", FieldElement::from(200u64), 3);
+    ledger.add_file(&meta2).unwrap();
     let root_after_second = ledger.root();
-    assert_ne!(
-        root_after_first, root_after_second,
-        "Root should change after adding second file"
-    );
-
-    // Third file: another historical root should be recorded
-    let meta3 = synthetic_metadata("file_3", FieldElement::from(300u64), 3);
-    ledger.add_file(&meta3).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
         2,
-        "Third file should result in two historical roots"
+        "Second file should record another historical root"
+    );
+    assert_ne!(
+        root_after_first, root_after_second,
+        "Root should change after adding second file"
     );
     assert!(
         ledger.is_valid_root(root_after_first),
-        "First historical root should still be valid"
+        "First root should still be valid"
     );
     assert!(
         ledger.is_valid_root(root_after_second),
-        "Second historical root should be valid"
+        "Second root should be valid"
     );
 
-    println!("✓ Historical roots correctly recorded on file additions");
+    // Third file: records current root after adding
+    let meta3 = synthetic_metadata("file_3", FieldElement::from(300u64), 3);
+    ledger.add_file(&meta3).unwrap();
+    let root_after_third = ledger.root();
+
+    assert_eq!(
+        historical_root_total(&ledger),
+        3,
+        "Third file should result in three historical roots"
+    );
+    assert!(ledger.is_valid_root(root_after_first));
+    assert!(ledger.is_valid_root(root_after_second));
+    assert!(ledger.is_valid_root(root_after_third));
+
+    println!("✓ Historical roots correctly recorded on every file addition");
 }
 
 #[test]
-fn test_add_files_batch_records_single_historical_root() {
-    // SECURITY: Batch add should record only ONE historical root entry,
-    // not one per file. This is more efficient and semantically correct.
-    println!("Testing that add_files records single historical root for batch");
+fn test_add_files_does_not_record_historical_roots() {
+    // SECURITY: add_files is for bulk initialization/reconstruction.
+    // It does NOT record historical roots - clients manage these externally.
+    println!("Testing that add_files does not record historical roots");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
-    // Add initial file
+    // Add initial file using add_file (which records)
     let meta1 = synthetic_metadata("file_1", FieldElement::from(100u64), 3);
     ledger.add_file(&meta1).unwrap();
-    let root_before_batch = ledger.root();
 
-    assert_eq!(historical_root_total(&ledger), 0);
+    assert_eq!(historical_root_total(&ledger), 1);
 
-    // Batch add multiple files
+    // Batch add multiple files - should NOT record any historical roots
     let batch = vec![
         synthetic_metadata("file_2", FieldElement::from(200u64), 3),
         synthetic_metadata("file_3", FieldElement::from(300u64), 3),
@@ -1417,25 +1594,22 @@ fn test_add_files_batch_records_single_historical_root() {
     assert_eq!(
         historical_root_total(&ledger),
         1,
-        "Batch add should record exactly ONE historical root, not one per file"
+        "add_files should NOT record any historical roots"
     );
-    assert!(
-        ledger.is_valid_root(root_before_batch),
-        "Root before batch should be valid as historical root"
-    );
+    assert_eq!(ledger.files.len(), 4, "Should have 4 files total");
 
-    println!("✓ Batch add correctly records single historical root");
+    println!("✓ add_files correctly skips historical root recording");
 }
 
 #[test]
 fn test_historical_roots_accumulate_and_can_be_set() {
-    // SECURITY: Historical roots accumulate with each file addition and
+    // SECURITY: Historical roots accumulate with each add_file and
     // can be set/cleared with set_historical_roots.
     println!("Testing historical root accumulation and set_historical_roots");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
-    // Add files
+    // Add files - each add_file records the current root
     ledger
         .add_file(&synthetic_metadata("file_1", FieldElement::from(100u64), 3))
         .unwrap();
@@ -1449,12 +1623,14 @@ fn test_historical_roots_accumulate_and_can_be_set() {
     ledger
         .add_file(&synthetic_metadata("file_3", FieldElement::from(300u64), 3))
         .unwrap();
+    let root_3 = ledger.tree.root();
 
-    assert_eq!(historical_root_total(&ledger), 2);
+    assert_eq!(historical_root_total(&ledger), 3);
 
-    // All historical roots should be valid
+    // All roots should be valid
     assert!(ledger.is_valid_root(root_1));
     assert!(ledger.is_valid_root(root_2));
+    assert!(ledger.is_valid_root(root_3));
 
     // Clear historical roots using set_historical_roots
     ledger.set_historical_roots(vec![]);
@@ -1465,9 +1641,11 @@ fn test_historical_roots_accumulate_and_can_be_set() {
         "Should have zero roots after clearing"
     );
 
-    // Old roots should no longer be valid
+    // Old roots should no longer be valid (except current)
     assert!(!ledger.is_valid_root(root_1));
     assert!(!ledger.is_valid_root(root_2));
+    // Current root is always valid
+    assert!(ledger.is_valid_root(root_3));
 
     println!("✓ Historical roots correctly managed with set_historical_roots");
 }
@@ -1528,7 +1706,7 @@ fn test_is_valid_root_checks_current_and_historical() {
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
-    // Add files and track roots
+    // Add files and track roots - each add_file records the current root
     ledger
         .add_file(&synthetic_metadata("file_1", FieldElement::from(100u64), 3))
         .unwrap();
@@ -1544,18 +1722,15 @@ fn test_is_valid_root_checks_current_and_historical() {
         .unwrap();
     let root3 = ledger.root(); // Current root
 
+    // Should have 3 historical roots (one per add_file)
+    assert_eq!(historical_root_total(&ledger), 3);
+
     // Current root should be valid
     assert!(ledger.is_valid_root(root3), "Current root must be valid");
 
-    // Historical roots should be valid
-    assert!(
-        ledger.is_valid_root(root1),
-        "First historical root must be valid"
-    );
-    assert!(
-        ledger.is_valid_root(root2),
-        "Second historical root must be valid"
-    );
+    // All roots should be valid (they're in historical_roots)
+    assert!(ledger.is_valid_root(root1), "First root must be valid");
+    assert!(ledger.is_valid_root(root2), "Second root must be valid");
 
     // Random root should NOT be valid
     let random_root = FieldElement::from(999999u64);
@@ -1680,7 +1855,7 @@ fn test_set_historical_roots() {
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
-    // Add 10 files to create 9 historical roots
+    // Add 10 files - each add_file records the current root
     for i in 0..10 {
         ledger
             .add_file(&synthetic_metadata(
@@ -1693,12 +1868,12 @@ fn test_set_historical_roots() {
 
     assert_eq!(
         historical_root_total(&ledger),
-        9,
-        "Should have 9 historical roots (first add doesn't create one)"
+        10,
+        "Should have 10 historical roots (one per add_file)"
     );
 
     // Keep only the last 3 roots by slicing
-    let last_three: Vec<[u8; 32]> = ledger.historical_roots[6..9].to_vec();
+    let last_three: Vec<[u8; 32]> = ledger.historical_roots[7..10].to_vec();
     ledger.set_historical_roots(last_three);
 
     assert_eq!(
@@ -1719,85 +1894,48 @@ fn test_set_historical_roots() {
 // 3. State remains consistent after operations complete
 
 #[test]
-fn test_add_file_atomicity_records_correct_historical_root() {
-    // ATOMICITY: The historical root recorded must be exactly the root
-    // that existed BEFORE the modification, not some intermediate state.
-    println!("Testing add_file records the correct historical root");
+fn test_add_file_atomicity_records_current_root() {
+    // ATOMICITY: add_file records the current root AFTER the modification.
+    println!("Testing add_file records the current root after adding");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
-    // Add first file (no historical root recorded for empty ledger)
+    // Add first file - records current root after adding
     let meta1 = synthetic_metadata("file_1", FieldElement::from(100u64), 3);
     ledger.add_file(&meta1).unwrap();
+    let root_after_first = ledger.root();
 
-    // Capture the root before adding second file
-    let root_before_second = ledger.root();
-
-    // Add second file
-    let meta2 = synthetic_metadata("file_2", FieldElement::from(200u64), 3);
-    ledger.add_file(&meta2).unwrap();
-
-    // Verify exactly one historical root was recorded
+    // First file should have recorded one historical root
     assert_eq!(ledger.historical_roots.len(), 1);
 
-    // Verify the recorded root matches the pre-modification root exactly
+    // Verify the recorded root matches the current root after adding
     use ff::PrimeField;
     let recorded_root: [u8; 32] = ledger.historical_roots[0];
-    let expected_root: [u8; 32] = root_before_second.to_repr().into();
+    let expected_root: [u8; 32] = root_after_first.to_repr().into();
     assert_eq!(
         recorded_root, expected_root,
-        "ATOMICITY VIOLATION: Historical root must be the pre-modification root"
+        "Historical root must be the current root after adding"
     );
 
-    // Verify the root is valid
-    assert!(
-        ledger.is_valid_root(root_before_second),
-        "Pre-modification root should be valid via is_valid_root"
-    );
+    // Add second file - records current root after adding
+    let meta2 = synthetic_metadata("file_2", FieldElement::from(200u64), 3);
+    ledger.add_file(&meta2).unwrap();
+    let root_after_second = ledger.root();
 
-    println!("✓ add_file correctly records pre-modification root");
-}
+    assert_eq!(ledger.historical_roots.len(), 2);
 
-#[test]
-fn test_add_files_atomicity_records_correct_historical_root() {
-    // ATOMICITY: Batch add should record the root that existed before
-    // ANY of the batch files were added.
-    println!("Testing add_files records the correct historical root");
-
-    let mut ledger = kontor_crypto::ledger::FileLedger::new();
-
-    // Add initial file
-    let meta1 = synthetic_metadata("file_1", FieldElement::from(100u64), 3);
-    ledger.add_file(&meta1).unwrap();
-
-    // Capture root before batch add
-    let root_before_batch = ledger.root();
-
-    // Batch add multiple files
-    let batch = vec![
-        synthetic_metadata("file_2", FieldElement::from(200u64), 3),
-        synthetic_metadata("file_3", FieldElement::from(300u64), 4),
-        synthetic_metadata("file_4", FieldElement::from(400u64), 5),
-    ];
-    ledger.add_files(&batch).unwrap();
-
-    // Verify exactly one historical root was recorded (not one per file)
+    let second_recorded: [u8; 32] = ledger.historical_roots[1];
+    let second_expected: [u8; 32] = root_after_second.to_repr().into();
     assert_eq!(
-        ledger.historical_roots.len(),
-        1,
-        "Batch add should record exactly ONE historical root"
+        second_recorded, second_expected,
+        "Second historical root must be the current root after second add"
     );
 
-    // Verify the recorded root is the pre-batch root
-    use ff::PrimeField;
-    let recorded_root: [u8; 32] = ledger.historical_roots[0];
-    let expected_root: [u8; 32] = root_before_batch.to_repr().into();
-    assert_eq!(
-        recorded_root, expected_root,
-        "ATOMICITY VIOLATION: Historical root must be the root before batch started"
-    );
+    // Both roots should be valid
+    assert!(ledger.is_valid_root(root_after_first));
+    assert!(ledger.is_valid_root(root_after_second));
 
-    println!("✓ add_files correctly records single pre-batch root");
+    println!("✓ add_file correctly records current root after adding");
 }
 
 #[test]
@@ -1805,29 +1943,33 @@ fn test_add_file_atomicity_state_consistency_after_success() {
     // ATOMICITY: After successful add_file, all state components must be consistent:
     // - files map contains the new file
     // - tree root reflects all files
-    // - historical_roots contains pre-modification root (if applicable)
+    // - historical_roots contains the current root after adding
     println!("Testing add_file state consistency after success");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
-    // Add first file
+    // Add first file - records current root
     let meta1 = synthetic_metadata("file_1", FieldElement::from(100u64), 3);
     ledger.add_file(&meta1).unwrap();
+    let root_after_first = ledger.root();
 
     // State check after first file
     assert_eq!(ledger.files.len(), 1, "Should have 1 file");
     assert!(ledger.files.contains_key("file_1"), "file_1 should exist");
     assert_eq!(
         ledger.historical_roots.len(),
-        0,
-        "No historical root for first file"
+        1,
+        "Should have 1 historical root after first file"
+    );
+    assert!(
+        ledger.is_valid_root(root_after_first),
+        "First root should be valid"
     );
 
-    let root_after_first = ledger.root();
-
-    // Add second file
+    // Add second file - records current root
     let meta2 = synthetic_metadata("file_2", FieldElement::from(200u64), 3);
     ledger.add_file(&meta2).unwrap();
+    let root_after_second = ledger.root();
 
     // State check after second file
     assert_eq!(ledger.files.len(), 2, "Should have 2 files");
@@ -1835,67 +1977,27 @@ fn test_add_file_atomicity_state_consistency_after_success() {
     assert!(ledger.files.contains_key("file_2"), "file_2 should exist");
     assert_eq!(
         ledger.historical_roots.len(),
-        1,
-        "Should have 1 historical root"
+        2,
+        "Should have 2 historical roots"
     );
 
     // Tree root should have changed
-    let root_after_second = ledger.root();
     assert_ne!(
         root_after_first, root_after_second,
         "Root must change after adding file"
     );
 
-    // Historical root should be the old root
+    // Both roots should be valid
     assert!(
         ledger.is_valid_root(root_after_first),
-        "Old root should be valid"
+        "First root should be valid"
     );
-
-    // Current root should also be valid
     assert!(
         ledger.is_valid_root(root_after_second),
-        "Current root should be valid"
+        "Second root should be valid"
     );
 
     println!("✓ add_file maintains consistent state after success");
-}
-
-#[test]
-fn test_add_files_atomicity_state_consistency_after_success() {
-    // ATOMICITY: After successful add_files, all state components must be consistent.
-    println!("Testing add_files state consistency after success");
-
-    let mut ledger = kontor_crypto::ledger::FileLedger::new();
-
-    // Add initial file
-    let meta1 = synthetic_metadata("file_1", FieldElement::from(100u64), 3);
-    ledger.add_file(&meta1).unwrap();
-    let root_before_batch = ledger.root();
-
-    // Batch add
-    let batch = vec![
-        synthetic_metadata("file_2", FieldElement::from(200u64), 3),
-        synthetic_metadata("file_3", FieldElement::from(300u64), 3),
-    ];
-    ledger.add_files(&batch).unwrap();
-
-    // State check
-    assert_eq!(ledger.files.len(), 3, "Should have 3 files");
-    assert!(ledger.files.contains_key("file_1"));
-    assert!(ledger.files.contains_key("file_2"));
-    assert!(ledger.files.contains_key("file_3"));
-
-    // Historical root should be the pre-batch root
-    assert_eq!(ledger.historical_roots.len(), 1);
-    assert!(ledger.is_valid_root(root_before_batch));
-
-    // Tree should reflect all files
-    let final_root = ledger.root();
-    assert_ne!(root_before_batch, final_root);
-    assert!(ledger.is_valid_root(final_root));
-
-    println!("✓ add_files maintains consistent state after success");
 }
 
 #[test]
@@ -1933,42 +2035,36 @@ fn test_empty_batch_is_noop_no_historical_root() {
 
 #[test]
 fn test_atomicity_historical_root_order_matches_add_order() {
-    // ATOMICITY: Historical roots should be recorded in the order files were added,
-    // allowing reconstruction of ledger history.
+    // ATOMICITY: Historical roots are recorded in the order files were added,
+    // with each recording the current root AFTER adding.
     println!("Testing historical roots preserve temporal ordering");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
     // Track roots as we add files
-    let mut expected_historical_roots = Vec::new();
+    let mut expected_roots = Vec::new();
 
-    // Add files one by one, capturing the root before each addition
+    // Add files one by one, capturing the root AFTER each addition
     for i in 0..5 {
-        if i > 0 {
-            // Capture root before adding (this will become historical)
-            expected_historical_roots.push(ledger.root());
-        }
-
         let meta = synthetic_metadata(
             &format!("file_{}", i),
             FieldElement::from(i as u64 * 100),
             3,
         );
         ledger.add_file(&meta).unwrap();
+        expected_roots.push(ledger.root());
     }
 
-    // Verify historical roots match expected order
-    assert_eq!(
-        ledger.historical_roots.len(),
-        expected_historical_roots.len()
-    );
+    // Verify historical roots match expected order (one per add_file)
+    assert_eq!(ledger.historical_roots.len(), 5);
+    assert_eq!(ledger.historical_roots.len(), expected_roots.len());
 
     use ff::PrimeField;
-    for (i, expected_root) in expected_historical_roots.iter().enumerate() {
+    for (i, expected_root) in expected_roots.iter().enumerate() {
         let expected_bytes: [u8; 32] = expected_root.to_repr().into();
         assert_eq!(
             ledger.historical_roots[i], expected_bytes,
-            "Historical root {} should match pre-add root",
+            "Historical root {} should match post-add root",
             i
         );
     }

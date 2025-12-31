@@ -165,8 +165,8 @@ impl FileLedger {
 
     /// Adds a new file to the ledger and rebuilds the aggregated tree.
     ///
-    /// On success, the pre-modification root is recorded as a historical root
-    /// (unless the ledger was empty).
+    /// On success, the new root is recorded in [`Self::historical_roots`],
+    /// ensuring every valid ledger state is tracked for proof validation.
     ///
     /// # Arguments
     ///
@@ -184,12 +184,6 @@ impl FileLedger {
     /// ledger.add_file(&metadata).unwrap();
     /// ```
     pub fn add_file(&mut self, entry: &impl FileDescriptor) -> Result<(), KontorPoRError> {
-        use ff::PrimeField;
-
-        // Capture the old root before modifications (only meaningful if non-empty)
-        let was_empty = self.files.is_empty();
-        let old_root_repr: [u8; 32] = self.tree.root().to_repr().into();
-
         // Insert the new file
         self.files
             .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
@@ -197,25 +191,20 @@ impl FileLedger {
         // Rebuild tree
         self.rebuild_tree()?;
 
-        // Record historical root only if it changed and ledger wasn't empty before
-        if !was_empty {
-            let new_root_repr: [u8; 32] = self.tree.root().to_repr().into();
-            if old_root_repr != new_root_repr {
-                self.historical_roots.push(old_root_repr);
-            }
-        }
+        // Record the new root as a historical root (every valid state is tracked)
+        self.record_current_root();
 
         Ok(())
     }
 
     /// Adds multiple files to the ledger in a single batch, rebuilding the tree only once.
     ///
-    /// This is more efficient than calling [`Self::add_file`] in a loop when adding
-    /// many files, as the aggregated Merkle tree is rebuilt only once at the end,
-    /// and only one historical root entry is created.
+    /// This method is intended for bulk initialization or reconstruction of the ledger
+    /// (e.g., syncing from a database). It does **not** record historical roots automatically.
+    /// Clients should manage historical roots externally and use [`Self::set_historical_roots`]
+    /// after reconstruction.
     ///
-    /// On success, the pre-modification root is recorded as a historical root
-    /// (unless the ledger was empty).
+    /// For incremental additions that track state transitions, use [`Self::add_file`] instead.
     ///
     /// # Arguments
     ///
@@ -230,38 +219,12 @@ impl FileLedger {
         &mut self,
         files: impl IntoIterator<Item = &'a T>,
     ) -> Result<(), KontorPoRError> {
-        use ff::PrimeField;
-
-        // Collect files first to check if batch is empty
-        let files_to_add: Vec<_> = files.into_iter().collect();
-
-        // Early return for empty batch - no state change needed
-        if files_to_add.is_empty() {
-            return Ok(());
-        }
-
-        // Capture the old root before modifications (only meaningful if non-empty)
-        let was_empty = self.files.is_empty();
-        let old_root_repr: [u8; 32] = self.tree.root().to_repr().into();
-
-        // Insert all new files
-        for entry in files_to_add {
+        for entry in files {
             self.files
                 .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
         }
 
-        // Rebuild tree
-        self.rebuild_tree()?;
-
-        // Record historical root only if it changed and ledger wasn't empty before
-        if !was_empty {
-            let new_root_repr: [u8; 32] = self.tree.root().to_repr().into();
-            if old_root_repr != new_root_repr {
-                self.historical_roots.push(old_root_repr);
-            }
-        }
-
-        Ok(())
+        self.rebuild_tree()
     }
 
     /// Rebuilds the aggregated Merkle tree from rc values (root commitments).
