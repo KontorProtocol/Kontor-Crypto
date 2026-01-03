@@ -15,7 +15,7 @@ use kontor_crypto::{
     params,
 };
 use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use std::collections::BTreeMap;
 
 // Circuit test support
@@ -192,8 +192,9 @@ pub fn setup_test_scenario(
         let mut data = vec![0u8; file_spec.size];
         rng.fill_bytes(&mut data);
 
-        // Prepare the file
-        let (prepared, metadata) = prepare_file(&data, &format!("test_file_{}.dat", i))?;
+        // Prepare the file with a random nonce for unique file_id
+        let nonce: [u8; 16] = rand::thread_rng().gen();
+        let (prepared, metadata) = prepare_file(&data, &format!("test_file_{}.dat", i), &nonce)?;
 
         // Add to ledger if multi-file
         if let Some(ref mut ledger) = ledger {
@@ -396,7 +397,7 @@ pub fn create_test_files(
         let data = create_test_data(size, Some(seed));
 
         let (prepared, metadata) =
-            prepare_file(&data, "test_file.dat").expect("Failed to prepare test file");
+            prepare_file(&data, "test_file.dat", b"").expect("Failed to prepare test file");
 
         files.insert(metadata.file_id.clone(), prepared);
         metadatas.push(metadata);

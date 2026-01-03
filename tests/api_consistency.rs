@@ -3,6 +3,7 @@ use kontor_crypto::{
     api::{self, Challenge, FieldElement, FileMetadata, PorSystem},
     poseidon::{domain_tags, poseidon_hash_tagged},
 };
+use rand::Rng;
 use std::collections::BTreeMap;
 
 mod common;
@@ -22,7 +23,7 @@ fn test_state_evolution_across_files() {
     for i in 0..3 {
         let data = vec![(i * 10) as u8; 50];
         let (prepared, metadata) =
-            api::prepare_file(&data, "test_file.dat").expect("Failed to prepare file");
+            api::prepare_file(&data, "test_file.dat", b"").expect("Failed to prepare file");
 
         files.insert(metadata.file_id.clone(), prepared);
         metadatas.push(metadata);
@@ -92,8 +93,11 @@ fn test_commitments_match_between_api_and_circuit() {
     let data1 = vec![1u8; 100];
     let data2 = vec![2u8; 150];
 
-    let (prep1, meta1) = api::prepare_file(&data1, "test_file.dat").unwrap();
-    let (prep2, meta2) = api::prepare_file(&data2, "test_file.dat").unwrap();
+    // Use random nonces for unique file_ids
+    let nonce1: [u8; 16] = rand::thread_rng().gen();
+    let nonce2: [u8; 16] = rand::thread_rng().gen();
+    let (prep1, meta1) = api::prepare_file(&data1, "test_file.dat", &nonce1).unwrap();
+    let (prep2, meta2) = api::prepare_file(&data2, "test_file.dat", &nonce2).unwrap();
 
     // Create challenges
     let seed = FieldElement::from(999u64);
@@ -148,8 +152,8 @@ fn test_prove_fails_without_required_ledger() {
     let data1 = vec![10u8; 50];
     let data2 = vec![20u8; 60];
 
-    let (prep1, meta1) = api::prepare_file(&data1, "test_file.dat").unwrap();
-    let (prep2, meta2) = api::prepare_file(&data2, "test_file.dat").unwrap();
+    let (prep1, meta1) = api::prepare_file(&data1, "test_file.dat", b"").unwrap();
+    let (prep2, meta2) = api::prepare_file(&data2, "test_file.dat", b"").unwrap();
 
     let challenges = vec![
         Challenge::new_test(meta1.clone(), 1000, 1, FieldElement::from(42u64)),
@@ -182,7 +186,7 @@ fn test_single_file_ignores_ledger() {
 
     let data = vec![30u8; 70];
 
-    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
+    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
 
     let challenge = Challenge::new_test(metadata.clone(), 1000, 1, FieldElement::from(123u64));
 
@@ -199,6 +203,7 @@ fn test_single_file_ignores_ledger() {
     let other_metadata = FileMetadata {
         root: FieldElement::from(999u64),
         file_id: "other_file".to_string(),
+        nonce: vec![],
         padded_len: 8, // depth 3
         original_size: 100,
         filename: "other.dat".to_string(),
@@ -239,7 +244,7 @@ fn test_proof_determinism() {
 
     let data = vec![42u8; 100];
 
-    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
+    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
     let challenge = Challenge::new_test(metadata.clone(), 1000, 1, FieldElement::from(777u64));
 
     let mut files = BTreeMap::new();

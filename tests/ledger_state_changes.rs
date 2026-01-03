@@ -21,7 +21,7 @@ fn test_file_removal_invalidates_proof() {
     for i in 0..3 {
         let data = vec![(i * 10) as u8; 50 + i * 10];
         let (prepared, metadata) =
-            api::prepare_file(&data, "test_file.dat").expect("Failed to prepare file");
+            api::prepare_file(&data, "test_file.dat", b"").expect("Failed to prepare file");
         files.insert(metadata.file_id.clone(), prepared);
         metadatas.push(metadata);
     }
@@ -103,7 +103,7 @@ fn test_ledger_reorg_changes_aggregated_root() {
     let mut prepared_files = vec![];
     for (name, data) in file_data {
         let (prepared, mut metadata) =
-            api::prepare_file(&data, "test_file.dat").expect("Failed to prepare file");
+            api::prepare_file(&data, "test_file.dat", b"").expect("Failed to prepare file");
         // Override the file_id to control ordering
         metadata.file_id = name.to_string();
         prepared_files.push((metadata, prepared));
@@ -135,6 +135,7 @@ fn test_ledger_reorg_changes_aggregated_root() {
     let fake_metadata_a = FileMetadata {
         root: FieldElement::from(999u64),
         file_id: "file_a".to_string(),
+        nonce: vec![],
         padded_len: 8, // depth 3
         original_size: 100,
         filename: "fake.dat".to_string(),
@@ -160,7 +161,7 @@ fn test_proof_invalidation_with_file_update() {
     // Create initial file
     let data_v1 = vec![1u8; 100];
     let (prepared_v1, metadata_v1) =
-        api::prepare_file(&data_v1, "test_file.dat").expect("Failed to prepare file v1");
+        api::prepare_file(&data_v1, "test_file.dat", b"").expect("Failed to prepare file v1");
 
     // Create ledger with v1
     let mut ledger_v1 = FileLedger::new();
@@ -186,7 +187,7 @@ fn test_proof_invalidation_with_file_update() {
     // Update file content (v2 has different content but could have same hash/name in practice)
     let data_v2 = vec![2u8; 100]; // Different content
     let (_prepared_v2, metadata_v2) =
-        api::prepare_file(&data_v2, "test_file.dat").expect("Failed to prepare file v2");
+        api::prepare_file(&data_v2, "test_file.dat", b"").expect("Failed to prepare file v2");
 
     // In practice, we might reuse the same file identifier but with new content
     // For this test, we'll simulate by using the same position in a new ledger
@@ -196,6 +197,7 @@ fn test_proof_invalidation_with_file_update() {
     let updated_metadata = FileMetadata {
         root: metadata_v2.root,
         file_id: metadata_v1.file_id.clone(),
+        nonce: metadata_v1.nonce.clone(),
         padded_len: metadata_v2.padded_len,
         original_size: metadata_v2.original_size,
         filename: metadata_v1.filename.clone(),
@@ -228,11 +230,11 @@ fn test_historical_roots_recorded_on_every_add() {
     let data2 = vec![2u8; 100];
     let data3 = vec![3u8; 100];
     let (_prepared1, metadata1) =
-        api::prepare_file(&data1, "test_file.dat").expect("Failed to prepare file 1");
+        api::prepare_file(&data1, "test_file.dat", b"").expect("Failed to prepare file 1");
     let (_prepared2, metadata2) =
-        api::prepare_file(&data2, "test_file.dat").expect("Failed to prepare file 2");
+        api::prepare_file(&data2, "test_file.dat", b"").expect("Failed to prepare file 2");
     let (_prepared3, metadata3) =
-        api::prepare_file(&data3, "test_file.dat").expect("Failed to prepare file 3");
+        api::prepare_file(&data3, "test_file.dat", b"").expect("Failed to prepare file 3");
 
     let mut ledger = FileLedger::new();
     assert!(
@@ -290,9 +292,9 @@ fn test_add_files_bulk_initialization() {
     let data1 = vec![1u8; 100];
     let data2 = vec![2u8; 100];
     let data3 = vec![3u8; 100];
-    let (_p1, metadata1) = api::prepare_file(&data1, "file1.dat").expect("prep 1");
-    let (_p2, metadata2) = api::prepare_file(&data2, "file2.dat").expect("prep 2");
-    let (_p3, metadata3) = api::prepare_file(&data3, "file3.dat").expect("prep 3");
+    let (_p1, metadata1) = api::prepare_file(&data1, "file1.dat", b"").expect("prep 1");
+    let (_p2, metadata2) = api::prepare_file(&data2, "file2.dat", b"").expect("prep 2");
+    let (_p3, metadata3) = api::prepare_file(&data3, "file3.dat", b"").expect("prep 3");
 
     // Bulk initialize ledger with all files at once
     let mut ledger = FileLedger::new();

@@ -65,6 +65,7 @@ fn generate_params_for_shape(
             let metadata = FileMetadata {
                 root: FieldElement::ZERO,
                 file_id: format!("dummy{}", i),
+                nonce: vec![],
                 padded_len: if i == 0 {
                     1 << file_tree_depth // First file at max depth
                 } else {

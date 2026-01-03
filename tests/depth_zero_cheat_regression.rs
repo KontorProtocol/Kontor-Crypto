@@ -22,7 +22,7 @@ fn test_depth_zero_cheat_is_prevented() {
     let file_data = vec![42u8; file_size];
 
     // Prepare the file normally
-    let (prepared_file, metadata) = api::prepare_file(&file_data, "test_file.dat").unwrap();
+    let (prepared_file, metadata) = api::prepare_file(&file_data, "test_file.dat", b"").unwrap();
 
     // Verify the file has depth > 0
     let actual_depth = api::tree_depth_from_metadata(&metadata);

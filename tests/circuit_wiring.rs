@@ -327,7 +327,7 @@ fn test_arecibo_first_step_no_op_invariant() {
 
     // Test with a simple single-file proof
     let data = vec![1u8; 100];
-    let (prepared, metadata) = prepare_file(&data, "test_file.dat").unwrap();
+    let (prepared, metadata) = prepare_file(&data, "test_file.dat", b"").unwrap();
 
     // Create 2 challenges to test the behavior
     let num_challenges = 2;
