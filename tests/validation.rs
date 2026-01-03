@@ -100,7 +100,7 @@ fn test_file_metadata_sha256_matches_input() {
 
     // Prepare file and get metadata
     let (_prepared, metadata) =
-        api::prepare_file(data, "test_file.dat").expect("Should prepare file");
+        api::prepare_file(data, "test_file.dat", b"").expect("Should prepare file");
 
     // Manually compute SHA-256
     let mut hasher = Sha256::new();
@@ -125,7 +125,7 @@ fn test_reconstruct_fails_metadata_inconsistencies() {
 
     // Prepare file and get symbols
     let (_prepared, metadata) =
-        api::prepare_file(&data, "test_file.dat").expect("Should prepare file");
+        api::prepare_file(&data, "test_file.dat", b"").expect("Should prepare file");
 
     // Create mock symbols for testing (all zero-filled)
     let total_symbols = metadata.total_symbols();

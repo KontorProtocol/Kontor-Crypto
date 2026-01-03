@@ -18,7 +18,7 @@ fn test_50mb_file_preparation_and_proof() {
     println!("  Preparing {} MB file...", FILE_SIZE / (1024 * 1024));
     let start = Instant::now();
     let (prepared, metadata) =
-        api::prepare_file(&test_data, "large_test.dat").expect("Failed to prepare 50 MB file");
+        api::prepare_file(&test_data, "large_test.dat", b"").expect("Failed to prepare 50 MB file");
     let prep_duration = start.elapsed();
 
     // Verify metadata makes sense

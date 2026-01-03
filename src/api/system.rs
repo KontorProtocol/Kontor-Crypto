@@ -45,9 +45,10 @@ impl<'a> PorSystem<'a> {
         &self,
         data: &[u8],
         filename: &str,
+        nonce: &[u8],
     ) -> Result<(PreparedFile, FileMetadata)> {
         // Use the existing prepare_file function from mod.rs
-        super::prepare_file(data, filename)
+        super::prepare_file(data, filename, nonce)
     }
 
     /// Generate a single compact proof for any set of open Challenges.

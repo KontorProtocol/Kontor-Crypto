@@ -82,7 +82,7 @@ fn test_witness_deeper_than_shape_fails() {
 
     // Create a file with known depth
     let data = vec![1u8; 32]; // Small file → small tree
-    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
+    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
     let actual_depth = api::tree_depth_from_metadata(&metadata);
 
     println!("File has actual depth: {}", actual_depth);
@@ -133,7 +133,7 @@ fn test_malformed_metadata_rejected() {
     println!("Testing that malformed metadata is rejected");
 
     let data = b"Test data for malformed metadata";
-    let (prepared, mut metadata) = api::prepare_file(data, "test_file.dat").unwrap();
+    let (prepared, mut metadata) = api::prepare_file(data, "test_file.dat", b"").unwrap();
 
     // Create challenge with impossible metadata
     metadata.original_size = metadata.total_symbols() * 31 + 1000; // Impossible: original > total

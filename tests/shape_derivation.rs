@@ -76,6 +76,7 @@ fn test_shape_from_challenges() {
     let metadata1 = FileMetadata {
         root: FieldElement::ZERO,
         file_id: "file1".to_string(),
+        nonce: vec![],
         padded_len: 16, // depth 4 (2^4 = 16)
         original_size: 100,
         filename: "file1.dat".to_string(),
@@ -84,6 +85,7 @@ fn test_shape_from_challenges() {
     let metadata2 = FileMetadata {
         root: FieldElement::ZERO,
         file_id: "file2".to_string(),
+        nonce: vec![],
         padded_len: 64, // depth 6 (2^6 = 64)
         original_size: 200,
         filename: "file2.dat".to_string(),
@@ -92,6 +94,7 @@ fn test_shape_from_challenges() {
     let metadata3 = FileMetadata {
         root: FieldElement::ZERO,
         file_id: "file3".to_string(),
+        nonce: vec![],
         padded_len: 8, // depth 3 (2^3 = 8)
         original_size: 50,
         filename: "file3.dat".to_string(),

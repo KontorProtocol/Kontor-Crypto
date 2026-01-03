@@ -96,7 +96,7 @@ fn file_preparation(bencher: Bencher, size_kb: usize) {
     bencher
         .with_inputs(|| generate_test_data(size_kb * 1024, 42))
         .bench_values(|data| {
-            api::prepare_file(black_box(&data), "test.dat").unwrap();
+            api::prepare_file(black_box(&data), "test.dat", b"").unwrap();
         });
 }
 
@@ -118,7 +118,7 @@ mod proving {
 
         for i in 0..num_files {
             let data = generate_test_data(size_kb * 1024, 42 + i as u64);
-            let (prepared, metadata) = api::prepare_file(&data, &format!("f{}", i)).unwrap();
+            let (prepared, metadata) = api::prepare_file(&data, &format!("f{}", i), b"").unwrap();
 
             ledger.add_file(&metadata).unwrap();
 
@@ -181,7 +181,7 @@ mod verification {
         num_challenges: usize,
     ) -> (FileLedger, api::Proof, Vec<Challenge>) {
         let data = generate_test_data(16 * 1024, 42);
-        let (prepared, metadata) = api::prepare_file(&data, "v.dat").unwrap();
+        let (prepared, metadata) = api::prepare_file(&data, "v.dat", b"").unwrap();
         let mut ledger = FileLedger::new();
         ledger.add_file(&metadata).unwrap();
 

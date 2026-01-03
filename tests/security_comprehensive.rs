@@ -12,6 +12,7 @@ use kontor_crypto::{
     ledger::FileLedger,
     poseidon::{self as poseidon},
 };
+use rand::Rng;
 use std::collections::BTreeMap;
 
 mod common;
@@ -27,8 +28,11 @@ fn test_files_meta_commitment_consistency() {
     let file1_data = vec![1u8; 32]; // Small file
     let file2_data = vec![2u8; 256]; // Larger file
 
-    let (prepared1, metadata1) = api::prepare_file(&file1_data, "test_file.dat").unwrap();
-    let (prepared2, metadata2) = api::prepare_file(&file2_data, "test_file.dat").unwrap();
+    // Use random nonces for unique file_ids
+    let nonce1: [u8; 16] = rand::thread_rng().gen();
+    let nonce2: [u8; 16] = rand::thread_rng().gen();
+    let (prepared1, metadata1) = api::prepare_file(&file1_data, "test_file.dat", &nonce1).unwrap();
+    let (prepared2, metadata2) = api::prepare_file(&file2_data, "test_file.dat", &nonce2).unwrap();
 
     // Create challenges
     let seed = FieldElement::from(42u64);
@@ -90,7 +94,7 @@ fn test_challenge_derivation_uses_domain_separation() {
     // This is implicitly tested by the fact that our proofs verify, but let's be explicit
 
     let file_data = vec![42u8; 64];
-    let (prepared, metadata) = api::prepare_file(&file_data, "test_file.dat").unwrap();
+    let (prepared, metadata) = api::prepare_file(&file_data, "test_file.dat", b"").unwrap();
 
     // Create challenge
     let seed = FieldElement::from(12345u64);
