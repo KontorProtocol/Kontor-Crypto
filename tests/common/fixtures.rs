@@ -192,8 +192,8 @@ pub fn setup_test_scenario(
         let mut data = vec![0u8; file_spec.size];
         rng.fill_bytes(&mut data);
 
-        // Prepare the file with a random nonce for unique file_id
-        let nonce: [u8; 16] = rand::thread_rng().gen();
+        // Prepare the file with a deterministic nonce (from seeded rng) for reproducible file_id
+        let nonce: [u8; 16] = rng.gen();
         let (prepared, metadata) = prepare_file(&data, &format!("test_file_{}.dat", i), &nonce)?;
 
         // Add to ledger if multi-file
