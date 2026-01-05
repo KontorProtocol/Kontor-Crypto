@@ -29,8 +29,10 @@
 //! use kontor_crypto::{api::{self, PorSystem}, FileLedger, KontorPoRError};
 //!
 //! // 1. Prepare file with Reed-Solomon erasure coding (fixed 31-byte symbols)
+//! //    Deterministic nonce ensures unique file_id (e.g., user_id + timestamp)
 //! let data = b"Hello, world! This is test data for Nova PoR.";
-//! let (prepared, metadata) = api::prepare_file(data, "test.dat")?;
+//! let nonce = b"user_alice_1704067200";
+//! let (prepared, metadata) = api::prepare_file(data, "test.dat", nonce)?;
 //!
 //! // 2. Create ledger and add the file
 //! let mut ledger = FileLedger::new();
@@ -51,9 +53,9 @@
 //! ```rust,no_run
 //! use kontor_crypto::{api::{self, PorSystem}, FileLedger, KontorPoRError};
 //!
-//! // 1. Prepare multiple files
-//! let (prepared1, metadata1) = api::prepare_file(b"File 1 content", "file1.dat")?;
-//! let (prepared2, metadata2) = api::prepare_file(b"File 2 content", "file2.dat")?;
+//! // 1. Prepare multiple files (deterministic nonces ensure unique file_ids)
+//! let (prepared1, metadata1) = api::prepare_file(b"File 1 content", "file1.dat", b"upload_001")?;
+//! let (prepared2, metadata2) = api::prepare_file(b"File 2 content", "file2.dat", b"upload_002")?;
 //!
 //! // 2. Build ledger
 //! let mut ledger = FileLedger::new();

@@ -4,6 +4,8 @@
 //! rejects invalid parameters with appropriate error messages.
 
 use kontor_crypto::api::{self, FieldElement};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use sha2::{Digest, Sha256};
 
 mod common;
@@ -94,26 +96,39 @@ fn test_prove_fails_with_empty_challenges_slice() {
 #[test]
 fn test_file_metadata_sha256_matches_input() {
     // Confirm that the file_id in FileMetadata is the correct SHA-256 digest
-    println!("Testing file_id is correct SHA-256 of input data");
+    // file_id = "file_" + hex(SHA256(data || nonce))
+    println!("Testing file_id is correct SHA-256 of input data with nonce");
 
     let data = b"Hello, Kontor PoR!";
 
+    // Use seeded RNG for deterministic nonce
+    let mut rng = StdRng::seed_from_u64(42);
+    let nonce: [u8; 16] = rng.gen();
+
     // Prepare file and get metadata
     let (_prepared, metadata) =
-        api::prepare_file(data, "test_file.dat", b"").expect("Should prepare file");
+        api::prepare_file(data, "test_file.dat", &nonce).expect("Should prepare file");
 
-    // Manually compute SHA-256
+    // Manually compute SHA-256(data || nonce)
     let mut hasher = Sha256::new();
     hasher.update(data);
-    let expected_hash = format!("{:x}", hasher.finalize());
+    hasher.update(nonce);
+    let expected_hash = format!("file_{:x}", hasher.finalize());
 
     // Compare
     assert_eq!(
         metadata.file_id, expected_hash,
-        "file_id should match SHA-256 of input data"
+        "file_id should match 'file_' + SHA-256 of (data || nonce)"
     );
 
-    println!("✓ file_id correctly matches SHA-256 of input");
+    // Verify nonce is stored in metadata
+    assert_eq!(
+        metadata.nonce,
+        nonce.to_vec(),
+        "nonce should be stored in metadata"
+    );
+
+    println!("✓ file_id correctly matches SHA-256 of input with nonce");
 }
 
 #[test]
