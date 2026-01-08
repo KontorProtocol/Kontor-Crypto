@@ -115,9 +115,10 @@ use tracing::debug_span;
 /// - `PreparedFile` contains the private Merkle tree for the prover
 /// - `FileMetadata` contains the public commitment and reconstruction information
 ///
-/// # File ID Generation
+/// # ID Generation
 ///
-/// The file_id is computed as `file_<SHA256(data || nonce)>`.
+/// - `object_id = object_<SHA256(data)>` - content-based, not unique, for file discovery
+/// - `file_id = file_<SHA256(data || nonce)>` - unique per upload, for storage protocol
 pub fn prepare_file(
     data: &[u8],
     filename: &str,
@@ -131,11 +132,16 @@ pub fn prepare_file(
         });
     }
 
-    // 1. Calculate file ID: file_<SHA256(data || nonce)>
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hasher.update(nonce);
-    let file_id = format!("file_{:x}", hasher.finalize());
+    // 1a. Calculate object ID: object_<SHA256(data)> - content-based, for file discovery
+    let mut object_hasher = Sha256::new();
+    object_hasher.update(data);
+    let object_id = format!("object_{:x}", object_hasher.finalize());
+
+    // 1b. Calculate file ID: file_<SHA256(data || nonce)> - unique per upload
+    let mut file_hasher = Sha256::new();
+    file_hasher.update(data);
+    file_hasher.update(nonce);
+    let file_id = format!("file_{:x}", file_hasher.finalize());
 
     // 2. Encode file into 31-byte symbols using multi-codeword RS
     let all_symbols = crate::erasure::encode_file_symbols(data)?;
@@ -151,6 +157,7 @@ pub fn prepare_file(
     // 5. Create metadata (num_data_symbols, num_codewords, total_symbols are derived)
     let metadata = types::FileMetadata {
         root,
+        object_id,
         file_id: file_id.clone(),
         nonce: nonce.to_vec(),
         padded_len,

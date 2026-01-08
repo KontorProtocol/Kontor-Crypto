@@ -12,6 +12,7 @@ use kontor_crypto::ledger::FileLedger;
 fn dummy_metadata(file_id: &str, root_val: u64, depth: usize) -> FileMetadata {
     FileMetadata {
         root: FieldElement::from(root_val),
+        object_id: format!("object_{}", file_id),
         file_id: file_id.to_string(),
         nonce: vec![],
         padded_len: 1 << depth, // 2^depth

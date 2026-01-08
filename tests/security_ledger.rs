@@ -16,6 +16,7 @@ fn historical_root_total(ledger: &kontor_crypto::ledger::FileLedger) -> usize {
 fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> FileMetadata {
     FileMetadata {
         root,
+        object_id: format!("object_{}", file_id),
         file_id: file_id.to_string(),
         nonce: vec![],
         padded_len: 1 << depth, // 2^depth

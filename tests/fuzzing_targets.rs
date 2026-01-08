@@ -40,7 +40,8 @@ fn fuzz_merkle_operations(_data: &[u8]) {
 /// Properties to verify:
 /// - Never panics for any input data
 /// - Metadata is always coherent (tree depth matches padded_len)
-/// - file_id is deterministic for same input
+/// - object_id is deterministic for same file content
+/// - file_id is deterministic for same input (content + nonce)
 fn fuzz_prepare_file(_data: &[u8]) {
     // TODO: Implement fuzzing for prepare_file
     // 1. Use random data as file content

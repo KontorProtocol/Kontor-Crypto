@@ -134,6 +134,7 @@ fn test_ledger_reorg_changes_aggregated_root() {
     // Create synthetic metadata with different root for file_a
     let fake_metadata_a = FileMetadata {
         root: FieldElement::from(999u64),
+        object_id: "object_a".to_string(),
         file_id: "file_a".to_string(),
         nonce: vec![],
         padded_len: 8, // depth 3
@@ -196,6 +197,7 @@ fn test_proof_invalidation_with_file_update() {
     // Create a hybrid metadata: old file_id with new root/padded_len
     let updated_metadata = FileMetadata {
         root: metadata_v2.root,
+        object_id: metadata_v2.object_id.clone(),
         file_id: metadata_v1.file_id.clone(),
         nonce: metadata_v1.nonce.clone(),
         padded_len: metadata_v2.padded_len,

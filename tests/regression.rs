@@ -142,6 +142,7 @@ fn regression_parameter_generation_consistency() {
 
     // Should produce identical metadata
     assert_eq!(setup1.metadatas[0].root, setup2.metadatas[0].root);
+    assert_eq!(setup1.metadatas[0].object_id, setup2.metadatas[0].object_id);
     assert_eq!(setup1.metadatas[0].file_id, setup2.metadatas[0].file_id);
     assert_eq!(
         setup1.metadatas[0].total_symbols(),

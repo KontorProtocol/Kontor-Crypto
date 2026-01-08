@@ -64,6 +64,7 @@ fn generate_params_for_shape(
         .map(|i| {
             let metadata = FileMetadata {
                 root: FieldElement::ZERO,
+                object_id: format!("object_dummy{}", i),
                 file_id: format!("dummy{}", i),
                 nonce: vec![],
                 padded_len: if i == 0 {

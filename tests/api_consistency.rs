@@ -202,6 +202,7 @@ fn test_single_file_ignores_ledger() {
     // Add another file to make the ledger different
     let other_metadata = FileMetadata {
         root: FieldElement::from(999u64),
+        object_id: "object_other".to_string(),
         file_id: "other_file".to_string(),
         nonce: vec![],
         padded_len: 8, // depth 3
