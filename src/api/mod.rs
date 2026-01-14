@@ -135,7 +135,7 @@ pub fn prepare_file(
     // 1a. Calculate object ID: object_<SHA256(data)> - content-based, for file discovery
     let mut object_hasher = Sha256::new();
     object_hasher.update(data);
-    let object_id = format!("object_{:x}", object_hasher.finalize());
+    let object_id = format!("obj_{:x}", object_hasher.finalize());
 
     // 1b. Calculate file ID: file_<SHA256(data || nonce)> - unique per upload
     let mut file_hasher = Sha256::new();
