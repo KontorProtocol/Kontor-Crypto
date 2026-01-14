@@ -113,7 +113,7 @@ fn test_file_metadata_sha256_matches_input() {
     // Manually compute object_id: SHA-256(data) - content-based
     let mut object_hasher = Sha256::new();
     object_hasher.update(data);
-    let expected_object_id = format!("object_{:x}", object_hasher.finalize());
+    let expected_object_id = format!("obj_{:x}", object_hasher.finalize());
 
     // Manually compute file_id: SHA-256(data || nonce) - unique per upload
     let mut file_hasher = Sha256::new();
