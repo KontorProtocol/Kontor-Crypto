@@ -217,8 +217,14 @@ impl Clone for PorParams {
 pub struct FileMetadata {
     /// The Merkle root over all symbols (data + parity)
     pub root: FieldElement,
-    /// SHA256 hash of the original file for identification
+    /// Content-based identifier: `object_<SHA256(data)>`
+    /// Not unique - same data produces same object_id. Used for file discovery.
+    pub object_id: String,
+    /// Unique file identifier: `file_<SHA256(data || nonce)>`
+    /// Unique per upload - used in the storage protocol.
     pub file_id: String,
+    /// The deterministic nonce used to derive the file_id (enables same data to have unique IDs)
+    pub nonce: Vec<u8>,
     /// The total number of leaves in the Merkle tree (padded to power of 2)
     pub padded_len: usize,
     /// Size of original file in bytes (for reconstruction)

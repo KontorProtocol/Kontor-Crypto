@@ -21,9 +21,9 @@ fn test_wrong_aggregated_root_fails_verification() {
 
     // Prepare both files
     let (prepared1, metadata1) =
-        api::prepare_file(data1, "test_file.dat").expect("Should prepare first file");
+        api::prepare_file(data1, "test_file.dat", b"").expect("Should prepare first file");
     let (prepared2, metadata2) =
-        api::prepare_file(data2, "test_file.dat").expect("Should prepare second file");
+        api::prepare_file(data2, "test_file.dat", b"").expect("Should prepare second file");
 
     // Create legitimate ledger with both files
     let mut legitimate_ledger = FileLedger::new();

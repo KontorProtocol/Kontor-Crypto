@@ -4,6 +4,8 @@
 //! rejects invalid parameters with appropriate error messages.
 
 use kontor_crypto::api::{self, FieldElement};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use sha2::{Digest, Sha256};
 
 mod common;
@@ -93,27 +95,91 @@ fn test_prove_fails_with_empty_challenges_slice() {
 
 #[test]
 fn test_file_metadata_sha256_matches_input() {
-    // Confirm that the file_id in FileMetadata is the correct SHA-256 digest
-    println!("Testing file_id is correct SHA-256 of input data");
+    // Confirm that the object_id and file_id in FileMetadata are correct SHA-256 digests
+    // object_id = "object_" + hex(SHA256(data)) - content-based, for file discovery
+    // file_id = "file_" + hex(SHA256(data || nonce)) - unique per upload
+    println!("Testing object_id and file_id are correct SHA-256 digests");
 
     let data = b"Hello, Kontor PoR!";
 
+    // Use seeded RNG for deterministic nonce
+    let mut rng = StdRng::seed_from_u64(42);
+    let nonce: [u8; 16] = rng.gen();
+
     // Prepare file and get metadata
     let (_prepared, metadata) =
-        api::prepare_file(data, "test_file.dat").expect("Should prepare file");
+        api::prepare_file(data, "test_file.dat", &nonce).expect("Should prepare file");
 
-    // Manually compute SHA-256
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let expected_hash = format!("{:x}", hasher.finalize());
+    // Manually compute object_id: SHA-256(data) - content-based
+    let mut object_hasher = Sha256::new();
+    object_hasher.update(data);
+    let expected_object_id = format!("obj_{:x}", object_hasher.finalize());
 
-    // Compare
+    // Manually compute file_id: SHA-256(data || nonce) - unique per upload
+    let mut file_hasher = Sha256::new();
+    file_hasher.update(data);
+    file_hasher.update(nonce);
+    let expected_file_id = format!("file_{:x}", file_hasher.finalize());
+
+    // Compare object_id
     assert_eq!(
-        metadata.file_id, expected_hash,
-        "file_id should match SHA-256 of input data"
+        metadata.object_id, expected_object_id,
+        "object_id should match 'object_' + SHA-256 of data"
     );
 
-    println!("✓ file_id correctly matches SHA-256 of input");
+    // Compare file_id
+    assert_eq!(
+        metadata.file_id, expected_file_id,
+        "file_id should match 'file_' + SHA-256 of (data || nonce)"
+    );
+
+    // Verify nonce is stored in metadata
+    assert_eq!(
+        metadata.nonce,
+        nonce.to_vec(),
+        "nonce should be stored in metadata"
+    );
+
+    println!("✓ object_id correctly matches SHA-256 of data (content-based)");
+    println!("✓ file_id correctly matches SHA-256 of data || nonce (unique)");
+}
+
+#[test]
+fn test_object_id_same_for_same_content_different_nonce() {
+    // Verify that object_id is content-based (same for same data)
+    // while file_id is unique per upload (different with different nonces)
+    println!("Testing object_id vs file_id with same content, different nonces");
+
+    let data = b"Same content for both uploads";
+
+    let nonce1 = b"upload_001";
+    let nonce2 = b"upload_002";
+
+    let (_prepared1, metadata1) =
+        api::prepare_file(data, "file1.dat", nonce1).expect("Should prepare file 1");
+    let (_prepared2, metadata2) =
+        api::prepare_file(data, "file2.dat", nonce2).expect("Should prepare file 2");
+
+    // object_id should be IDENTICAL (same content)
+    assert_eq!(
+        metadata1.object_id, metadata2.object_id,
+        "object_id should be the same for identical content"
+    );
+
+    // file_id should be DIFFERENT (different nonces)
+    assert_ne!(
+        metadata1.file_id, metadata2.file_id,
+        "file_id should differ when nonces differ"
+    );
+
+    // root should also be identical (same erasure-coded content)
+    assert_eq!(
+        metadata1.root, metadata2.root,
+        "Merkle root should be the same for identical content"
+    );
+
+    println!("✓ object_id is content-based (same for identical data)");
+    println!("✓ file_id is unique per upload (differs with different nonces)");
 }
 
 #[test]
@@ -125,7 +191,7 @@ fn test_reconstruct_fails_metadata_inconsistencies() {
 
     // Prepare file and get symbols
     let (_prepared, metadata) =
-        api::prepare_file(&data, "test_file.dat").expect("Should prepare file");
+        api::prepare_file(&data, "test_file.dat", b"").expect("Should prepare file");
 
     // Create mock symbols for testing (all zero-filled)
     let total_symbols = metadata.total_symbols();
@@ -426,7 +492,8 @@ fn test_metadata_consistency() {
         assert_eq!(metadata.original_size, size);
         assert!(metadata.total_symbols() * 31 >= metadata.original_size); // Should be larger due to erasure
         assert!(metadata.padded_len.is_power_of_two()); // Must be power of 2
-        assert!(!metadata.file_id.is_empty()); // Should have a hash
+        assert!(!metadata.object_id.is_empty()); // Should have content-based hash
+        assert!(!metadata.file_id.is_empty()); // Should have unique hash
 
         // Should be able to prove with this metadata
         assert_prove_and_verify_succeeds(setup);

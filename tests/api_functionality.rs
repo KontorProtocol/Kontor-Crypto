@@ -17,7 +17,7 @@ fn test_challenge_id_determinism() {
     println!("Testing ChallengeID deterministic derivation");
 
     let data = b"Test data for challenge ID determinism";
-    let (_, metadata) = kontor_crypto::api::prepare_file(data, "test.dat").unwrap();
+    let (_, metadata) = kontor_crypto::api::prepare_file(data, "test.dat", b"").unwrap();
 
     // Same challenge should produce same ID
     let challenge1 = Challenge::new_test(metadata.clone(), 1000, 5, FieldElement::from(42u64));
@@ -67,8 +67,8 @@ fn test_challenge_id_collision_resistance() {
     let data1 = b"First test file for collision resistance testing";
     let data2 = b"Second test file with different content entirely";
 
-    let (_, metadata1) = kontor_crypto::api::prepare_file(data1, "file1.dat").unwrap();
-    let (_, metadata2) = kontor_crypto::api::prepare_file(data2, "file2.dat").unwrap();
+    let (_, metadata1) = kontor_crypto::api::prepare_file(data1, "file1.dat", b"").unwrap();
+    let (_, metadata2) = kontor_crypto::api::prepare_file(data2, "file2.dat", b"").unwrap();
 
     // Same parameters, different files
     let challenge1 = Challenge::new_test(metadata1, 1000, 5, FieldElement::from(42u64));
@@ -85,7 +85,8 @@ fn test_challenge_id_collision_resistance() {
     for i in 0..100 {
         let data = format!("Test file content {}", i);
         let (_, metadata) =
-            kontor_crypto::api::prepare_file(data.as_bytes(), &format!("file{}.dat", i)).unwrap();
+            kontor_crypto::api::prepare_file(data.as_bytes(), &format!("file{}.dat", i), b"")
+                .unwrap();
         let challenge =
             Challenge::new_test(metadata, 1000 + i as u64, 3, FieldElement::from(i as u64));
         let id = challenge.id();
@@ -107,7 +108,7 @@ fn test_proof_serialization_roundtrip() {
 
     let data = b"Test data for proof serialization testing with sufficient length";
     let (prepared, metadata) =
-        kontor_crypto::api::prepare_file(data, "serialize_test.dat").unwrap();
+        kontor_crypto::api::prepare_file(data, "serialize_test.dat", b"").unwrap();
 
     // Create ledger
     let mut ledger = FileLedger::new();
@@ -171,8 +172,10 @@ fn test_batch_seed_validation() {
     let data1 = b"First file for batch seed testing";
     let data2 = b"Second file for batch seed testing";
 
-    let (prepared1, metadata1) = kontor_crypto::api::prepare_file(data1, "batch1.dat").unwrap();
-    let (prepared2, metadata2) = kontor_crypto::api::prepare_file(data2, "batch2.dat").unwrap();
+    let (prepared1, metadata1) =
+        kontor_crypto::api::prepare_file(data1, "batch1.dat", b"").unwrap();
+    let (prepared2, metadata2) =
+        kontor_crypto::api::prepare_file(data2, "batch2.dat", b"").unwrap();
 
     // Create ledger
     let mut ledger = FileLedger::new();
@@ -218,7 +221,8 @@ fn test_porsystem_challenge_id_matching() {
     println!("Testing PorSystem challenge ID matching in verify");
 
     let data = b"Test data for challenge ID matching";
-    let (prepared, metadata) = kontor_crypto::api::prepare_file(data, "id_match_test.dat").unwrap();
+    let (prepared, metadata) =
+        kontor_crypto::api::prepare_file(data, "id_match_test.dat", b"").unwrap();
 
     // Create ledger
     let mut ledger = FileLedger::new();
@@ -260,7 +264,8 @@ fn test_porsystem_file_not_found() {
     println!("Testing PorSystem error handling for missing files");
 
     let data = b"Test data for file not found testing";
-    let (prepared, metadata) = kontor_crypto::api::prepare_file(data, "missing_test.dat").unwrap();
+    let (prepared, metadata) =
+        kontor_crypto::api::prepare_file(data, "missing_test.dat", b"").unwrap();
 
     // Create ledger without adding the file
     let ledger = FileLedger::new();
@@ -294,7 +299,7 @@ fn test_porsystem_prepare_file() {
     let data = b"Test data for PorSystem prepare_file method testing";
 
     // Test successful preparation
-    let result = system.prepare_file(data, "porsystem_test.dat");
+    let result = system.prepare_file(data, "porsystem_test.dat", b"");
     assert!(
         result.is_ok(),
         "PorSystem::prepare_file should succeed with valid inputs"
@@ -322,7 +327,7 @@ fn test_porsystem_prepare_file() {
     );
 
     // Test empty data rejection
-    let empty_result = system.prepare_file(&[], "empty.dat");
+    let empty_result = system.prepare_file(&[], "empty.dat", b"");
     match empty_result {
         Err(kontor_crypto::KontorPoRError::EmptyData { operation }) => {
             assert_eq!(operation, "prepare_file", "Should report correct operation");
@@ -342,12 +347,12 @@ fn test_porsystem_vs_free_function_equivalence() {
 
     // Test prepare_file equivalence
     let (prepared_free, metadata_free) =
-        kontor_crypto::api::prepare_file(data, "free_func.dat").unwrap();
+        kontor_crypto::api::prepare_file(data, "free_func.dat", b"").unwrap();
 
     let ledger = FileLedger::new();
     let system = PorSystem::new(&ledger);
     let (prepared_system, metadata_system) =
-        system.prepare_file(data, "system_method.dat").unwrap();
+        system.prepare_file(data, "system_method.dat", b"").unwrap();
 
     // Results should be equivalent (except for filename)
     assert_eq!(

@@ -33,7 +33,7 @@ fn test_circuit_arity_matches_public_inputs() {
     use std::collections::BTreeMap;
 
     let data = vec![1u8; 50];
-    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
+    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
 
     let challenge = api::Challenge::new_test(metadata.clone(), 1000, 1, FieldElement::from(42u64));
 
@@ -345,7 +345,7 @@ fn test_option1_proof_format_version_awareness() {
 
     // Create a small test to verify the schema works
     let data = vec![42u8; 100];
-    let (_prepared, _metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
+    let (_prepared, _metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
 
     // Test with single file (should have arity = 2 + 1 (ledger) + 1 (depth) + 1 (seed) + 1 (leaf) = 6)
     use kontor_crypto::circuit::PorCircuit;

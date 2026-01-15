@@ -10,8 +10,8 @@ fn test_verifier_rejects_out_of_range_ledger_index() {
     // only consumes low bits and would otherwise permit non-canonical indices.
     let data_a = vec![1u8; 100];
     let data_b = vec![2u8; 100];
-    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a.dat").unwrap();
-    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b.dat").unwrap();
+    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a.dat", b"").unwrap();
+    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b.dat", b"").unwrap();
 
     let mut ledger = kontor_crypto::FileLedger::new();
     ledger.add_file(&meta_a).unwrap();
@@ -45,8 +45,8 @@ fn test_verifier_rejects_ledger_indices_length_mismatch() {
     // Verifier should reject proofs whose ledger_indices length doesn't match files_per_step.
     let data_a = vec![3u8; 100];
     let data_b = vec![4u8; 100];
-    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a2.dat").unwrap();
-    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b2.dat").unwrap();
+    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a2.dat", b"").unwrap();
+    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b2.dat", b"").unwrap();
 
     let mut ledger = kontor_crypto::FileLedger::new();
     ledger.add_file(&meta_a).unwrap();
@@ -80,7 +80,7 @@ fn test_duplicate_file_challenges_fail_verification() {
     println!("Testing duplicate file challenges in multi-file proof");
 
     let data = vec![1u8; 100];
-    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
+    let (prepared, metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
 
     // Create identical challenges for the same file [A, A, A]
     let seed = FieldElement::from(42u64);
@@ -116,7 +116,7 @@ fn test_malformed_metadata_non_power_of_two_padded_len() {
     // First create a valid proof
     let data = vec![5u8; 80];
 
-    let (prepared, valid_metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
+    let (prepared, valid_metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
 
     let valid_challenge =
         Challenge::new_test(valid_metadata.clone(), 1000, 1, FieldElement::from(999u64));
@@ -180,7 +180,7 @@ fn test_inconsistent_metadata_fields() {
 
     let data = vec![10u8; 100];
 
-    let (prepared, valid_metadata) = api::prepare_file(&data, "test_file.dat").unwrap();
+    let (prepared, valid_metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
     let valid_challenge =
         Challenge::new_test(valid_metadata.clone(), 1000, 1, FieldElement::from(123u64));
 

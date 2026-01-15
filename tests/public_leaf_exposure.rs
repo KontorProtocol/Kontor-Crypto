@@ -191,7 +191,7 @@ fn test_public_leaves_in_proof() {
     let test_data = b"This is test data for public leaf exposure!";
 
     let (prepared, metadata) =
-        api::prepare_file(test_data, "test_file.dat").expect("Failed to prepare file");
+        api::prepare_file(test_data, "test_file.dat", b"").expect("Failed to prepare file");
 
     // Create challenge
     let challenge = Challenge::new_test(metadata.clone(), 1000, 1, FieldElement::from(42u64));
@@ -235,10 +235,10 @@ fn test_multi_file_public_leaves() {
     let data2 = b"File 2 data";
 
     let (prepared1, metadata1) =
-        api::prepare_file(data1, "test_file.dat").expect("Failed to prepare file 1");
+        api::prepare_file(data1, "test_file.dat", b"").expect("Failed to prepare file 1");
 
     let (prepared2, metadata2) =
-        api::prepare_file(data2, "test_file.dat").expect("Failed to prepare file 2");
+        api::prepare_file(data2, "test_file.dat", b"").expect("Failed to prepare file 2");
 
     // Create ledger
     let mut ledger = FileLedger::new();

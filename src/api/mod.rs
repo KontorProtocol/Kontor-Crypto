@@ -38,9 +38,10 @@
 //! };
 //! use kontor_crypto::FileLedger;
 //!
-//! // 1. Prepare the file
+//! // 1. Prepare the file (nonce can be user_id, timestamp, or any unique bytes)
 //! let my_data = b"This is a test file for the PoR system.";
-//! let (prepared_file, metadata) = prepare_file(my_data, "test.dat").unwrap();
+//! let nonce = b"user_123"; // User-provided nonce for unique file_id
+//! let (prepared_file, metadata) = prepare_file(my_data, "test.dat", nonce).unwrap();
 //!
 //! // 2. Create ledger and add the file
 //! let mut ledger = FileLedger::new();
@@ -103,17 +104,25 @@ use tracing::debug_span;
 /// # Arguments
 ///
 /// * `data` - The raw data to be processed
-/// * `erasure_config` - Configuration for Reed-Solomon erasure coding
 /// * `filename` - Filename for operator UX and integration
+/// * `nonce` - A user-provided nonce included in the file_id hash. This enables the
+///   same data to have different file_ids (e.g., for different users or uploads).
+///   The nonce is stored in the returned `FileMetadata`.
 ///
 /// # Returns
 ///
 /// Returns a tuple of `(PreparedFile, FileMetadata)` where:
 /// - `PreparedFile` contains the private Merkle tree for the prover
 /// - `FileMetadata` contains the public commitment and reconstruction information
+///
+/// # ID Generation
+///
+/// - `object_id = object_<SHA256(data)>` - content-based, not unique, for file discovery
+/// - `file_id = file_<SHA256(data || nonce)>` - unique per upload, for storage protocol
 pub fn prepare_file(
     data: &[u8],
     filename: &str,
+    nonce: &[u8],
 ) -> Result<(types::PreparedFile, types::FileMetadata)> {
     let _span = debug_span!("prepare_file", data_size = data.len(), filename).entered();
 
@@ -123,10 +132,16 @@ pub fn prepare_file(
         });
     }
 
-    // 1. Calculate file ID
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let file_id = format!("{:x}", hasher.finalize());
+    // 1a. Calculate object ID: object_<SHA256(data)> - content-based, for file discovery
+    let mut object_hasher = Sha256::new();
+    object_hasher.update(data);
+    let object_id = format!("obj_{:x}", object_hasher.finalize());
+
+    // 1b. Calculate file ID: file_<SHA256(data || nonce)> - unique per upload
+    let mut file_hasher = Sha256::new();
+    file_hasher.update(data);
+    file_hasher.update(nonce);
+    let file_id = format!("file_{:x}", file_hasher.finalize());
 
     // 2. Encode file into 31-byte symbols using multi-codeword RS
     let all_symbols = crate::erasure::encode_file_symbols(data)?;
@@ -142,7 +157,9 @@ pub fn prepare_file(
     // 5. Create metadata (num_data_symbols, num_codewords, total_symbols are derived)
     let metadata = types::FileMetadata {
         root,
+        object_id,
         file_id: file_id.clone(),
+        nonce: nonce.to_vec(),
         padded_len,
         original_size: data.len(),
         filename: filename.to_string(),
@@ -186,7 +203,7 @@ pub fn tree_depth_from_metadata(metadata: &types::FileMetadata) -> usize {
 /// use kontor_crypto::api::{prepare_file, reconstruct_file};
 ///
 /// let data = b"Hello, world!";
-/// let (prepared_file, metadata) = prepare_file(data, "example.dat").unwrap();
+/// let (prepared_file, metadata) = prepare_file(data, "example.dat", b"").unwrap();
 ///
 /// // Simulate having some symbols with some missing (for reconstruction testing)
 /// // In practice, you'd get these from the prepared_file or from storage

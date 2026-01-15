@@ -179,7 +179,9 @@ impl FileLedger {
     /// use kontor_crypto::api::prepare_file;
     /// use kontor_crypto::FileLedger;
     ///
-    /// let (prepared, metadata) = prepare_file(b"hello", "test.dat").unwrap();
+    /// // Deterministic nonce ensures unique file_id (e.g., user_id + timestamp)
+    /// let nonce = b"user_123_1704067200";
+    /// let (prepared, metadata) = prepare_file(b"hello", "test.dat", nonce).unwrap();
     /// let mut ledger = FileLedger::new();
     /// ledger.add_file(&metadata).unwrap();
     /// ```

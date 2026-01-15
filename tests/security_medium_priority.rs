@@ -191,7 +191,7 @@ fn test_single_vs_multi_file_equivalence() {
     // Create test data
     let data = create_test_data(100, Some(42));
     let (prepared, metadata) =
-        api::prepare_file(&data, "test_file.dat").expect("Failed to prepare file");
+        api::prepare_file(&data, "test_file.dat", b"").expect("Failed to prepare file");
 
     let challenge = Challenge::new_test(metadata.clone(), 1000, 3, FieldElement::from(123u64));
 
@@ -220,7 +220,7 @@ fn test_single_vs_multi_file_equivalence() {
     // Create a second dummy file for the batch
     let data2 = create_test_data(50, Some(99));
     let (prepared2, metadata2) =
-        api::prepare_file(&data2, "test_file.dat").expect("Failed to prepare file 2");
+        api::prepare_file(&data2, "test_file.dat", b"").expect("Failed to prepare file 2");
 
     let challenge2 = Challenge::new_test(metadata2.clone(), 1000, 3, FieldElement::from(123u64));
 
@@ -260,12 +260,12 @@ fn test_gating_uniformity() {
     // Small file for depth 8 (1 codeword)
     let data_small = create_test_data(1_000, Some(1));
     let (prepared_small, metadata_small) =
-        api::prepare_file(&data_small, "test_file.dat").expect("Failed to prepare small file");
+        api::prepare_file(&data_small, "test_file.dat", b"").expect("Failed to prepare small file");
 
     // Larger file for depth ~12 (multiple codewords)
     let data_large = create_test_data(50_000, Some(2));
     let (prepared_large, metadata_large) =
-        api::prepare_file(&data_large, "test_file.dat").expect("Failed to prepare large file");
+        api::prepare_file(&data_large, "test_file.dat", b"").expect("Failed to prepare large file");
 
     let depth_small = kontor_crypto::api::tree_depth_from_metadata(&metadata_small);
     let depth_large = kontor_crypto::api::tree_depth_from_metadata(&metadata_large);

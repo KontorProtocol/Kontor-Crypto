@@ -230,7 +230,7 @@ fn setup_network(
         rng.fill_bytes(&mut data);
 
         let (prepared, metadata) =
-            api::prepare_file(&data, &format!("node_file_{}.dat", i)).unwrap();
+            api::prepare_file(&data, &format!("node_file_{}.dat", i), b"").unwrap();
 
         let idx = match category {
             FileSizeCategory::Small => 0,
@@ -267,7 +267,8 @@ fn setup_network(
         let mut data = vec![0u8; size];
         rng.fill_bytes(&mut data);
 
-        let (_, metadata) = api::prepare_file(&data, &format!("network_file_{}.dat", i)).unwrap();
+        let (_, metadata) =
+            api::prepare_file(&data, &format!("network_file_{}.dat", i), b"").unwrap();
         ledger.add_file(&metadata).unwrap();
     }
 

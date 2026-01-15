@@ -15,7 +15,7 @@ fn test_wrong_root_depth_pair_fails() {
     println!("Testing that wrong (root, depth) pairs cause meta-commit mismatch");
 
     let data = b"Test data for wrong root/depth test";
-    let (prepared, metadata) = api::prepare_file(data, "test_file.dat").unwrap();
+    let (prepared, metadata) = api::prepare_file(data, "test_file.dat", b"").unwrap();
 
     // Create correct challenge
     let seed = FieldElement::from(12345u64);
@@ -72,8 +72,8 @@ fn test_different_seeds_between_challenges_fails() {
     let data1 = b"First file for seed test";
     let data2 = b"Second file for seed test";
 
-    let (prepared1, metadata1) = api::prepare_file(data1, "test_file.dat").unwrap();
-    let (prepared2, metadata2) = api::prepare_file(data2, "test_file.dat").unwrap();
+    let (prepared1, metadata1) = api::prepare_file(data1, "test_file.dat", b"").unwrap();
+    let (prepared2, metadata2) = api::prepare_file(data2, "test_file.dat", b"").unwrap();
 
     // Create challenges with DIFFERENT seeds (multi-batch aggregation)
     let seed1 = FieldElement::from(111u64);
@@ -112,8 +112,8 @@ fn test_different_num_challenges_fails() {
     let data1 = b"First file for num_challenges test";
     let data2 = b"Second file for num_challenges test";
 
-    let (prepared1, metadata1) = api::prepare_file(data1, "test_file.dat").unwrap();
-    let (prepared2, metadata2) = api::prepare_file(data2, "test_file.dat").unwrap();
+    let (prepared1, metadata1) = api::prepare_file(data1, "test_file.dat", b"").unwrap();
+    let (prepared2, metadata2) = api::prepare_file(data2, "test_file.dat", b"").unwrap();
 
     // Create challenges with DIFFERENT num_challenges (this should be rejected)
     let seed = FieldElement::from(42u64);
@@ -142,7 +142,7 @@ fn test_zero_challenges_rejected() {
     println!("Testing that zero challenges are rejected");
 
     let data = b"Test data for zero challenges";
-    let (prepared, metadata) = api::prepare_file(data, "test_file.dat").unwrap();
+    let (prepared, metadata) = api::prepare_file(data, "test_file.dat", b"").unwrap();
 
     // Create challenge with num_challenges = 0 (invalid)
     let challenge = Challenge::new_test(metadata.clone(), 1000, 0, FieldElement::from(42u64));
@@ -172,7 +172,7 @@ fn test_empty_data_rejected() {
     let empty_data = b""; // Empty data
 
     // Should fail during prepare_file
-    let result = api::prepare_file(empty_data, "test_file.dat");
+    let result = api::prepare_file(empty_data, "test_file.dat", b"");
     assert_error_contains(result, "Empty");
     println!("✓ Empty data correctly rejected");
 }

@@ -5,6 +5,7 @@ use kontor_crypto::{
     api::{self, Challenge, FieldElement, PorSystem},
     config,
 };
+use rand::Rng;
 use std::collections::BTreeMap;
 
 mod common;
@@ -132,8 +133,11 @@ fn test_highly_heterogeneous_depths() {
 
     for (i, size) in file_sizes.iter().enumerate() {
         let data = vec![(i * 10) as u8; *size];
-        let (prepared, metadata) = api::prepare_file(&data, &format!("test_file_{}.dat", i))
-            .expect("Failed to prepare file");
+        // Use random nonce for unique file_id
+        let nonce: [u8; 16] = rand::thread_rng().gen();
+        let (prepared, metadata) =
+            api::prepare_file(&data, &format!("test_file_{}.dat", i), &nonce)
+                .expect("Failed to prepare file");
 
         let depth = api::tree_depth_from_metadata(&metadata);
         actual_depths.push(depth);
@@ -215,7 +219,7 @@ fn test_maximum_file_aggregation() {
         let size = 30 + i * 20;
         let data = vec![(i * 5) as u8; size];
         let (prepared, metadata) =
-            api::prepare_file(&data, "test_file.dat").expect("Failed to prepare file");
+            api::prepare_file(&data, "test_file.dat", b"").expect("Failed to prepare file");
 
         files.insert(metadata.file_id.clone(), prepared);
         ledger.add_file(&metadata).expect("Failed to add to ledger");
@@ -265,7 +269,7 @@ fn test_single_file_with_various_depths() {
     for size in test_sizes {
         let data = vec![42u8; size];
         let (prepared, metadata) =
-            api::prepare_file(&data, "test_file.dat").expect("Failed to prepare file");
+            api::prepare_file(&data, "test_file.dat", b"").expect("Failed to prepare file");
 
         let depth = api::tree_depth_from_metadata(&metadata);
 

@@ -12,7 +12,9 @@ use kontor_crypto::ledger::FileLedger;
 fn dummy_metadata(file_id: &str, root_val: u64, depth: usize) -> FileMetadata {
     FileMetadata {
         root: FieldElement::from(root_val),
+        object_id: format!("object_{}", file_id),
         file_id: file_id.to_string(),
+        nonce: vec![],
         padded_len: 1 << depth, // 2^depth
         original_size: 100,
         filename: format!("{}.dat", file_id),
@@ -483,9 +485,9 @@ fn test_batch_add_with_real_files() {
     let data2 = vec![2u8; 150];
     let data3 = vec![3u8; 200];
 
-    let (_, metadata1) = api::prepare_file(&data1, "file1.dat").unwrap();
-    let (_, metadata2) = api::prepare_file(&data2, "file2.dat").unwrap();
-    let (_, metadata3) = api::prepare_file(&data3, "file3.dat").unwrap();
+    let (_, metadata1) = api::prepare_file(&data1, "file1.dat", b"").unwrap();
+    let (_, metadata2) = api::prepare_file(&data2, "file2.dat", b"").unwrap();
+    let (_, metadata3) = api::prepare_file(&data3, "file3.dat", b"").unwrap();
 
     let metadatas = vec![metadata1.clone(), metadata2.clone(), metadata3.clone()];
 
