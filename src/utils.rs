@@ -2,7 +2,7 @@
 
 use crate::api::FieldElement;
 use crate::poseidon::{domain_tags, poseidon_hash_tagged};
-use ff::PrimeField;
+use ff::{FromUniformBytes, PrimeField};
 
 /// Convert up to 31 little-endian bytes into a field element using the
 /// canonical byte representation expected by `ff::PrimeField::from_repr`.
@@ -61,6 +61,11 @@ pub fn derive_index_from_bits<F: ff::PrimeField>(hash: F, depth: usize) -> usize
 /// Wrapper maintained for compatibility; uses `field_to_bytes31_le` internally.
 pub fn leaf_to_bytes31<F: ff::PrimeField>(leaf: &F) -> [u8; 31] {
     field_to_bytes31_le(leaf)
+}
+
+/// Convert 64 uniform bytes into a canonical FieldElement.
+pub fn field_from_uniform_bytes(bytes: &[u8; 64]) -> FieldElement {
+    FieldElement::from_uniform_bytes(bytes)
 }
 
 /// Derive an unbiased index in [0, leaf_count) from a field element by

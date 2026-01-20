@@ -99,4 +99,4 @@ pub use merkle::{
     build_tree, build_tree_from_leaves, get_leaf_hash, get_padded_proof_for_leaf, hash_leaf_data,
     hash_node, verify_merkle_proof_in_place, CircuitMerkleProof, MerkleTree,
 };
-pub use utils::{derive_index_from_bits, leaf_to_bytes31};
+pub use utils::{derive_index_from_bits, field_from_uniform_bytes, leaf_to_bytes31};
