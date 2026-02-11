@@ -336,6 +336,15 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
                         Ok(cur + if bit_val { F::ONE } else { F::ZERO })
                     },
                 )?;
+
+                // Enforce running sum transition:
+                // new_sum = sum_active + flag
+                file_cs.enforce(
+                    || format!("sum_active_transition_file{}_lvl{}", file_idx, j),
+                    |lc| lc + sum_active.get_variable() + &flag.lc(CS::one(), F::ONE),
+                    |lc| lc + CS::one(),
+                    |lc| lc + new_sum.get_variable(),
+                );
                 sum_active = new_sum;
             }
 
@@ -481,6 +490,12 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
     let root_out = AllocatedNum::alloc(cs.namespace(|| "root_out"), || {
         root.get_value().ok_or(SynthesisError::AssignmentMissing)
     })?;
+    cs.enforce(
+        || "root_out_equals_root",
+        |lc| lc + root_out.get_variable() - root.get_variable(),
+        |lc| lc + CS::one(),
+        |lc| lc,
+    );
 
     // Carry forward all ledger indices
     let mut ledger_indices_out = Vec::new();
@@ -489,6 +504,12 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
             AllocatedNum::alloc(cs.namespace(|| format!("ledger_index_out_{}", i)), || {
                 idx.get_value().ok_or(SynthesisError::AssignmentMissing)
             })?;
+        cs.enforce(
+            || format!("ledger_index_out_equals_in_{}", i),
+            |lc| lc + idx_out.get_variable() - idx.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         ledger_indices_out.push(idx_out);
     }
@@ -499,6 +520,12 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         let depth_out = AllocatedNum::alloc(cs.namespace(|| format!("depth_out_{}", i)), || {
             depth.get_value().ok_or(SynthesisError::AssignmentMissing)
         })?;
+        cs.enforce(
+            || format!("depth_out_equals_in_{}", i),
+            |lc| lc + depth_out.get_variable() - depth.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         depths_out.push(depth_out);
     }
@@ -509,6 +536,12 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         let seed_out = AllocatedNum::alloc(cs.namespace(|| format!("seed_out_{}", i)), || {
             seed.get_value().ok_or(SynthesisError::AssignmentMissing)
         })?;
+        cs.enforce(
+            || format!("seed_out_equals_in_{}", i),
+            |lc| lc + seed_out.get_variable() - seed.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         seeds_out.push(seed_out);
     }
