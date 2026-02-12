@@ -302,9 +302,11 @@ impl FileLedger {
             historical_root_policy: self.historical_root_policy,
         };
 
-        // Pin ledger wire encoding to bincode function defaults (fixint + LE),
-        // so save/load are stable and trailing bytes can be rejected on load.
-        let options = bincode::DefaultOptions::new().with_fixint_encoding();
+        // Pin ledger wire encoding to fixed-width ints + LE endianness so the
+        // save/load format stays stable even if bincode defaults change.
+        let options = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_little_endian();
         let encoded = options.serialize(&data).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to serialize ledger: {}", e))
         })?;
@@ -345,8 +347,13 @@ impl FileLedger {
         }
 
         // Match save() encoding and reject trailing bytes to harden file parsing.
+        //
+        // `with_limit` is a safety guard against allocation DoS via attacker-controlled
+        // container lengths inside the bincode payload.
         let options = bincode::DefaultOptions::new()
             .with_fixint_encoding()
+            .with_little_endian()
+            .with_limit(crate::config::MAX_LEDGER_SIZE_BYTES as u64)
             .reject_trailing_bytes();
         let data: LedgerData = options.deserialize(&encoded).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to deserialize ledger: {}", e))
@@ -418,6 +425,51 @@ impl FileLedger {
                     self.historical_roots.drain(0..drop_count);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+
+    #[test]
+    fn regression_ledger_load_rejects_oversized_historical_roots_len() {
+        use ff::PrimeField;
+        use tempfile::NamedTempFile;
+
+        // Build a valid encoded LedgerData first...
+        let root = F::from(123u64);
+        let data = LedgerData {
+            version: crate::config::LEDGER_FORMAT_VERSION,
+            files: BTreeMap::new(),
+            root,
+            historical_roots: vec![],
+            historical_root_policy: HistoricalRootPolicy::Unlimited,
+        };
+
+        let options = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_little_endian();
+        let mut encoded = options.serialize(&data).expect("serialize LedgerData");
+
+        // ...then corrupt the `historical_roots` vec length (u64 under fixint encoding).
+        // We find it by locating the serialized root bytes and patching the next 8 bytes.
+        let root_repr: [u8; 32] = root.to_repr().into();
+        let root_pos = encoded
+            .windows(root_repr.len())
+            .position(|w| w == root_repr)
+            .expect("serialized root bytes should appear in LedgerData encoding");
+        let len_pos = root_pos + root_repr.len();
+        encoded[len_pos..len_pos + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+
+        let tmp = NamedTempFile::new().expect("tempfile");
+        std::fs::write(tmp.path(), &encoded).expect("write tampered ledger bytes");
+
+        let err = FileLedger::load(tmp.path()).expect_err("must reject oversized vec length");
+        match err {
+            KontorPoRError::Serialization(_) => {}
+            other => panic!("unexpected error variant: {other:?}"),
         }
     }
 }
