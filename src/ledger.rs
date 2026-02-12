@@ -18,6 +18,7 @@
 use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTree, F};
 use crate::poseidon::calculate_root_commitment;
 use crate::KontorPoRError;
+use bincode::Options;
 use ff::Field;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -266,7 +267,10 @@ impl FileLedger {
             historical_roots: self.historical_roots.clone(),
         };
 
-        let encoded = bincode::serialize(&data).map_err(|e| {
+        // Pin ledger wire encoding to bincode function defaults (fixint + LE),
+        // so save/load are stable and trailing bytes can be rejected on load.
+        let options = bincode::DefaultOptions::new().with_fixint_encoding();
+        let encoded = options.serialize(&data).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to serialize ledger: {}", e))
         })?;
 
@@ -305,7 +309,11 @@ impl FileLedger {
             )));
         }
 
-        let data: LedgerData = bincode::deserialize(&encoded).map_err(|e| {
+        // Match save() encoding and reject trailing bytes to harden file parsing.
+        let options = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .reject_trailing_bytes();
+        let data: LedgerData = options.deserialize(&encoded).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to deserialize ledger: {}", e))
         })?;
 

@@ -8,6 +8,7 @@
 
 use kontor_crypto::{
     api::{Challenge, FieldElement, PorSystem, Proof},
+    config,
     FileLedger,
 };
 use std::collections::HashSet;
@@ -163,6 +164,34 @@ fn test_proof_serialization_format_validation() {
     assert!(result.is_err(), "Should reject truncated data");
 
     println!("  ✓ Format validation working correctly");
+}
+
+#[test]
+fn test_proof_serialization_rejects_oversized_payload_length() {
+    println!("Testing proof deserialization oversized payload guard");
+
+    // Build a header with a declared payload length above MAX_PROOF_SIZE_BYTES.
+    let oversized_len = (config::MAX_PROOF_SIZE_BYTES + 1) as u32;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"NPOR"); // magic
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // version
+    bytes.extend_from_slice(&oversized_len.to_le_bytes()); // declared payload size
+                                                      // No payload bytes appended: parser should reject on size bound first.
+
+    let result = Proof::from_bytes(&bytes);
+    assert!(result.is_err(), "Oversized payload length must be rejected");
+
+    let err = match result {
+        Ok(_) => panic!("Oversized payload length should fail"),
+        Err(e) => format!("{}", e),
+    };
+    assert!(
+        err.contains("exceeds maximum"),
+        "Error should indicate size bound violation, got: {}",
+        err
+    );
+
+    println!("  ✓ Oversized payload guard enforced");
 }
 
 #[test]

@@ -225,6 +225,10 @@ pub const DEFAULT_ERASURE_PARITY_SHARDS: usize = 1;
 /// Maximum size for serialized ledger files (100 MB)
 pub const MAX_LEDGER_SIZE_BYTES: usize = 100 * 1024 * 1024;
 
+/// Maximum accepted proof payload size during deserialization (50 MB).
+/// This bounds memory/CPU exposure from malformed or adversarial proof bytes.
+pub const MAX_PROOF_SIZE_BYTES: usize = 50 * 1024 * 1024;
+
 /// Current ledger format version
 pub const LEDGER_FORMAT_VERSION: u16 = 1;
 
