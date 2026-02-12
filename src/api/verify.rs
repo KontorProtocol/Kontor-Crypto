@@ -5,10 +5,9 @@
 
 use super::{
     plan::Plan,
-    types::{Challenge, FieldElement, Proof},
+    types::{Challenge, Proof},
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
-use ff::Field;
 use std::collections::HashSet;
 use tracing::{debug, info_span};
 
@@ -224,6 +223,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // Build z0_primary with proof's values for root/indices
     let z0_primary = plan.public_io_layout.build_z0_primary(
         proof.ledger_root,
+        plan.initial_state,
         &proof.ledger_indices,
         &plan.depths,
         &plan.seeds,
@@ -244,7 +244,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     debug!("  - Number of files: {}", plan.sorted_challenges.len());
     debug!("  - Number of iterations to verify: {}", num_iterations);
     debug!("  - z0_primary[0] aggregated_root: {:?}", proof.ledger_root);
-    debug!("  - z0_primary[1] initial_state: {:?}", FieldElement::ZERO);
+    debug!("  - z0_primary[1] initial_state: {:?}", plan.initial_state);
     for (i, idx) in proof.ledger_indices.iter().enumerate() {
         debug!("  - z0_primary[{}] ledger_index_{}: {}", 2 + i, i, idx);
     }

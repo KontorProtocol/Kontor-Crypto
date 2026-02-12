@@ -1,7 +1,7 @@
 # Kontor-Crypto Security Audit - Executive Summary
 
 Date: 2026-02-12
-Branch: `adam/audit-2`
+Branch: `adam/audit-3`
 Commit scope: in-progress audit hardening
 
 ## Overall assessment
@@ -15,7 +15,7 @@ Conditional go-live recommendation:
 ## Findings summary
 - Critical/High: 0 open
 - Medium: 0 open
-- Low: 2 open (operational/process hardening opportunities)
+- Low: 0 open in tracked audit register
 
 ## Key fixes in this pass
 1. Panic-free reconstruction boundary checks.
@@ -23,7 +23,12 @@ Conditional go-live recommendation:
 3. Duplicate challenge rejection in prove/verify flows.
 4. Canonical, length-delimited challenge ID derivation with stronger metadata binding.
 5. Additional input-size/field-length guardrails for untrusted input.
+6. Real fuzzing targets and CI fuzz regression workflows.
+7. Historical-root retention policy with pruning controls and tests.
+8. Recursive initial-state binding to ordered challenge IDs (prevents non-circuit field rebinding).
+9. Strict ledger membership binding by `file_id` (prevents rc-only identity collisions).
+10. Parameter-cache lock hardening (prevents panic-based service disruption after lock poisoning).
 
 ## Residual risk (non-blocking)
-1. Fuzzing coverage is still partial and should be expanded for parser/reconstruction surfaces.
-2. Operational policy for historical-root retention and pruning should be codified externally.
+1. Continue growing fuzz corpus from production telemetry and newly discovered malformed inputs.
+2. Tune historical-root policy defaults operationally as ledger growth patterns become clearer.

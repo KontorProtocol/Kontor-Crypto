@@ -9,7 +9,6 @@ use super::{
     witness::generate_circuit_witness,
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
-use ff::Field;
 use nova_snark::{
     nova::{CompressedSNARK, RecursiveSNARK},
     provider::{PallasEngine, VestaEngine},
@@ -212,7 +211,7 @@ fn initialize_recursive_snark(
     ledger: &FileLedger,
 ) -> Result<(NovaProof, FieldElement)> {
     // Generate witnesses for the first step using the canonical function
-    let current_state = FieldElement::ZERO;
+    let current_state = plan.initial_state;
     let sorted_challenges_refs: Vec<&Challenge> = plan.sorted_challenges.iter().collect();
     let (circuit_witness, new_state) = generate_circuit_witness(
         &sorted_challenges_refs,

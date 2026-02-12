@@ -85,6 +85,44 @@ Scope: protocol/API/circuit boundary review, malformed-input resilience, proof b
     - `MAX_NONCE_LEN_BYTES`
   - Enforced in `prepare_file` and metadata/challenge validation.
 
+### FND-006: Non-circuit challenge fields were not cryptographically bound at verification
+- Severity: High
+- Affected area: `src/api/{plan,prove,verify}.rs`, `src/config.rs`
+- Description:
+  - Verification checked `proof.challenge_ids`, but that vector is prover-controlled and not part of the SNARK statement.
+  - An attacker could rewrite `proof.challenge_ids` and rebind non-circuit fields (e.g., `block_height`, `prover_id`) without changing the compressed proof.
+- Remediation:
+  - Added deterministic challenge-set binding into the recursive statement:
+    - derive `initial_state` from ordered challenge IDs
+    - thread this value through `z0_primary[1]` and witness state evolution
+  - Prove/verify now require the same challenge-set-derived initial state, making rebinding fail cryptographically.
+- Evidence:
+  - Added test:
+    - `tests/security_replay_attack.rs::test_verify_raw_rejects_rebinding_even_with_rewritten_proof_challenge_ids`
+
+### FND-007: Plan ledger-membership derivation accepted rc-only collisions
+- Severity: Medium
+- Affected area: `src/api/plan.rs`
+- Description:
+  - Plan derivation resolved ledger membership by root-commitment (`rc`) lookup only.
+  - This allowed ambiguous/non-member `file_id` challenges to map to some other ledger entry with matching `(root, depth)`.
+- Remediation:
+  - Switched plan derivation to exact `file_id` membership (`ledger.lookup(file_id)`).
+  - Added explicit consistency check that the ledger entry `rc` matches challenge metadata `(root, depth)`.
+- Evidence:
+  - Added test:
+    - `tests/security_replay_attack.rs::test_verify_raw_rejects_non_member_file_id_even_with_matching_root`
+
+### FND-008: Parameter-cache mutex poisoning could trigger panic-based DoS
+- Severity: Low
+- Affected area: `src/params.rs`
+- Description:
+  - Parameter-cache access used `Mutex::lock().expect(...)`.
+  - If any thread panicked while holding the lock, subsequent calls would panic and deny service.
+- Remediation:
+  - Added centralized lock helper that recovers poisoned state via `into_inner()`.
+  - Emits warning telemetry and continues operation with the recovered cache.
+
 ## Validation executed
 - `cargo test --test api_functionality -- --nocapture`
 - `cargo test --test validation -- --nocapture`
@@ -98,12 +136,12 @@ Scope: protocol/API/circuit boundary review, malformed-input resilience, proof b
 - `cargo test --test security_negative_cases -- --nocapture`
 - `cargo test --test security_medium_priority -- --nocapture`
 - `cargo test --test regression -- --nocapture`
+- `cargo test --workspace`
 - `cargo fmt --all -- --check`
-- `cargo clippy --all-targets -- -D warnings`
+- `cargo clippy --all-targets --all-features -- -D warnings`
 
-Note: `cargo clippy --all-targets --all-features -- -D warnings` could not be run in this environment due network-restricted dependency fetch for optional feature crates.
-
-## Open items (non-blocking)
-1. Implement real fuzz targets (current `tests/fuzzing_targets.rs` is scaffolding).
-2. Define and enforce operational policy for historical-root retention horizon.
-3. Add CI job for parser/reconstruction fuzzing corpus regression.
+## Residual status update
+All previously tracked low-priority residuals have been closed:
+1. Real fuzz targets implemented under `fuzz/`.
+2. Historical root retention policy codified and tested.
+3. CI fuzz corpus regression and bounded fuzz campaigns added via `security-fuzz.yml`.
