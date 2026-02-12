@@ -173,3 +173,56 @@ Key error variants surfaced at API boundaries (see `KontorPoRError`):
 
 - **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
 - **[Library Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design
+- **[Formal Determinism Spec](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/determinism-spec.md)** - Uniqueness/determinism target statement for circuit analysis
+- **[Picus Runbook](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/picus-runbook.md)** - How to export fixtures and run Picus analysis
+
+## Formal Verification (Picus)
+
+Deterministic fixture exports and Picus wrapper commands are provided for incremental formal determinism checks:
+
+```bash
+# Export deterministic Nova artifacts + Picus-ready circuit.r1cs for all fixtures
+cargo run --bin picus_export -- --all
+
+# Run Picus wrapper across all fixtures
+cargo run --bin picus_verify -- --all
+
+# Incremental bounded run with explicit solver/logging
+cargo run --bin picus_verify -- --all \
+  --solver cvc5 \
+  --picus-log-level INFO \
+  --timeout-secs 120 \
+  --hard-timeout-grace-secs 30 \
+  --allow-inconclusive
+```
+
+Picus binary note:
+- This workflow expects Veridise Picus (`run-picus`) from `https://github.com/Veridise/Picus`.
+- The PyPI package `picus==0.0.5` is unrelated and will fail this flow.
+
+Dockerized Picus option (recommended on Apple Silicon):
+
+```bash
+# sanity-check Dockerized run-picus
+tools/picus/check-docker.sh
+
+# run wrapper against Dockerized Picus
+tools/picus/run-docker.sh --all --timeout-secs 600 --allow-inconclusive
+```
+
+If `run-picus` is not on image `PATH`, mount your Picus checkout (the wrapper auto-uses `/Picus/run-picus`):
+
+```bash
+PICUS_SOURCE_DIR=/path/to/Picus \
+tools/picus/run-docker.sh --all --timeout-secs 600 --allow-inconclusive
+```
+
+If Dockerized Picus fails with `petite` / `invalid memory reference`, move execution to a native amd64 Linux host/VM or adjust Docker Desktop x86 emulation settings.
+
+Converter fallback (legacy/custom setups):
+
+```bash
+cargo run --bin picus_verify -- --all --converter-bin /path/to/nova-to-r1cs
+```
+
+Current verification progress is tracked in `docs/formal/determinism-report.md`.
