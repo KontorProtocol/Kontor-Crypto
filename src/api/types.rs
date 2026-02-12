@@ -103,8 +103,18 @@ impl Proof {
             KontorPoRError::Serialization(format!("Failed to serialize proof: {}", e))
         })?;
 
+        if proof_bytes.len() > crate::config::MAX_PROOF_SIZE_BYTES {
+            return Err(KontorPoRError::Serialization(format!(
+                "Proof size {} bytes exceeds maximum {} bytes",
+                proof_bytes.len(),
+                crate::config::MAX_PROOF_SIZE_BYTES
+            )));
+        }
+
         // Write length and data
-        let length = proof_bytes.len() as u32;
+        let length: u32 = proof_bytes.len().try_into().map_err(|_| {
+            KontorPoRError::Serialization("Proof size exceeds 32-bit length header".to_string())
+        })?;
         result.extend_from_slice(&length.to_le_bytes());
         result.extend_from_slice(&proof_bytes);
 
@@ -152,7 +162,17 @@ impl Proof {
         // Read length
         let length = u32::from_le_bytes([bytes[6], bytes[7], bytes[8], bytes[9]]) as usize;
 
-        let expected_len = proof_format::HEADER_SIZE + length;
+        if length > crate::config::MAX_PROOF_SIZE_BYTES {
+            return Err(KontorPoRError::Serialization(format!(
+                "Proof payload size {} bytes exceeds maximum {} bytes",
+                length,
+                crate::config::MAX_PROOF_SIZE_BYTES
+            )));
+        }
+
+        let expected_len = proof_format::HEADER_SIZE.checked_add(length).ok_or_else(|| {
+            KontorPoRError::Serialization("Proof length header overflow".to_string())
+        })?;
         if bytes.len() < expected_len {
             return Err(KontorPoRError::Serialization(
                 "Proof bytes truncated".to_string(),

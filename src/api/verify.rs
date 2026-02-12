@@ -64,6 +64,21 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         ));
     }
 
+    // Bind proof to the exact challenge set (including non-circuit fields such as
+    // block_height/prover_id) so callers of verify_raw() cannot bypass this check.
+    let expected_ids: Vec<_> = challenges.iter().map(|c| c.id()).collect();
+    if proof.challenge_ids.len() != expected_ids.len() {
+        return Ok(false);
+    }
+    if proof
+        .challenge_ids
+        .iter()
+        .zip(expected_ids.iter())
+        .any(|(a, b)| a != b)
+    {
+        return Ok(false);
+    }
+
     // Create unified preprocessing plan (derives root internally for security)
     let plan = Plan::make_plan(challenges, ledger)?;
 
