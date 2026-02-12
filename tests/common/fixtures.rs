@@ -255,6 +255,19 @@ pub fn create_test_data(size: usize, seed: Option<u64>) -> Vec<u8> {
     data
 }
 
+/// Creates synthetic metadata for ledger-focused tests.
+pub fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> FileMetadata {
+    FileMetadata {
+        root,
+        object_id: format!("object_{}", file_id),
+        file_id: file_id.to_string(),
+        nonce: vec![],
+        padded_len: 1 << depth,
+        original_size: 100,
+        filename: format!("{}.dat", file_id),
+    }
+}
+
 /// Creates allocated public inputs (z0) for circuit testing.
 /// This centralizes the repetitive pattern of allocating z0 vectors.
 /// Phase 3: Updated for new public I/O schema [agg_root, state_in, seed, ledger_indices..., depths..., leaves...]

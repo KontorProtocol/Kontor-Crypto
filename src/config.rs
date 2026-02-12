@@ -119,6 +119,7 @@ impl PublicIOLayout {
     pub fn build_z0_primary(
         &self,
         aggregated_root: crate::api::FieldElement,
+        state_in: crate::api::FieldElement,
         ledger_indices: &[usize],
         depths: &[usize],
         seeds: &[crate::api::FieldElement],
@@ -129,7 +130,7 @@ impl PublicIOLayout {
 
         // Fixed fields
         z0_primary.push(aggregated_root); // [0]
-        z0_primary.push(FieldElement::ZERO); // [1] state_in
+        z0_primary.push(state_in); // [1] state_in
 
         // Ledger indices
         for &idx in ledger_indices.iter() {
@@ -241,6 +242,10 @@ pub const MAX_IDENTIFIER_LEN_BYTES: usize = 1024;
 
 /// Maximum accepted nonce length in bytes.
 pub const MAX_NONCE_LEN_BYTES: usize = 4096;
+
+/// Default maximum number of historical roots retained by a ledger instance.
+/// Older roots are pruned when this cap is exceeded.
+pub const DEFAULT_MAX_HISTORICAL_ROOTS: usize = 4096;
 
 /// Current ledger format version
 pub const LEDGER_FORMAT_VERSION: u16 = 1;

@@ -1,28 +1,15 @@
 //! Security tests for the FileLedger component.
 
-use kontor_crypto::api::{self, FieldElement, FileMetadata};
+use kontor_crypto::api::{self, FieldElement};
 use rand::Rng;
 use std::collections::BTreeMap;
 
 mod common;
-use common::fixtures::{create_test_data, setup_test_scenario, TestConfig};
+use common::fixtures::{create_test_data, setup_test_scenario, synthetic_metadata, TestConfig};
 use kontor_crypto::KontorPoRError;
 
 fn historical_root_total(ledger: &kontor_crypto::ledger::FileLedger) -> usize {
     ledger.historical_roots.len()
-}
-
-/// Helper to create a synthetic FileMetadata for testing.
-fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> FileMetadata {
-    FileMetadata {
-        root,
-        object_id: format!("object_{}", file_id),
-        file_id: file_id.to_string(),
-        nonce: vec![],
-        padded_len: 1 << depth, // 2^depth
-        original_size: 100,
-        filename: "synthetic.dat".to_string(),
-    }
 }
 
 // =============================================================================

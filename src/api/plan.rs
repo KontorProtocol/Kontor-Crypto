@@ -6,6 +6,7 @@
 use super::types::{Challenge, FieldElement};
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
 use ff::Field;
+use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 
 /// Internal preprocessing plan that consolidates logic shared between prove() and verify().
@@ -20,6 +21,8 @@ pub(crate) struct Plan {
     pub(crate) aggregated_tree_depth: usize,
     /// Aggregated root (derived from ledger and challenge count)
     pub(crate) aggregated_root: FieldElement,
+    /// Initial state for recursive folding, bound to the challenge set.
+    pub(crate) initial_state: FieldElement,
     /// Challenges sorted by file hash for deterministic processing
     pub(crate) sorted_challenges: Vec<Challenge>,
     /// Ledger indices for each file slot (padded with zeros)
@@ -83,22 +86,30 @@ impl Plan {
             }
         });
 
+        // Bind initial recursive state to the exact challenge set (including
+        // non-circuit fields captured by Challenge::id()).
+        let initial_state = derive_initial_state(&sorted_challenges);
+
         // 3. Compute ledger indices
         let mut ledger_indices = vec![0usize; files_per_step];
         use crate::poseidon::calculate_root_commitment;
 
         for (i, challenge) in sorted_challenges.iter().enumerate() {
             let file_depth = crate::api::tree_depth_from_metadata(&challenge.file_metadata);
-            let rc = calculate_root_commitment(
+            let expected_rc = calculate_root_commitment(
                 challenge.file_metadata.root,
                 FieldElement::from(file_depth as u64),
             );
 
-            let ledger_idx = ledger.get_canonical_index_for_rc(rc).ok_or_else(|| {
-                KontorPoRError::FileNotInLedger {
+            let (ledger_idx, actual_rc) = ledger
+                .lookup(&challenge.file_metadata.file_id)
+                .ok_or_else(|| KontorPoRError::FileNotInLedger {
                     file_id: challenge.file_metadata.file_id.clone(),
-                }
-            })?;
+                })?;
+
+            if actual_rc != expected_rc {
+                return Err(KontorPoRError::MetadataMismatch);
+            }
 
             ledger_indices[i] = ledger_idx;
         }
@@ -124,6 +135,7 @@ impl Plan {
             file_tree_depth,
             aggregated_tree_depth,
             aggregated_root,
+            initial_state,
             sorted_challenges,
             ledger_indices,
             depths,
@@ -132,13 +144,43 @@ impl Plan {
         })
     }
 
-    /// Build the z0_primary vector using this plan
+    /// Build the z0_primary vector using this plan.
     pub(crate) fn build_z0_primary(&self) -> Vec<FieldElement> {
         self.public_io_layout.build_z0_primary(
             self.aggregated_root,
+            self.initial_state,
             &self.ledger_indices,
             &self.depths,
             &self.seeds,
         )
     }
+}
+
+/// Derive the initial recursive state from the full ordered challenge set.
+///
+/// This hardens verification against rebinding of non-circuit challenge fields:
+/// changing any Challenge::id() value changes the recursive start state.
+fn derive_initial_state(sorted_challenges: &[Challenge]) -> FieldElement {
+    const DOMAIN_V1: &[u8] = b"kontor.challenge_set.initial_state.v1";
+    const DOMAIN_V1_EXPAND: &[u8] = b"kontor.challenge_set.initial_state.v1.expand";
+
+    let mut hasher = Sha256::new();
+    hasher.update(DOMAIN_V1);
+    let count = u64::try_from(sorted_challenges.len()).unwrap_or(u64::MAX);
+    hasher.update(count.to_le_bytes());
+    for challenge in sorted_challenges {
+        hasher.update(challenge.id().0);
+    }
+    let digest_a = hasher.finalize();
+
+    let mut expander = Sha256::new();
+    expander.update(DOMAIN_V1_EXPAND);
+    expander.update(digest_a);
+    let digest_b = expander.finalize();
+
+    let mut uniform_bytes = [0u8; 64];
+    uniform_bytes[..32].copy_from_slice(&digest_a);
+    uniform_bytes[32..].copy_from_slice(&digest_b);
+
+    crate::utils::field_from_uniform_bytes(&uniform_bytes)
 }

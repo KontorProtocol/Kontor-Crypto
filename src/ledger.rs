@@ -38,6 +38,21 @@ pub trait FileDescriptor {
     fn depth(&self) -> usize;
 }
 
+/// Retention policy for historical roots used during proof validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HistoricalRootPolicy {
+    /// Keep all historical roots.
+    Unlimited,
+    /// Keep at most `n` historical roots, pruning oldest entries first.
+    MaxRoots(usize),
+}
+
+impl Default for HistoricalRootPolicy {
+    fn default() -> Self {
+        HistoricalRootPolicy::MaxRoots(crate::config::DEFAULT_MAX_HISTORICAL_ROOTS)
+    }
+}
+
 /// Entry for a single file in the ledger, combining all file information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileLedgerEntry {
@@ -71,6 +86,8 @@ struct LedgerData {
     root: F,
     #[serde(default)]
     historical_roots: Vec<[u8; 32]>,
+    #[serde(default)]
+    historical_root_policy: HistoricalRootPolicy,
 }
 
 /// The `FileLedger` manages the aggregated Merkle tree of all file roots.
@@ -104,6 +121,9 @@ pub struct FileLedger {
     /// Use [`Self::set_historical_roots`] to replace this list.
     #[serde(default)]
     pub historical_roots: Vec<[u8; 32]>,
+    /// Historical-root retention policy.
+    #[serde(default)]
+    pub historical_root_policy: HistoricalRootPolicy,
 }
 
 impl Default for FileLedger {
@@ -114,6 +134,7 @@ impl Default for FileLedger {
                 layers: vec![vec![]],
             },
             historical_roots: Vec::new(),
+            historical_root_policy: HistoricalRootPolicy::default(),
         }
     }
 }
@@ -140,6 +161,7 @@ impl FileLedger {
         let root = self.tree.root();
         let repr: [u8; 32] = root.to_repr().into();
         self.historical_roots.push(repr);
+        self.prune_historical_roots();
     }
 
     /// Checks if a root is valid (either current or in historical set).
@@ -160,6 +182,18 @@ impl FileLedger {
     /// This replaces any existing historical roots with the provided values.
     pub fn set_historical_roots(&mut self, roots: Vec<[u8; 32]>) {
         self.historical_roots = roots;
+        self.prune_historical_roots();
+    }
+
+    /// Returns the configured historical-root retention policy.
+    pub fn historical_root_policy(&self) -> HistoricalRootPolicy {
+        self.historical_root_policy
+    }
+
+    /// Sets the historical-root retention policy.
+    pub fn set_historical_root_policy(&mut self, policy: HistoricalRootPolicy) {
+        self.historical_root_policy = policy;
+        self.prune_historical_roots();
     }
 
     // --- File Management ---
@@ -265,6 +299,7 @@ impl FileLedger {
             files: self.files.clone(),
             root: self.tree.root(),
             historical_roots: self.historical_roots.clone(),
+            historical_root_policy: self.historical_root_policy,
         };
 
         // Pin ledger wire encoding to bincode function defaults (fixint + LE),
@@ -329,8 +364,10 @@ impl FileLedger {
             files: data.files,
             tree: MerkleTree::default(),
             historical_roots: data.historical_roots,
+            historical_root_policy: data.historical_root_policy,
         };
         ledger.rebuild_tree()?;
+        ledger.prune_historical_roots();
 
         if ledger.tree.root() != data.root {
             return Err(KontorPoRError::LedgerValidation {
@@ -370,5 +407,17 @@ impl FileLedger {
 
         let depth = self.depth();
         get_padded_proof_for_leaf(&self.tree, index, depth).ok()
+    }
+
+    fn prune_historical_roots(&mut self) {
+        match self.historical_root_policy {
+            HistoricalRootPolicy::Unlimited => {}
+            HistoricalRootPolicy::MaxRoots(max_roots) => {
+                if self.historical_roots.len() > max_roots {
+                    let drop_count = self.historical_roots.len() - max_roots;
+                    self.historical_roots.drain(0..drop_count);
+                }
+            }
+        }
     }
 }
