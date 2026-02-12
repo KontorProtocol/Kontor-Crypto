@@ -6,6 +6,7 @@ use kontor_crypto::{
     circuit::{FileProofWitness, PorCircuit},
     config,
     merkle::F,
+    poseidon::calculate_root_commitment,
 };
 use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 use nova_snark::traits::circuit::StepCircuit;
@@ -55,6 +56,13 @@ fn test_incorrect_ledger_index_is_rejected() {
 
     // Replace the witness for the second file with the malicious one
     valid_circuit_witness.witnesses[1] = malicious_witness;
+    let expected_rcs = vec![
+        calculate_root_commitment(
+            valid_circuit_witness.witnesses[0].file_root,
+            FieldElement::from(2u64),
+        ),
+        FieldElement::ZERO,
+    ];
 
     let (files_per_step, file_tree_depth) =
         config::derive_shape(setup.challenges.len(), setup.params.file_tree_depth);
@@ -79,6 +87,7 @@ fn test_incorrect_ledger_index_is_rejected() {
         setup.challenges[0].seed,
         &ledger_indices,
         &[2, 0], // depths (assuming depth 2 for both files in test)
+        &expected_rcs,
         &leaf_values,
     );
 

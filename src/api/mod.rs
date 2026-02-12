@@ -118,7 +118,8 @@ use tracing::debug_span;
 /// # ID Generation
 ///
 /// - `object_id = object_<SHA256(data)>` - content-based, not unique, for file discovery
-/// - `file_id = file_<SHA256(data || nonce)>` - unique per upload, for storage protocol
+/// - `file_id = file_<SHA256(domain || len(data) || data || len(nonce) || nonce)>`
+///   - unique per upload, for storage protocol
 pub fn prepare_file(
     data: &[u8],
     filename: &str,
@@ -164,8 +165,15 @@ pub fn prepare_file(
     let object_id = format!("obj_{:x}", object_hasher.finalize());
 
     // 1b. Calculate file ID: file_<SHA256(data || nonce)> - unique per upload
+    //
+    // Include explicit tuple framing to avoid boundary-collision ambiguities such as:
+    // (data="AB", nonce="C") vs (data="A", nonce="BC"), both of which concatenate to "ABC".
+    const FILE_ID_DOMAIN_V1: &[u8] = b"kontor.file_id.v1";
     let mut file_hasher = Sha256::new();
+    file_hasher.update(FILE_ID_DOMAIN_V1);
+    file_hasher.update((data.len() as u64).to_le_bytes());
     file_hasher.update(data);
+    file_hasher.update((nonce.len() as u64).to_le_bytes());
     file_hasher.update(nonce);
     let file_id = format!("file_{:x}", file_hasher.finalize());
 

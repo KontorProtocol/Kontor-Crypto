@@ -69,6 +69,11 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         .map(|i| &z[layout.idx_seed(i)])
         .collect();
 
+    // Extract expected root commitments for each file slot
+    let expected_rc_public: Vec<&AllocatedNum<F>> = (0..files_per_step)
+        .map(|i| &z[layout.idx_expected_rc(i)])
+        .collect();
+
     #[cfg(debug_assertions)]
     {
         debug!("PorCircuit::synthesize() entry:");
@@ -115,6 +120,14 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
                 layout.idx_seed(i),
                 i,
                 seed.get_value()
+            );
+        }
+        for (i, expected_rc) in expected_rc_public.iter().enumerate() {
+            debug!(
+                "  - Input z[{}] (expected_rc_{}): {:?}",
+                layout.idx_expected_rc(i),
+                i,
+                expected_rc.get_value()
             );
         }
     }
@@ -366,6 +379,15 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
             &depth_num,
         )?;
 
+        // Enforce challenge binding in-circuit:
+        // each active slot must match the challenge-derived expected root commitment.
+        file_cs.enforce(
+            || "expected_rc_matches_gated",
+            |lc| lc + &gate_for_slot.lc(CS::one(), F::ONE),
+            |lc| lc + rc.get_variable() - expected_rc_public[file_idx].get_variable(),
+            |lc| lc,
+        );
+
         if aggregated_tree_depth > 0 {
             // Multi-file case: verify rc is in aggregated tree at public ledger_index
 
@@ -546,11 +568,31 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         seeds_out.push(seed_out);
     }
 
-    // Build output vector: [root_out, current_state, ledger_indices..., depths..., seeds..., leaves...]
+    // Carry forward all expected RCs
+    let mut expected_rc_out = Vec::new();
+    for (i, expected_rc) in expected_rc_public.iter().enumerate() {
+        let expected_rc_i_out =
+            AllocatedNum::alloc(cs.namespace(|| format!("expected_rc_out_{}", i)), || {
+                expected_rc
+                    .get_value()
+                    .ok_or(SynthesisError::AssignmentMissing)
+            })?;
+        cs.enforce(
+            || format!("expected_rc_out_equals_in_{}", i),
+            |lc| lc + expected_rc_i_out.get_variable() - expected_rc.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
+
+        expected_rc_out.push(expected_rc_i_out);
+    }
+
+    // Build output vector: [root_out, current_state, ledger_indices..., depths..., seeds..., expected_rcs..., leaves...]
     let mut outputs = vec![root_out, current_state];
     outputs.extend(ledger_indices_out);
     outputs.extend(depths_out);
     outputs.extend(seeds_out);
+    outputs.extend(expected_rc_out);
     outputs.extend(public_leaf_values);
 
     Ok(outputs)

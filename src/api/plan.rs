@@ -31,6 +31,8 @@ pub(crate) struct Plan {
     pub(crate) depths: Vec<usize>,
     /// Seeds for each file slot (padded with zeros)
     pub(crate) seeds: Vec<FieldElement>,
+    /// Expected root commitments for each file slot (padded with zeros)
+    pub(crate) expected_rcs: Vec<FieldElement>,
     /// Public I/O layout helper
     pub(crate) public_io_layout: config::PublicIOLayout,
 }
@@ -92,6 +94,7 @@ impl Plan {
 
         // 3. Compute ledger indices
         let mut ledger_indices = vec![0usize; files_per_step];
+        let mut expected_rcs = vec![FieldElement::ZERO; files_per_step];
         use crate::poseidon::calculate_root_commitment;
 
         for (i, challenge) in sorted_challenges.iter().enumerate() {
@@ -100,6 +103,7 @@ impl Plan {
                 challenge.file_metadata.root,
                 FieldElement::from(file_depth as u64),
             );
+            expected_rcs[i] = expected_rc;
 
             let (ledger_idx, actual_rc) = ledger
                 .lookup(&challenge.file_metadata.file_id)
@@ -140,6 +144,7 @@ impl Plan {
             ledger_indices,
             depths,
             seeds,
+            expected_rcs,
             public_io_layout,
         })
     }
@@ -152,6 +157,7 @@ impl Plan {
             &self.ledger_indices,
             &self.depths,
             &self.seeds,
+            &self.expected_rcs,
         )
     }
 }

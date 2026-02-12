@@ -13,6 +13,7 @@ fn test_gating_logic_correctness() {
     use kontor_crypto::api::FieldElement;
     use kontor_crypto::circuit::CircuitWitness;
     use kontor_crypto::circuit::{FileProofWitness, PorCircuit};
+    use kontor_crypto::poseidon::calculate_root_commitment;
     use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
     use nova_snark::traits::circuit::StepCircuit;
 
@@ -78,6 +79,12 @@ fn test_gating_logic_correctness() {
         FieldElement::from(42u64),  // seed
         &[0, 1, 0, 0],              // ledger_indices (slots 2,3 are padding)
         &[0, 2, 0, 0], // depths: slot0=0(real), slot1=2(real), slot2=0(pad), slot3=0(pad)
+        &[
+            calculate_root_commitment(FieldElement::from(200u64), FieldElement::ZERO),
+            calculate_root_commitment(FieldElement::from(400u64), FieldElement::from(2u64)),
+            FieldElement::ZERO,
+            FieldElement::ZERO,
+        ],
         &[FieldElement::ZERO; 4], // leaves
     );
 
@@ -103,6 +110,7 @@ fn test_padding_slot_zero_state_divergence() {
     use kontor_crypto::api::FieldElement;
     use kontor_crypto::circuit::CircuitWitness;
     use kontor_crypto::circuit::{FileProofWitness, PorCircuit};
+    use kontor_crypto::poseidon::calculate_root_commitment;
     use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
     use nova_snark::traits::circuit::StepCircuit;
 
@@ -150,7 +158,11 @@ fn test_padding_slot_zero_state_divergence() {
         FieldElement::from(42u64),  // seed
         &[99, 1],                   // ledger_indices (slot 0 padding, slot 1 real)
         &[0, 2],                    // depths: slot0=0(padding!), slot1=2(real)
-        &[FieldElement::ZERO; 2],   // leaves
+        &[
+            FieldElement::ZERO,
+            calculate_root_commitment(FieldElement::from(456u64), FieldElement::from(2u64)),
+        ],
+        &[FieldElement::ZERO; 2], // leaves
     );
 
     // Synthesize
