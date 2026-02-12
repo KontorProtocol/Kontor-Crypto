@@ -3,6 +3,12 @@
 use ff::PrimeField;
 use kontor_crypto::api::{self, Challenge, FieldElement, FileMetadata, PorSystem};
 use kontor_crypto::{config, FileLedger, HistoricalRootPolicy, KontorPoRError};
+use rand::{Rng, SeedableRng};
+
+fn deterministic_nonce(seed: u64) -> [u8; 16] {
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    rng.gen()
+}
 
 fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> FileMetadata {
     FileMetadata {
@@ -61,9 +67,9 @@ fn test_pruned_root_invalidates_old_multifile_proof() {
     let data2 = vec![2u8; 100];
     let data3 = vec![3u8; 100];
 
-    let (prepared1, meta1) = api::prepare_file(&data1, "a.dat", b"nonce_a").unwrap();
-    let (prepared2, meta2) = api::prepare_file(&data2, "b.dat", b"nonce_b").unwrap();
-    let (_prepared3, meta3) = api::prepare_file(&data3, "c.dat", b"nonce_c").unwrap();
+    let (prepared1, meta1) = api::prepare_file(&data1, "a.dat", &deterministic_nonce(1)).unwrap();
+    let (prepared2, meta2) = api::prepare_file(&data2, "b.dat", &deterministic_nonce(2)).unwrap();
+    let (_prepared3, meta3) = api::prepare_file(&data3, "c.dat", &deterministic_nonce(3)).unwrap();
 
     let mut ledger = FileLedger::new();
     ledger.set_historical_root_policy(HistoricalRootPolicy::MaxRoots(1));

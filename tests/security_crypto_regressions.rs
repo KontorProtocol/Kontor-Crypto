@@ -18,6 +18,7 @@ use nova_snark::{
     spartan::snark::RelaxedR1CSSNARK,
     traits::snark::RelaxedR1CSSNARKTrait,
 };
+use rand::{Rng, SeedableRng};
 use sha2::{Digest, Sha256};
 
 type E1 = PallasEngine;
@@ -28,6 +29,11 @@ type S1 = RelaxedR1CSSNARK<E1, EE1>;
 type S2 = RelaxedR1CSSNARK<E2, EE2>;
 type C = PorCircuit<FieldElement>;
 type NovaProof = RecursiveSNARK<E1, E2, C>;
+
+fn deterministic_nonce(seed: u64) -> [u8; 16] {
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    rng.gen()
+}
 
 fn derive_initial_state(challenges: &[Challenge]) -> FieldElement {
     const DOMAIN_V1: &[u8] = b"kontor.challenge_set.initial_state.v1";
@@ -143,8 +149,10 @@ fn regression_single_file_verifier_must_bind_expected_file_root() {
     let data_a = vec![0x11u8; 4096];
     let data_b = vec![0x22u8; 4096];
 
-    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a.dat", b"nonce_a").unwrap();
-    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b.dat", b"nonce_b").unwrap();
+    let (prepared_a, meta_a) =
+        api::prepare_file(&data_a, "a.dat", &deterministic_nonce(1)).unwrap();
+    let (prepared_b, meta_b) =
+        api::prepare_file(&data_b, "b.dat", &deterministic_nonce(2)).unwrap();
     assert_ne!(
         meta_a.root, meta_b.root,
         "test precondition failed: roots must differ"
@@ -196,22 +204,39 @@ fn regression_file_id_must_not_allow_data_nonce_boundary_collisions() {
     // SECURITY EXPECTATION:
     // file_id should uniquely bind (data, nonce) as a tuple, not just data || nonce bytes.
     //
-    // Distinct tuples that concatenate to the same byte string currently collide:
-    //   ("AB", "C") and ("A", "BC") -> "ABC"
-    let (prepared_1, meta_1) = api::prepare_file(b"AB", "f1.dat", b"C").unwrap();
-    let (prepared_2, meta_2) = api::prepare_file(b"A", "f2.dat", b"BC").unwrap();
+    // Construct `combined` deterministically, then split it in two different ways so that:
+    // data1 || nonce1 == data2 || nonce2 == combined.
+    let mut rng = rand::rngs::StdRng::seed_from_u64(999);
+    let combined: [u8; 3] = rng.gen();
+    let combined_vec = combined.to_vec();
+
+    let data_1 = combined_vec[..2].to_vec();
+    let nonce_1 = combined_vec[2..].to_vec();
+    let data_2 = combined_vec[..1].to_vec();
+    let nonce_2 = combined_vec[1..].to_vec();
+
+    let (prepared_1, meta_1) = api::prepare_file(&data_1, "f1.dat", &nonce_1).unwrap();
+    let (prepared_2, meta_2) = api::prepare_file(&data_2, "f2.dat", &nonce_2).unwrap();
 
     assert_ne!(
-        (b"AB".as_slice(), b"C".as_slice()),
-        (b"A".as_slice(), b"BC".as_slice())
+        (data_1.as_slice(), nonce_1.as_slice()),
+        (data_2.as_slice(), nonce_2.as_slice())
     );
     assert_eq!(
-        b"AB".iter().chain(b"C").copied().collect::<Vec<_>>(),
-        b"ABC"
+        data_1
+            .iter()
+            .chain(nonce_1.iter())
+            .copied()
+            .collect::<Vec<_>>(),
+        combined_vec
     );
     assert_eq!(
-        b"A".iter().chain(b"BC").copied().collect::<Vec<_>>(),
-        b"ABC"
+        data_2
+            .iter()
+            .chain(nonce_2.iter())
+            .copied()
+            .collect::<Vec<_>>(),
+        combined_vec
     );
 
     assert_ne!(
