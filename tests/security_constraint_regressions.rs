@@ -13,6 +13,7 @@ use ff::Field;
 use kontor_crypto::{
     api::{self, generate_circuit_witness, FieldElement},
     circuit::{FileProofWitness, PorCircuit},
+    poseidon::calculate_root_commitment,
 };
 use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 use nova_snark::{
@@ -225,6 +226,10 @@ fn regression_sum_active_chain_variables_must_be_constrained() {
         challenge.seed,
         &[0],
         &[public_depth],
+        &[calculate_root_commitment(
+            metadata.root,
+            FieldElement::from(public_depth as u64),
+        )],
         &[FieldElement::ZERO],
     );
 
@@ -291,6 +296,10 @@ fn regression_recursive_carry_outputs_must_be_constrained() {
         challenge.seed,
         &[0],
         &[public_depth],
+        &[calculate_root_commitment(
+            challenge.file_metadata.root,
+            FieldElement::from(public_depth as u64),
+        )],
         &[FieldElement::ZERO],
     );
 

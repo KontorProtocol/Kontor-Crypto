@@ -97,7 +97,8 @@ fn test_prove_fails_with_empty_challenges_slice() {
 fn test_file_metadata_sha256_matches_input() {
     // Confirm that the object_id and file_id in FileMetadata are correct SHA-256 digests
     // object_id = "object_" + hex(SHA256(data)) - content-based, for file discovery
-    // file_id = "file_" + hex(SHA256(data || nonce)) - unique per upload
+    // file_id = "file_" + hex(SHA256(domain || len(data) || data || len(nonce) || nonce))
+    //          - unique per upload and tuple-bound (no concat ambiguity)
     println!("Testing object_id and file_id are correct SHA-256 digests");
 
     let data = b"Hello, Kontor PoR!";
@@ -115,9 +116,13 @@ fn test_file_metadata_sha256_matches_input() {
     object_hasher.update(data);
     let expected_object_id = format!("obj_{:x}", object_hasher.finalize());
 
-    // Manually compute file_id: SHA-256(data || nonce) - unique per upload
+    // Manually compute file_id with explicit tuple framing
+    const FILE_ID_DOMAIN_V1: &[u8] = b"kontor.file_id.v1";
     let mut file_hasher = Sha256::new();
+    file_hasher.update(FILE_ID_DOMAIN_V1);
+    file_hasher.update((data.len() as u64).to_le_bytes());
     file_hasher.update(data);
+    file_hasher.update((nonce.len() as u64).to_le_bytes());
     file_hasher.update(nonce);
     let expected_file_id = format!("file_{:x}", file_hasher.finalize());
 
@@ -130,7 +135,7 @@ fn test_file_metadata_sha256_matches_input() {
     // Compare file_id
     assert_eq!(
         metadata.file_id, expected_file_id,
-        "file_id should match 'file_' + SHA-256 of (data || nonce)"
+        "file_id should match framed hash of (data, nonce)"
     );
 
     // Verify nonce is stored in metadata
@@ -141,7 +146,7 @@ fn test_file_metadata_sha256_matches_input() {
     );
 
     println!("✓ object_id correctly matches SHA-256 of data (content-based)");
-    println!("✓ file_id correctly matches SHA-256 of data || nonce (unique)");
+    println!("✓ file_id correctly matches framed SHA-256 of (data, nonce) (unique)");
 }
 
 #[test]

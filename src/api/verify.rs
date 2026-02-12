@@ -227,6 +227,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         &proof.ledger_indices,
         &plan.depths,
         &plan.seeds,
+        &plan.expected_rcs,
     );
     debug!("VERIFIER z0_primary: {:?}", z0_primary);
 

@@ -7,7 +7,7 @@ use ff::{Field, PrimeField};
 use kontor_crypto::{
     api::FieldElement,
     circuit::{FileProofWitness, PorCircuit},
-    poseidon::{domain_tags, poseidon_hash_tagged},
+    poseidon::{calculate_root_commitment, domain_tags, poseidon_hash_tagged},
     utils::derive_index_from_bits,
 };
 use nova_snark::frontend::{
@@ -53,7 +53,7 @@ fn test_poseidon_hash_tagged_gadget_matches_off_circuit() {
 
     let mut cs = TestConstraintSystem::<FieldElement>::new();
 
-    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
+    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, expected_rcs, leaves]
     let initial_state = FieldElement::from(42u64);
     let seed = FieldElement::from(123u64);
 
@@ -66,6 +66,13 @@ fn test_poseidon_hash_tagged_gadget_matches_off_circuit() {
         })
         .unwrap(),
         AllocatedNum::alloc(cs.namespace(|| "seed_0"), || Ok(seed)).unwrap(),
+        AllocatedNum::alloc(cs.namespace(|| "expected_rc_0"), || {
+            Ok(calculate_root_commitment(
+                root,
+                FieldElement::from(tree_depth as u64),
+            ))
+        })
+        .unwrap(),
         AllocatedNum::alloc(cs.namespace(|| "leaf_0"), || Ok(FieldElement::ZERO)).unwrap(), // Leaf slot
     ];
 
@@ -148,7 +155,7 @@ fn test_state_chaining_gadget_correctness() {
     // Create test constraint system
     let mut cs = TestConstraintSystem::<FieldElement>::new();
 
-    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
+    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, expected_rcs, leaves]
     let mut z_in = vec![
         AllocatedNum::alloc(cs.namespace(|| "agg_root"), || Ok(FieldElement::ZERO)).unwrap(),
         AllocatedNum::alloc(cs.namespace(|| "state_in"), || Ok(initial_state)).unwrap(),
@@ -180,6 +187,21 @@ fn test_state_chaining_gadget_correctness() {
         z_in.push(
             AllocatedNum::alloc(cs.namespace(|| format!("seed_{}", i)), || {
                 Ok(FieldElement::ZERO)
+            })
+            .unwrap(),
+        );
+    }
+
+    // Add expected RCs for each file slot
+    for i in 0..4 {
+        let expected_rc = if i < 3 {
+            calculate_root_commitment(FieldElement::ZERO, FieldElement::from(1u64))
+        } else {
+            FieldElement::ZERO
+        };
+        z_in.push(
+            AllocatedNum::alloc(cs.namespace(|| format!("expected_rc_{}", i)), || {
+                Ok(expected_rc)
             })
             .unwrap(),
         );
@@ -280,7 +302,7 @@ fn test_challenge_index_derivation_consistency() {
 
     // Phase 3: No longer need meta_commitment calculation
 
-    // Phase 3 schema: [agg_root, state_in, seed, ledger_indices, depths, leaves]
+    // Current schema: [agg_root, state_in, ledger_indices, depths, seeds, expected_rcs, leaves]
     let z_in = create_circuit_public_inputs(
         &mut cs,
         root,
@@ -288,6 +310,10 @@ fn test_challenge_index_derivation_consistency() {
         seed,
         &[0],     // ledger_indices
         &[depth], // depths
+        &[calculate_root_commitment(
+            root,
+            FieldElement::from(depth as u64),
+        )],
         &[FieldElement::ZERO],
     );
 
