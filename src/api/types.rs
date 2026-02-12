@@ -98,6 +98,7 @@ impl Proof {
         let options = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .with_little_endian()
+            .with_limit(crate::config::MAX_PROOF_SIZE_BYTES as u64)
             .reject_trailing_bytes();
         let proof_bytes = options.serialize(self).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to serialize proof: {}", e))
@@ -192,6 +193,7 @@ impl Proof {
         let options = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .with_little_endian()
+            .with_limit(crate::config::MAX_PROOF_SIZE_BYTES as u64)
             .reject_trailing_bytes();
         let proof = options.deserialize(proof_bytes).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to deserialize proof: {}", e))
