@@ -30,10 +30,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust nightly (required by cargo-fuzz)
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@881ba7bf39a41cda34ac9e123fb41b44ed08232f
+        with:
+          toolchain: nightly
 
       - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
 
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked

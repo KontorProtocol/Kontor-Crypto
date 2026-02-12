@@ -195,8 +195,10 @@ fn test_reconstruct_fails_metadata_inconsistencies() {
     let data = create_test_data(512, Some(12345));
 
     // Prepare file and get symbols
+    let mut rng = StdRng::seed_from_u64(201);
+    let nonce: [u8; 16] = rng.gen();
     let (_prepared, metadata) =
-        api::prepare_file(&data, "test_file.dat", b"").expect("Should prepare file");
+        api::prepare_file(&data, "test_file.dat", &nonce).expect("Should prepare file");
 
     // Create mock symbols for testing (all zero-filled)
     let total_symbols = metadata.total_symbols();
@@ -221,8 +223,10 @@ fn test_reconstruct_rejects_symbol_count_mismatch_without_panic() {
     println!("Testing reconstruct_file rejects symbol count mismatch");
 
     let data = create_test_data(512, Some(5555));
+    let mut rng = StdRng::seed_from_u64(202);
+    let nonce: [u8; 16] = rng.gen();
     let (_prepared, metadata) =
-        api::prepare_file(&data, "symbol_count_mismatch.dat", b"").expect("Should prepare file");
+        api::prepare_file(&data, "symbol_count_mismatch.dat", &nonce).expect("Should prepare file");
 
     let total_symbols = metadata.total_symbols();
     let incomplete_shards: Vec<Option<Vec<u8>>> = (0..(total_symbols - 1))
@@ -243,8 +247,10 @@ fn test_reconstruct_rejects_invalid_symbol_length() {
     println!("Testing reconstruct_file rejects invalid symbol length");
 
     let data = create_test_data(512, Some(7777));
+    let mut rng = StdRng::seed_from_u64(203);
+    let nonce: [u8; 16] = rng.gen();
     let (_prepared, metadata) =
-        api::prepare_file(&data, "symbol_len_mismatch.dat", b"").expect("Should prepare file");
+        api::prepare_file(&data, "symbol_len_mismatch.dat", &nonce).expect("Should prepare file");
 
     let total_symbols = metadata.total_symbols();
     let mut shards: Vec<Option<Vec<u8>>> =
