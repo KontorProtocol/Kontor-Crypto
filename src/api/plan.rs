@@ -41,6 +41,10 @@ impl Plan {
             ));
         }
 
+        for challenge in challenges {
+            challenge.validate()?;
+        }
+
         // Derive aggregated root internally based on number of challenges
         // Single challenge = single-file proof (use file root)
         // Multiple challenges = multi-file proof (use ledger root)

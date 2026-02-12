@@ -229,6 +229,19 @@ pub const MAX_LEDGER_SIZE_BYTES: usize = 100 * 1024 * 1024;
 /// This bounds memory/CPU exposure from malformed or adversarial proof bytes.
 pub const MAX_PROOF_SIZE_BYTES: usize = 50 * 1024 * 1024;
 
+/// Maximum accepted raw file size for `api::prepare_file` (100 MB).
+/// This bounds memory/CPU exposure from untrusted file inputs.
+pub const MAX_FILE_SIZE_BYTES: usize = 100 * 1024 * 1024;
+
+/// Maximum accepted filename length in bytes.
+pub const MAX_FILENAME_LEN_BYTES: usize = 1024;
+
+/// Maximum accepted file identifier/object identifier/prover identifier length in bytes.
+pub const MAX_IDENTIFIER_LEN_BYTES: usize = 1024;
+
+/// Maximum accepted nonce length in bytes.
+pub const MAX_NONCE_LEN_BYTES: usize = 4096;
+
 /// Current ledger format version
 pub const LEDGER_FORMAT_VERSION: u16 = 1;
 

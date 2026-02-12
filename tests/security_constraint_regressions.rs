@@ -14,11 +14,11 @@ use kontor_crypto::{
     api::{self, generate_circuit_witness, FieldElement},
     circuit::{FileProofWitness, PorCircuit},
 };
+use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 use nova_snark::{
     frontend::{ConstraintSystem, Index, LinearCombination, SynthesisError, Variable},
     traits::circuit::StepCircuit,
 };
-use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -108,7 +108,6 @@ impl TamperingCS {
             })
             .count()
     }
-
 }
 
 impl ConstraintSystem<FieldElement> for TamperingCS {
@@ -234,7 +233,8 @@ fn regression_sum_active_chain_variables_must_be_constrained() {
         .expect("synthesis should complete");
 
     let sum_active_allocs = cs.count_allocs_matching("sum_active_file0_lvl");
-    let constrained_sum_active_allocs = cs.count_constrained_allocs_matching("sum_active_file0_lvl");
+    let constrained_sum_active_allocs =
+        cs.count_constrained_allocs_matching("sum_active_file0_lvl");
 
     assert!(
         sum_active_allocs > 0,

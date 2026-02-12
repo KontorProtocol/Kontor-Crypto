@@ -9,6 +9,7 @@ use super::{
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
 use ff::Field;
+use std::collections::HashSet;
 use tracing::{debug, info_span};
 
 /// Verifies a proof against one or more challenges.
@@ -62,6 +63,22 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         return Err(KontorPoRError::InvalidInput(
             "Must provide at least one challenge".to_string(),
         ));
+    }
+
+    // Validate challenge structure/metadata invariants before any cryptographic checks.
+    for challenge in challenges.iter() {
+        challenge.validate()?;
+    }
+
+    // Reject duplicate challenges up front.
+    let mut seen = HashSet::with_capacity(challenges.len());
+    for challenge in challenges.iter() {
+        let challenge_id = challenge.id();
+        if !seen.insert(challenge_id) {
+            return Err(KontorPoRError::InvalidInput(
+                "verify: duplicate challenge detected".to_string(),
+            ));
+        }
     }
 
     // Bind proof to the exact challenge set (including non-circuit fields such as

@@ -131,6 +131,32 @@ pub fn prepare_file(
             operation: "prepare_file".to_string(),
         });
     }
+    if data.len() > crate::config::MAX_FILE_SIZE_BYTES {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "prepare_file input size {} exceeds maximum {}",
+            data.len(),
+            crate::config::MAX_FILE_SIZE_BYTES
+        )));
+    }
+    if filename.is_empty() {
+        return Err(KontorPoRError::InvalidInput(
+            "prepare_file filename must be non-empty".to_string(),
+        ));
+    }
+    if filename.len() > crate::config::MAX_FILENAME_LEN_BYTES {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "prepare_file filename length {} exceeds maximum {}",
+            filename.len(),
+            crate::config::MAX_FILENAME_LEN_BYTES
+        )));
+    }
+    if nonce.len() > crate::config::MAX_NONCE_LEN_BYTES {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "prepare_file nonce length {} exceeds maximum {}",
+            nonce.len(),
+            crate::config::MAX_NONCE_LEN_BYTES
+        )));
+    }
 
     // 1a. Calculate object ID: object_<SHA256(data)> - content-based, for file discovery
     let mut object_hasher = Sha256::new();
@@ -164,6 +190,7 @@ pub fn prepare_file(
         original_size: data.len(),
         filename: filename.to_string(),
     };
+    metadata.validate()?;
 
     // 6. Create prepared file
     let prepared_file = types::PreparedFile {
@@ -221,6 +248,8 @@ pub fn reconstruct_file(
     symbols: &[Option<Vec<u8>>],
     metadata: &types::FileMetadata,
 ) -> Result<Vec<u8>> {
+    metadata.validate()?;
+
     let mut mutable_symbols = symbols.to_vec();
 
     crate::erasure::decode_file_symbols(

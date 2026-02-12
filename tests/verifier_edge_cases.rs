@@ -74,10 +74,9 @@ fn test_verifier_rejects_ledger_indices_length_mismatch() {
 
 #[test]
 fn test_duplicate_file_challenges_fail_verification() {
-    // VERIF-01: Duplicate challenges (same file, same params) produce invalid proofs.
-    // This is expected - duplicate challenges are not a supported use case.
-    // The verifier correctly rejects these proofs.
-    println!("Testing duplicate file challenges in multi-file proof");
+    // VERIF-01: Duplicate challenges must be rejected during prove() to avoid
+    // wasting prover resources on unsupported/ambiguous statements.
+    println!("Testing duplicate file challenges are rejected by prove()");
 
     let data = vec![1u8; 100];
     let (prepared, metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
@@ -94,18 +93,13 @@ fn test_duplicate_file_challenges_fail_verification() {
     ledger.add_file(&metadata).unwrap();
 
     let system = kontor_crypto::api::PorSystem::new(&ledger);
-    let proof = system
-        .prove(vec![&prepared], &challenges)
-        .expect("Prove accepts duplicate challenges");
-
-    // Verification should fail - duplicate challenges produce invalid proofs
-    let verify_result = system.verify(&proof, &challenges);
+    let prove_result = system.prove(vec![&prepared], &challenges);
     assert!(
-        matches!(verify_result, Ok(false) | Err(_)),
-        "Duplicate challenges MUST fail verification"
+        matches!(prove_result, Err(KontorPoRError::InvalidInput(_))),
+        "Duplicate challenges MUST be rejected by prove()"
     );
 
-    println!("✓ Duplicate challenges correctly rejected by verifier");
+    println!("✓ Duplicate challenges correctly rejected by prove()");
 }
 
 #[test]
@@ -215,20 +209,11 @@ fn test_inconsistent_metadata_fields() {
     let bad_system1 = kontor_crypto::api::PorSystem::new(&bad_ledger1);
     let result1 = bad_system1.verify(&proof, &[bad_challenge1]);
 
-    match result1 {
-        Ok(is_valid) => {
-            // Note: The verifier may not validate this logical inconsistency
-            // since it doesn't need to reconstruct the file
-            if is_valid {
-                println!("⚠️  Metadata with original_size > blob_size accepted (verifier doesn't validate this)");
-            } else {
-                println!("✓ Metadata with original_size > blob_size rejected");
-            }
-        }
-        Err(_) => {
-            println!("✓ Metadata with original_size > blob_size caused error");
-        }
-    }
+    assert!(
+        matches!(result1, Err(KontorPoRError::InvalidInput(_))),
+        "Metadata with inconsistent original_size must be rejected"
+    );
+    println!("✓ Metadata with original_size inconsistency rejected");
 
     // Test 2: padded_len = 0 (invalid tree)
     let mut inconsistent_meta2 = valid_metadata.clone();

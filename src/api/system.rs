@@ -7,6 +7,7 @@
 use super::types::{Challenge, FileMetadata, PreparedFile, Proof};
 use crate::{ledger::FileLedger, KontorPoRError, Result};
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 use tracing::debug;
 
 /// The unified API entry point for the Nova-based Proof-of-Retrievability system.
@@ -79,6 +80,7 @@ impl<'a> PorSystem<'a> {
 
         // Validate that all files referenced by challenges are present
         for challenge in challenges {
+            challenge.validate()?;
             if !files_map.contains_key(&challenge.file_metadata.file_id) {
                 return Err(KontorPoRError::FileNotFound {
                     file_id: challenge.file_metadata.file_id.clone(),
@@ -111,6 +113,19 @@ impl<'a> PorSystem<'a> {
     /// Returns Ok(true) if the proof is valid, Ok(false) if invalid,
     /// or an error if verification fails unexpectedly.
     pub fn verify(&self, proof: &Proof, challenges: &[Challenge]) -> Result<bool> {
+        for challenge in challenges {
+            challenge.validate()?;
+        }
+
+        let mut seen = HashSet::with_capacity(challenges.len());
+        for challenge in challenges {
+            if !seen.insert(challenge.id()) {
+                return Err(KontorPoRError::InvalidInput(
+                    "verify: duplicate challenge detected".to_string(),
+                ));
+            }
+        }
+
         // Validate that proof.challenge_ids matches the provided challenges
         let expected_ids: Vec<_> = challenges.iter().map(|c| c.id()).collect();
 
