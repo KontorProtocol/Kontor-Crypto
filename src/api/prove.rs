@@ -15,6 +15,7 @@ use nova_snark::{
     provider::{PallasEngine, VestaEngine},
 };
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 use tracing::{debug, debug_span, info_span, trace};
 
 // Type aliases needed for proving
@@ -99,6 +100,11 @@ fn setup_proving_environment(
         });
     }
 
+    // Validate challenge structure and metadata invariants first.
+    for challenge in challenges.iter() {
+        challenge.validate()?;
+    }
+
     // Verify all challenges use the same num_challenges (Nova requirement)
     let num_challenges = challenges[0].num_challenges;
 
@@ -116,6 +122,17 @@ fn setup_proving_environment(
         }
     }
 
+    // Reject duplicate challenges up front to avoid wasted proving work.
+    let mut seen = HashSet::with_capacity(challenges.len());
+    for challenge in challenges.iter() {
+        let challenge_id = challenge.id();
+        if !seen.insert(challenge_id) {
+            return Err(KontorPoRError::InvalidInput(
+                "prove: duplicate challenge detected".to_string(),
+            ));
+        }
+    }
+
     // Validate all files
     for challenge in challenges.iter() {
         let file = files.get(&challenge.file_metadata.file_id).ok_or_else(|| {
@@ -126,6 +143,21 @@ fn setup_proving_environment(
 
         if file.tree.root() != challenge.file_metadata.root {
             return Err(KontorPoRError::MetadataMismatch);
+        }
+        if file.root != challenge.file_metadata.root {
+            return Err(KontorPoRError::MetadataMismatch);
+        }
+        if file.file_id != challenge.file_metadata.file_id {
+            return Err(KontorPoRError::MetadataMismatch);
+        }
+        let file_leaf_count = file.tree.layers.first().map_or(0, |layer| layer.len());
+        if file_leaf_count != challenge.file_metadata.padded_len {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "Metadata padded_len {} does not match prepared file leaf count {} for file {}",
+                challenge.file_metadata.padded_len,
+                file_leaf_count,
+                challenge.file_metadata.file_id
+            )));
         }
     }
 

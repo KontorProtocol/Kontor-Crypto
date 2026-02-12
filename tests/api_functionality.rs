@@ -8,8 +8,7 @@
 
 use kontor_crypto::{
     api::{Challenge, FieldElement, PorSystem, Proof},
-    config,
-    FileLedger,
+    config, FileLedger,
 };
 use std::collections::HashSet;
 
@@ -104,6 +103,30 @@ fn test_challenge_id_collision_resistance() {
 }
 
 #[test]
+fn test_challenge_id_uses_canonical_length_delimited_encoding() {
+    println!("Testing ChallengeID canonical length-delimited encoding");
+
+    let data = b"Challenge ID canonicalization test";
+    let (_, metadata) = kontor_crypto::api::prepare_file(data, "canon.dat", b"nonce").unwrap();
+
+    let mut meta_a = metadata.clone();
+    meta_a.file_id = "ab".to_string();
+    let challenge_a = Challenge::new(meta_a, 1000, 5, FieldElement::from(42u64), "c".to_string());
+
+    let mut meta_b = metadata;
+    meta_b.file_id = "a".to_string();
+    let challenge_b = Challenge::new(meta_b, 1000, 5, FieldElement::from(42u64), "bc".to_string());
+
+    assert_ne!(
+        challenge_a.id(),
+        challenge_b.id(),
+        "Length-delimited encoding must distinguish concatenation-ambiguous tuples"
+    );
+
+    println!("  ✓ Canonical length-delimited encoding verified");
+}
+
+#[test]
 fn test_proof_serialization_roundtrip() {
     println!("Testing proof serialization round-trip");
 
@@ -176,7 +199,7 @@ fn test_proof_serialization_rejects_oversized_payload_length() {
     bytes.extend_from_slice(b"NPOR"); // magic
     bytes.extend_from_slice(&1u16.to_le_bytes()); // version
     bytes.extend_from_slice(&oversized_len.to_le_bytes()); // declared payload size
-                                                      // No payload bytes appended: parser should reject on size bound first.
+                                                           // No payload bytes appended: parser should reject on size bound first.
 
     let result = Proof::from_bytes(&bytes);
     assert!(result.is_err(), "Oversized payload length must be rejected");

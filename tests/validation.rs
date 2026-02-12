@@ -67,8 +67,8 @@ fn test_verify_with_zero_challenges() {
     // This should fail
     let result = system.verify(&proof, &zero_challenges);
 
-    // Should either error or return false (gets caught by challenge ID validation)
-    assert_verify_fails_contains(result, Some("Challenge ID mismatch"));
+    // Validation now rejects invalid challenge counts before challenge-ID binding.
+    assert_verify_fails_contains(result, Some("Invalid challenge count"));
 
     println!("✓ Zero challenges correctly rejected in verify");
 }
@@ -209,6 +209,50 @@ fn test_reconstruct_fails_metadata_inconsistencies() {
     );
 
     println!("✓ Metadata inconsistencies correctly handled");
+}
+
+#[test]
+fn test_reconstruct_rejects_symbol_count_mismatch_without_panic() {
+    println!("Testing reconstruct_file rejects symbol count mismatch");
+
+    let data = create_test_data(512, Some(5555));
+    let (_prepared, metadata) =
+        api::prepare_file(&data, "symbol_count_mismatch.dat", b"").expect("Should prepare file");
+
+    let total_symbols = metadata.total_symbols();
+    let incomplete_shards: Vec<Option<Vec<u8>>> = (0..(total_symbols - 1))
+        .map(|_| Some(vec![0u8; 31]))
+        .collect();
+
+    let result = api::reconstruct_file(&incomplete_shards, &metadata);
+    assert!(
+        result.is_err(),
+        "reconstruct_file must reject mismatched shard count"
+    );
+
+    println!("✓ Symbol count mismatch rejected safely");
+}
+
+#[test]
+fn test_reconstruct_rejects_invalid_symbol_length() {
+    println!("Testing reconstruct_file rejects invalid symbol length");
+
+    let data = create_test_data(512, Some(7777));
+    let (_prepared, metadata) =
+        api::prepare_file(&data, "symbol_len_mismatch.dat", b"").expect("Should prepare file");
+
+    let total_symbols = metadata.total_symbols();
+    let mut shards: Vec<Option<Vec<u8>>> =
+        (0..total_symbols).map(|_| Some(vec![0u8; 31])).collect();
+    shards[0] = Some(vec![0u8; 30]);
+
+    let result = api::reconstruct_file(&shards, &metadata);
+    assert!(
+        result.is_err(),
+        "reconstruct_file must reject symbols with invalid length"
+    );
+
+    println!("✓ Invalid symbol length rejected safely");
 }
 
 #[test]

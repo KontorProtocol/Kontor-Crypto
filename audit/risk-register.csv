@@ -1,0 +1,8 @@
+id,title,severity,status,owner,due_date,notes
+FND-001,Malformed symbol decode could panic or mis-handle inputs,High,Closed,security-engineering,2026-02-12,Added strict decode pre-validation and negative tests
+FND-002,Metadata invariants not enforced at API boundaries,High,Closed,security-engineering,2026-02-12,Added FileMetadata/Challenge validation and boundary enforcement
+FND-003,Duplicate challenge acceptance in prove/verify,Medium,Closed,security-engineering,2026-02-12,Rejected duplicates by ChallengeID
+FND-004,ChallengeID variable-field encoding ambiguity,Medium,Closed,security-engineering,2026-02-12,Added length-delimited canonical encoding and stronger field binding
+FND-005,Insufficient input guardrails for API boundary fields,Medium,Closed,security-engineering,2026-02-12,Added file size and field length limits
+RES-001,Fuzzing coverage incomplete,Low,Open,security-engineering,2026-03-15,Promote scaffold to cargo-fuzz targets
+RES-002,Historical-root retention policy not codified,Low,Open,protocol-ops,2026-03-01,Define retention and pruning policy with audit trail
