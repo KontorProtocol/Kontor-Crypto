@@ -2,13 +2,13 @@ use clap::Parser;
 use kontor_crypto::formal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::io;
 use std::fs;
+use std::io;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 
 #[derive(Debug, Parser)]
 #[command(name = "picus_verify")]

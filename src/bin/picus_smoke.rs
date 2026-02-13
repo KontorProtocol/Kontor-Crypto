@@ -3,7 +3,7 @@ use kontor_crypto::formal;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
-use std::{io, fs};
+use std::{fs, io};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -85,7 +85,8 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
     // Positional arg must be last.
     cmd.arg(&r1cs_path);
 
-    let hard_timeout = Duration::from_millis(args.timeout_ms.saturating_add(args.hard_timeout_grace_ms));
+    let hard_timeout =
+        Duration::from_millis(args.timeout_ms.saturating_add(args.hard_timeout_grace_ms));
     let started = Instant::now();
 
     let process_result = run_with_hard_timeout(cmd, hard_timeout)?;
@@ -155,7 +156,9 @@ fn run_with_hard_timeout(
         match child.try_wait() {
             Ok(Some(_)) => {
                 let output = child.wait_with_output().map_err(|e| {
-                    kontor_crypto::KontorPoRError::IO(format!("Failed to collect Picus output: {e}"))
+                    kontor_crypto::KontorPoRError::IO(format!(
+                        "Failed to collect Picus output: {e}"
+                    ))
                 })?;
                 return Ok(ProcessRunResult::Completed(output));
             }
@@ -180,4 +183,3 @@ fn run_with_hard_timeout(
         }
     }
 }
-

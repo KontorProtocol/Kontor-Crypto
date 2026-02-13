@@ -264,10 +264,7 @@ pub fn export_picus_smoke_underconstrained(artifacts_root: &Path) -> Result<Path
     let artifact_dir = artifacts_root.join("smoke-underconstrained");
     fs::create_dir_all(&artifact_dir).map_err(|e| {
         io_err(
-            format!(
-                "Failed to create artifact dir {}",
-                artifact_dir.display()
-            ),
+            format!("Failed to create artifact dir {}", artifact_dir.display()),
             e,
         )
     })?;
@@ -290,8 +287,10 @@ pub fn export_picus_smoke_underconstrained(artifacts_root: &Path) -> Result<Path
     );
 
     // Unconstrained output (aux variable) that is treated as the only public output.
-    let y = AllocatedNum::alloc(cs.namespace(|| "y_unconstrained"), || Ok(FieldElement::ZERO))
-        .map_err(circuit_err)?;
+    let y = AllocatedNum::alloc(cs.namespace(|| "y_unconstrained"), || {
+        Ok(FieldElement::ZERO)
+    })
+    .map_err(circuit_err)?;
 
     let _wiring = write_picus_r1cs_file(&cs, &[y], &r1cs_path)?;
     Ok(r1cs_path)
@@ -403,16 +402,16 @@ fn export_fixture_impl(
     let _ = write_picus_r1cs_file(&shape_cs, &z_next_shape, &picus_full_path)?;
 
     // Optional reduced-scope Picus artifact for convergence experiments.
-    let (picus_selected_wiring, _picus_selected_outputs_len) = if let Some(prefix_len) =
-        picus_output_prefix_len
-    {
-        let prefix_len = prefix_len.min(z_next_shape.len());
-        let wiring = write_picus_r1cs_file(&shape_cs, &z_next_shape[..prefix_len], &picus_input_path)?;
-        (Some(wiring), Some(prefix_len))
-    } else {
-        let wiring = write_picus_r1cs_file(&shape_cs, &z_next_shape, &picus_input_path)?;
-        (Some(wiring), None)
-    };
+    let (picus_selected_wiring, _picus_selected_outputs_len) =
+        if let Some(prefix_len) = picus_output_prefix_len {
+            let prefix_len = prefix_len.min(z_next_shape.len());
+            let wiring =
+                write_picus_r1cs_file(&shape_cs, &z_next_shape[..prefix_len], &picus_input_path)?;
+            (Some(wiring), Some(prefix_len))
+        } else {
+            let wiring = write_picus_r1cs_file(&shape_cs, &z_next_shape, &picus_input_path)?;
+            (Some(wiring), None)
+        };
 
     let picus_precondition_path = if write_witness_precondition {
         let path = artifact_dir.join("picus-precondition.json");
@@ -1192,7 +1191,11 @@ fn prepare_toy_file(
         filename: filename.to_string(),
     };
 
-    let prepared_file = PreparedFile { tree, file_id, root };
+    let prepared_file = PreparedFile {
+        tree,
+        file_id,
+        root,
+    };
     Ok((prepared_file, metadata))
 }
 
