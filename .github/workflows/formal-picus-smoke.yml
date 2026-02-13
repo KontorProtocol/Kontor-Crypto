@@ -47,7 +47,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Veridise/Picus
-          ref: v2.2.0
+          # Pinned commit for determinism (Veridise/Picus main @ 2026-02-13).
+          ref: 138b151d3a388e5b6c040c163e0a1db04f2ceda6
           path: Picus
 
       - name: Install Rust
