@@ -42,6 +42,19 @@ If you have a custom `cvc5`, point Picus at it via `SOLVER_PATH`:
 export SOLVER_PATH=/path/to/cvc5
 ```
 
+### Optional: Use More CPU (cvc5 Portfolio Mode)
+By default, `cvc5` will often use a single core per solve. To parallelize within a single Picus run, you can use `cvc5` portfolio mode via a wrapper:
+
+```bash
+export CVC5_BIN=/path/to/cvc5
+export CVC5_PORTFOLIO_JOBS=16
+export SOLVER_PATH=tools/picus/cvc5-portfolio-wrapper.sh
+```
+
+Notes:
+- Portfolio mode increases CPU usage but can also increase memory usage.
+- Override jobs via `CVC5_PORTFOLIO_JOBS`; the wrapper otherwise auto-picks a conservative default.
+
 You can build a CoCoA-enabled cvc5 locally (GPL build) using `tools/picus/build-cvc5-cocoa.sh`.
 
 Example Picus install (from Veridise README):

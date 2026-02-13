@@ -8,7 +8,9 @@ set -euo pipefail
 # - CoCoA-enabled cvc5 on PATH, or set SOLVER_PATH to it.
 #
 # Example:
-#   export SOLVER_PATH=/tmp/cvc5-install/bin/cvc5
+#   export CVC5_BIN=/tmp/cvc5-install/bin/cvc5
+#   export CVC5_PORTFOLIO_JOBS=16
+#   export SOLVER_PATH=tools/picus/cvc5-portfolio-wrapper.sh
 #   tools/picus/run-overnight.sh /Users/adam/dev/Picus/run-picus
 
 PICUS_BIN="${1:-}"
