@@ -13,15 +13,22 @@ Last updated: February 13, 2026
 - Picus input artifact: `artifacts/picus/<fixture>/circuit.r1cs`
 
 ## Latest Results
-From `artifacts/picus/summary.json` (most recent run in workspace):
-1. Included fixtures: `single-file-tiny-depth1` (small-scope run for toolchain validation; not part of the main manifest).
-2. Runtime limits: `--timeout-secs 240`, `--hard-timeout-grace-secs 30`.
-3. Classification: `pass` (Picus: "properly constrained").
+From `artifacts/picus-overnight/20260212-232000/*.summary.json` (overnight run):
+1. Phase A (witness precondition, root-only target via `--output-prefix-len 1`, 30m per fixture):
+   - `single-file-minimal`: `pass` (326,967ms)
+   - `single-file-depth10`: `pass` (391,485ms)
+   - `multi-file-minimal`: `pass` (803,226ms)
+   - `multi-file-mixed-depth`: `pass` (926,824ms)
+   - `multi-file-padding`: `pass` (1,748,492ms)
+2. Phase B (no precondition, root-only target, 2h per fixture):
+   - `single-file-minimal`: `inconclusive` (timeout/unknown, ~2h)
+   - `multi-file-minimal`: `inconclusive` (timeout/unknown, ~2h)
 
 Current conclusion:
 - Harness is functioning and bounded.
 - At least one conclusive `pass` has been achieved on a minimal non-trivial scope.
 - Determinism is not yet proven for the main fixture matrix in `tools/picus/manifest.json`.
+  - Phase A `pass` results used a witness-guided precondition and only targeted the first output; this is useful evidence that the exported constraints are not trivially underconstrained in that scoped configuration, but it is not sufficient to claim full determinism.
 
 ## Coverage
 Fixture matrix currently defined:
@@ -44,7 +51,7 @@ This covers:
 - hard timeout enforcement and process-tree cleanup in `src/bin/picus_verify.rs`;
 - stale solver cleanup between fixtures/runs.
 3. New prerequisite: use a CoCoA-enabled `cvc5` for finite-field (`QF_FF`) solving. See `docs/formal/picus-runbook.md`.
-4. Remaining blocker: scaling to the full fixture matrix and reaching `pass`/`violation` without relying on witness-guided preconditions.
+4. Remaining blocker: reaching `pass`/`violation` on main fixtures without relying on witness-guided preconditions (and eventually expanding targets beyond `--output-prefix-len 1`).
 
 ## Residual Risk
 1. Current evidence does not establish `pass` for the main fixture matrix, so the determinism claim is pending.
