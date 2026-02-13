@@ -200,6 +200,12 @@ Picus binary note:
 - This workflow expects Veridise Picus (`run-picus`) from `https://github.com/Veridise/Picus`.
 - The PyPI package `picus==0.0.5` is unrelated and will fail this flow.
 
+Finite-field solver note (required for `--solver cvc5`):
+- `cvc5` must be built with CoCoA support to solve `QF_FF` problems.
+- Check with: `cvc5 --show-config | rg 'cocoa'` (expect `yes`).
+- If you have a custom `cvc5`, point Picus at it via `SOLVER_PATH=/path/to/cvc5`.
+- See `docs/formal/picus-runbook.md` and `tools/picus/build-cvc5-cocoa.sh`.
+
 Dockerized Picus option (recommended on Apple Silicon):
 
 ```bash

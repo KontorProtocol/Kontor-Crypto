@@ -1,6 +1,6 @@
 # Picus Runbook
 
-## Current Status (February 12, 2026)
+## Current Status (February 13, 2026)
 - Deterministic fixture export is implemented and emits Picus-ready `circuit.r1cs` directly from `ShapeCS`.
 - `picus_verify` supports bounded execution with:
   - `--timeout-secs` (forwarded to Picus in ms),
@@ -8,7 +8,9 @@
   - `--solver`,
   - `--picus-log-level`,
   - stale solver cleanup between runs/fixtures.
-- Formal conclusion is not complete yet: current runs are primarily `inconclusive` (timeouts), so determinism is not yet proven.
+- Toolchain is now producing conclusive results on small scopes when using a correct finite-field solver setup:
+  - `single-file-tiny-depth1` with `--output-prefix-len 1` can reach `pass` using `cvc5` (CoCoA-enabled).
+- Formal conclusion for the main fixture matrix (`tools/picus/manifest.json`) is not complete yet.
 
 ## Big-Picture Goal
 Prove the `PorCircuit` one-step relation is deterministically constrained for fixed public inputs and fixed shape. See `docs/formal/determinism-spec.md`.
@@ -23,7 +25,24 @@ Prove the `PorCircuit` one-step relation is deterministically constrained for fi
 ## Prerequisites
 1. Rust toolchain for this repository.
 2. Veridise Picus CLI (`run-picus`) installed from `https://github.com/Veridise/Picus`.
-3. Optional converter only for legacy/custom environments.
+3. A `cvc5` binary with finite-field (`QF_FF`) support enabled (CoCoA).
+4. Optional converter only for legacy/custom environments.
+
+### Finite-Field Solver Requirement (cvc5 + CoCoA)
+Picus uses a finite-field (`QF_FF`) encoding when `--solver cvc5` is selected. Many packaged `cvc5` builds are compiled without CoCoA support and will not solve `QF_FF`, leading to Picus reporting `unknown` with `[solver] skipped`.
+
+Verify your `cvc5` supports CoCoA:
+```bash
+cvc5 --show-config | rg 'cocoa'
+# expect: cocoa         : yes
+```
+
+If you have a custom `cvc5`, point Picus at it via `SOLVER_PATH`:
+```bash
+export SOLVER_PATH=/path/to/cvc5
+```
+
+You can build a CoCoA-enabled cvc5 locally (GPL build) using `tools/picus/build-cvc5-cocoa.sh`.
 
 Example Picus install (from Veridise README):
 ```bash
@@ -109,6 +128,12 @@ cargo run --bin picus_export -- --all
 cargo run --bin picus_verify -- --all --timeout-secs 600
 ```
 
+## Overnight Run Plan
+For a practical overnight run plan (mixed "conclusive with precondition" and "best-effort without precondition"), use:
+```bash
+tools/picus/run-overnight.sh /path/to/run-picus
+```
+
 Recommended local command (incremental + bounded):
 ```bash
 cargo run --bin picus_verify -- --all \
@@ -119,6 +144,11 @@ cargo run --bin picus_verify -- --all \
   --hard-timeout-grace-secs 30 \
   --allow-inconclusive
 ```
+
+### Convergence Aid: Witness-Guided Precondition (Use With Care)
+`picus_verify` supports `--picus-witness-precondition`, which emits a Picus precondition that fixes all non-output wires to values from a known satisfying assignment.
+
+This is useful to get *conclusive* `pass`/`violation` results for small scopes without spending time on "solve from scratch", but it can hide determinism violations that require changing internal wires. Do not treat a `pass` under witness precondition as sufficient evidence for the full determinism claim in `docs/formal/determinism-spec.md`.
 
 Single-fixture iteration:
 ```bash

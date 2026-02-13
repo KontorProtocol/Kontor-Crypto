@@ -66,4 +66,5 @@ perf.data.old
 # Custom/project-specific
 claude
 .nvimlog
+artifacts/
 artifacts/picus/

@@ -1,6 +1,6 @@
 # Determinism Verification Report
 
-Last updated: February 12, 2026
+Last updated: February 13, 2026
 
 ## Scope
 - Circuit: `PorCircuit` one-step relation.
@@ -14,13 +14,14 @@ Last updated: February 12, 2026
 
 ## Latest Results
 From `artifacts/picus/summary.json` (most recent run in workspace):
-1. Included fixtures: `single-file-minimal` (single fixture run).
-2. Runtime limits: `--timeout-secs 120`, `--hard-timeout-grace-secs 30`.
-3. Classification: `inconclusive` (hard timeout).
+1. Included fixtures: `single-file-tiny-depth1` (small-scope run for toolchain validation; not part of the main manifest).
+2. Runtime limits: `--timeout-secs 240`, `--hard-timeout-grace-secs 30`.
+3. Classification: `pass` (Picus: "properly constrained").
 
 Current conclusion:
 - Harness is functioning and bounded.
-- Determinism is not yet proven because no fixture has reached `pass`.
+- At least one conclusive `pass` has been achieved on a minimal non-trivial scope.
+- Determinism is not yet proven for the main fixture matrix in `tools/picus/manifest.json`.
 
 ## Coverage
 Fixture matrix currently defined:
@@ -37,13 +38,13 @@ This covers:
 4. Files-per-step padding behavior.
 
 ## Findings
-1. `single-file-minimal`: `inconclusive`.
-2. Root cause: solver runtime exceeded configured hard timeout window.
-3. Engineering fixes completed:
+1. Previously observed: `cvc5` without CoCoA support yields Picus `[solver] skipped` and `unknown`.
+2. Engineering fixes completed:
 - timeout unit mismatch corrected (seconds -> milliseconds for Picus);
 - hard timeout enforcement and process-tree cleanup in `src/bin/picus_verify.rs`;
 - stale solver cleanup between fixtures/runs.
-4. Remaining blocker: solver convergence to `safe`/`unsafe` on target fixture shapes.
+3. New prerequisite: use a CoCoA-enabled `cvc5` for finite-field (`QF_FF`) solving. See `docs/formal/picus-runbook.md`.
+4. Remaining blocker: scaling to the full fixture matrix and reaching `pass`/`violation` without relying on witness-guided preconditions.
 
 ## Residual Risk
 1. Current evidence does not establish `pass` for any fixture, so determinism claim is pending.
