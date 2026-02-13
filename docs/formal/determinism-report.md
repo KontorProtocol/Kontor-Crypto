@@ -47,7 +47,7 @@ This covers:
 4. Remaining blocker: scaling to the full fixture matrix and reaching `pass`/`violation` without relying on witness-guided preconditions.
 
 ## Residual Risk
-1. Current evidence does not establish `pass` for any fixture, so determinism claim is pending.
+1. Current evidence does not establish `pass` for the main fixture matrix, so the determinism claim is pending.
 2. Fixture matrix is finite and may not cover all pathological witness patterns.
 3. Picus one-step analysis does not prove full Nova recursion system correctness.
 
