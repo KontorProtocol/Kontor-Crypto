@@ -949,7 +949,7 @@ fn hex_to_le_bytes(hex: &str) -> Result<Vec<u8>> {
     let clean = hex.trim_start_matches('0');
     let normalized = if clean.is_empty() {
         String::from("00")
-    } else if clean.len() % 2 == 0 {
+    } else if clean.len().is_multiple_of(2) {
         clean.to_string()
     } else {
         format!("0{}", clean)
@@ -982,7 +982,7 @@ fn decimal_to_le_bytes(decimal: &str) -> Result<Vec<u8>> {
         .collect::<Vec<u8>>();
     let mut out = Vec::new();
 
-    while !digits.is_empty() && !(digits.len() == 1 && digits[0] == 0) {
+    while !(digits.is_empty() || (digits.len() == 1 && digits[0] == 0)) {
         let mut remainder: u16 = 0;
         let mut quotient = Vec::with_capacity(digits.len());
 
@@ -1361,6 +1361,7 @@ mod tests {
             file_specs: vec![FormalFileSpec {
                 size: 64,
                 seed: Some(9),
+                toy_padded_len: None,
             }],
             expected_shape: None,
             tags: vec![],

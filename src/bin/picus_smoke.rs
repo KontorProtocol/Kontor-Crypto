@@ -91,12 +91,10 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
 
     let process_result = run_with_hard_timeout(cmd, hard_timeout)?;
     match process_result {
-        ProcessRunResult::TimedOut => {
-            return Err(kontor_crypto::KontorPoRError::InvalidInput(format!(
-                "Picus hard timeout exceeded ({}ms + {}ms grace)",
-                args.timeout_ms, args.hard_timeout_grace_ms
-            )));
-        }
+        ProcessRunResult::TimedOut => Err(kontor_crypto::KontorPoRError::InvalidInput(format!(
+            "Picus hard timeout exceeded ({}ms + {}ms grace)",
+            args.timeout_ms, args.hard_timeout_grace_ms
+        ))),
         ProcessRunResult::Completed(output) => {
             println!("Picus exit: {}", output.status);
             println!("Picus json: {}", json_path.display());
