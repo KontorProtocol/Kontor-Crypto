@@ -688,7 +688,7 @@ fn write_picus_precondition_fix_witness_except_outputs(
         first = false;
         let _ = write!(
             &mut out,
-            "[\"wire_0_one\",[\"rassert\",[\"req\",[\"rvar\",\"0\"],[\"rint\",1]]]]"
+            "[\"wire_0_one\",[\"rassert\",[\"req\",[\"rvar\",0],[\"rint\",1]]]]"
         );
     }
 
@@ -712,7 +712,7 @@ fn write_picus_precondition_fix_witness_except_outputs(
         first = false;
         let _ = write!(
             &mut out,
-            "[\"wire_{wire}_input_{idx}\",[\"rassert\",[\"req\",[\"rvar\",\"{wire}\"],[\"rint\",{}]]]]",
+            "[\"wire_{wire}_input_{idx}\",[\"rassert\",[\"req\",[\"rvar\",{wire}],[\"rint\",{}]]]]",
             field_to_dec(val)
         );
     }
@@ -734,7 +734,7 @@ fn write_picus_precondition_fix_witness_except_outputs(
         first = false;
         let _ = write!(
             &mut out,
-            "[\"wire_{wire}_aux_{aux_idx}\",[\"rassert\",[\"req\",[\"rvar\",\"{wire}\"],[\"rint\",{}]]]]",
+            "[\"wire_{wire}_aux_{aux_idx}\",[\"rassert\",[\"req\",[\"rvar\",{wire}],[\"rint\",{}]]]]",
             field_to_dec(val)
         );
     }
