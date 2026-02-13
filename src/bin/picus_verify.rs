@@ -59,9 +59,29 @@ struct Args {
     #[arg(long)]
     solver: Option<String>,
 
+    /// Optional Picus selector override (counter | first)
+    #[arg(long)]
+    picus_selector: Option<String>,
+
+    /// Disable Picus propagation phase (may help some hard instances)
+    #[arg(long)]
+    picus_noprop: bool,
+
     /// Optional Picus log level (DEBUG | ACCOUNTING | PROGRESS | INFO | WARNING | ERROR | CRITICAL)
     #[arg(long)]
     picus_log_level: Option<String>,
+
+    /// Export a Picus .r1cs variant where only the first N step outputs are considered "public outputs".
+    /// This reduces Picus target scope for convergence experiments.
+    /// N=0 (default) uses all outputs.
+    #[arg(long, default_value_t = 0)]
+    output_prefix_len: usize,
+
+    /// Generate and pass a witness-guided Picus precondition that fixes all non-output wires to a
+    /// known satisfying assignment. This avoids "solve from scratch" timeouts and is useful to
+    /// get a conclusive safe/unsafe result for targeted outputs.
+    #[arg(long)]
+    picus_witness_precondition: bool,
 
     /// Allow inconclusive fixtures without failing the process exit code
     #[arg(long)]
@@ -209,7 +229,16 @@ fn run_fixture(
     cleanup_picus_solver_processes();
 
     let fixture = formal::load_fixture(&args.fixtures_dir, fixture_id)?;
-    let exported = formal::export_fixture(&fixture, &args.artifacts_dir)?;
+    let exported = formal::export_fixture_for_picus_verify(
+        &fixture,
+        &args.artifacts_dir,
+        if args.output_prefix_len == 0 {
+            None
+        } else {
+            Some(args.output_prefix_len)
+        },
+        args.picus_witness_precondition,
+    )?;
 
     let picus_json_path = exported.artifact_dir.join("picus-result.json");
     let mut converter_used = false;
@@ -255,12 +284,26 @@ fn run_fixture(
         cmd.arg("--solver").arg(solver);
     }
 
+    if let Some(selector) = &args.picus_selector {
+        cmd.arg("--selector").arg(selector);
+    }
+
+    if args.picus_noprop {
+        cmd.arg("--noprop");
+    }
+
     if let Some(model) = &args.model {
         cmd.arg("--model").arg(model);
     }
 
     if let Some(log_level) = &args.picus_log_level {
         cmd.arg("--log-level").arg(log_level);
+    }
+
+    if args.picus_witness_precondition {
+        if let Some(pre) = &exported.picus_precondition_path {
+            cmd.arg("--precondition").arg(pre);
+        }
     }
 
     // Picus expects options first and source path as the final positional argument.
@@ -384,6 +427,15 @@ fn classify_picus_result(
             FixtureStatus::Error,
             String::from(
                 "Picus Racket runtime crashed (`petite`). This is typically an amd64 emulation/runtime issue; run Picus on a native amd64 host or adjust Docker Desktop x86 emulation settings.",
+            ),
+        ));
+    }
+
+    if merged.contains("not configured with --cocoa") {
+        return Ok((
+            FixtureStatus::Error,
+            String::from(
+                "cvc5 does not support finite-field (QF_FF) problems because it was built without --cocoa. Install/build a cvc5 with cocoa enabled (or use --solver z3 as a temporary fallback).",
             ),
         ));
     }

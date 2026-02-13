@@ -11,6 +11,7 @@
 //! - [`circuit`]: Unified Nova circuit supporting dynamic numbers of files
 //! - [`ledger`]: File ledger for multi-file aggregation
 //! - [`config`]: Centralized configuration constants
+//! - [`formal`]: Deterministic fixture/export tooling for formal circuit analysis
 //!
 //! ## Error Handling
 //!
@@ -82,6 +83,7 @@ pub mod circuit_safety;
 pub mod config;
 pub mod erasure;
 pub mod error;
+pub mod formal;
 pub mod ledger;
 pub mod merkle;
 pub mod metrics;

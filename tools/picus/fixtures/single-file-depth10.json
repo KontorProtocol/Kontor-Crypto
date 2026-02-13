@@ -1,0 +1,25 @@
+{
+  "fixture_id": "single-file-depth10",
+  "description": "Single-file deeper tree to validate shape scaling",
+  "scenario_kind": "single_file",
+  "challenge_count": 2,
+  "seed": 22345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": false,
+  "file_specs": [
+    {
+      "size": 15000,
+      "seed": 202
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 10,
+    "aggregated_tree_depth": 0
+  },
+  "tags": [
+    "single",
+    "depth"
+  ]
+}

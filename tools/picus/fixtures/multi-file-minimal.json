@@ -1,0 +1,29 @@
+{
+  "fixture_id": "multi-file-minimal",
+  "description": "Two-file minimal fixture for multi-file deterministic checks",
+  "scenario_kind": "multi_file",
+  "challenge_count": 2,
+  "seed": 32345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": true,
+  "file_specs": [
+    {
+      "size": 64,
+      "seed": 301
+    },
+    {
+      "size": 128,
+      "seed": 302
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 2,
+    "file_tree_depth": 8,
+    "aggregated_tree_depth": 1
+  },
+  "tags": [
+    "smoke",
+    "multi"
+  ]
+}
