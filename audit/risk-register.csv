@@ -10,3 +10,6 @@ FND-008,Parameter cache mutex poisoning caused panic-based denial of service,Low
 RES-001,Fuzzing coverage incomplete,Low,Closed,security-engineering,2026-02-12,Implemented cargo-fuzz targets plus corpus seeds and CI smoke/extended jobs
 RES-002,Historical-root retention policy not codified,Low,Closed,protocol-ops,2026-02-12,Implemented policy enum with bounded retention and pruning tests
 RES-003,No CI fuzz corpus regression,Low,Closed,security-engineering,2026-02-12,Added PR smoke replay and scheduled extended fuzz workflow
+FND-009,CI workflows referenced unpinned GitHub Actions,Low,Closed,security-engineering,2026-02-13,Pinned actions/checkout and rust-toolchain usage to immutable SHAs; standardized rust-cache usage
+FND-010,Inactive-slot public inputs not forced to canonical zeros,Low,Closed,security-engineering,2026-02-13,Added explicit circuit constraints and regression tests to enforce canonical zeros for depth==0 slots
+FND-011,Active-flag Merkle depth gating allowed non-prefix patterns,Medium,Closed,security-engineering,2026-02-13,Added prefix-ones constraints for active_flags to prevent holey gating patterns; added regression asserting constraints are present

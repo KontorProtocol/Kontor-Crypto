@@ -278,3 +278,6 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         ))),
     }
 }
+
+// Unit tests for constraint-level statement binding live under `tests/` to avoid
+// slow proof-generation in library unit tests.

@@ -1,6 +1,6 @@
 # Kontor-Crypto Security Audit - Executive Summary
 
-Date: 2026-02-12
+Date: 2026-02-13
 Branch: `adam/audit-3`
 Commit scope: in-progress audit hardening
 
@@ -28,6 +28,9 @@ Conditional go-live recommendation:
 8. Recursive initial-state binding to ordered challenge IDs (prevents non-circuit field rebinding).
 9. Strict ledger membership binding by `file_id` (prevents rc-only identity collisions).
 10. Parameter-cache lock hardening (prevents panic-based service disruption after lock poisoning).
+11. Pinned GitHub Actions dependencies to immutable SHAs (supply-chain hardening).
+12. Canonical inactive-slot public inputs enforced at the circuit constraint level.
+13. Prefix-ones constraints for depth gating (prevents non-monotone active-level patterns).
 
 ## Residual risk (non-blocking)
 1. Continue growing fuzz corpus from production telemetry and newly discovered malformed inputs.
