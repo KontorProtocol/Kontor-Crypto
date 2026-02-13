@@ -74,6 +74,13 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         .map(|i| &z[layout.idx_expected_rc(i)])
         .collect();
 
+    // Extract public leaf accumulator section (leaf outputs from previous step).
+    // This is part of the Nova state vector, so it must exist in both inputs and outputs.
+    // We only constrain it for inactive (padding) slots to keep the statement canonical.
+    let leaf_inputs_public: Vec<&AllocatedNum<F>> = (0..files_per_step)
+        .map(|i| &z[layout.idx_leaf(i)])
+        .collect();
+
     #[cfg(debug_assertions)]
     {
         debug!("PorCircuit::synthesize() entry:");
@@ -290,6 +297,20 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
             })
             .collect::<Result<Vec<Boolean>, SynthesisError>>()?;
 
+        // Enforce prefix-ones depth gating:
+        // For a valid Merkle depth d, active_flags must be [1, 1, ..., 1, 0, 0, ...].
+        // This prevents adversarial "holey" patterns (e.g. 1,0,1,0,...) that still sum to d.
+        for level in 1..file_tree_depth {
+            let cur = active_flags[level].clone();
+            let prev_not = active_flags[level - 1].not();
+            file_cs.enforce(
+                || format!("active_flags_prefix_file{}_lvl{}", file_idx, level),
+                |lc| lc + &cur.lc(CS::one(), F::ONE),
+                |lc| lc + &prev_not.lc(CS::one(), F::ONE),
+                |lc| lc,
+            );
+        }
+
         // Gating logic: only process slots with public_depth > 0
         // This prevents padding files from being processed regardless of slot position
         let public_depth_bits = {
@@ -308,6 +329,44 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         }
 
         let gate_for_slot = depth_is_positive;
+
+        // Canonicalize inactive (padding) slots: if gate_for_slot == 0, force public inputs to zero.
+        // This prevents statement malleability where unused per-slot public inputs can vary freely.
+        let inactive = gate_for_slot.not();
+        {
+            // Enforce: inactive * ledger_index_public == 0
+            let ledger_index_public = ledger_indices_public[file_idx];
+            file_cs.enforce(
+                || "inactive_ledger_index_is_zero",
+                |lc| lc + &inactive.lc(CS::one(), F::ONE),
+                |lc| lc + ledger_index_public.get_variable(),
+                |lc| lc,
+            );
+
+            // Enforce: inactive * seed_public == 0
+            file_cs.enforce(
+                || "inactive_seed_is_zero",
+                |lc| lc + &inactive.lc(CS::one(), F::ONE),
+                |lc| lc + seed_public.get_variable(),
+                |lc| lc,
+            );
+
+            // Enforce: inactive * expected_rc_public == 0
+            file_cs.enforce(
+                || "inactive_expected_rc_is_zero",
+                |lc| lc + &inactive.lc(CS::one(), F::ONE),
+                |lc| lc + expected_rc_public[file_idx].get_variable(),
+                |lc| lc,
+            );
+
+            // Enforce: inactive * leaf_input == 0
+            file_cs.enforce(
+                || "inactive_leaf_input_is_zero",
+                |lc| lc + &inactive.lc(CS::one(), F::ONE),
+                |lc| lc + leaf_inputs_public[file_idx].get_variable(),
+                |lc| lc,
+            );
+        }
 
         let computed_file_root = verify_merkle_path_gated(
             file_cs.namespace(|| "verify_file_merkle"),

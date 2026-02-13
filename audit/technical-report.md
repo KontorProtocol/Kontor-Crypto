@@ -1,6 +1,6 @@
 # Kontor-Crypto Security Audit - Technical Report
 
-Date: 2026-02-12
+Date: 2026-02-13
 Scope: protocol/API/circuit boundary review, malformed-input resilience, proof binding, replay/substitution resistance, ledger serialization integrity.
 
 ## Methodology
@@ -123,12 +123,47 @@ Scope: protocol/API/circuit boundary review, malformed-input resilience, proof b
   - Added centralized lock helper that recovers poisoned state via `into_inner()`.
   - Emits warning telemetry and continues operation with the recovered cache.
 
+### FND-009: CI workflows referenced unpinned GitHub Actions (supply-chain hardening)
+- Severity: Low
+- Affected area: `.github/workflows/*.yml`
+- Description:
+  - Some workflows referenced GitHub Actions by moving tags (e.g. `@v4`, `@stable`), which widens the supply-chain trust boundary.
+- Remediation:
+  - Pinned `actions/checkout` and Rust toolchain setup to immutable SHAs.
+  - Standardized caching on `Swatinem/rust-cache` (already pinned) to reduce bespoke caching logic.
+
+### FND-010: Inactive-slot public inputs were not explicitly forced to canonical zeros
+- Severity: Low
+- Affected area: `src/circuit/synth.rs`, `tests/security_padding_slot_canonicalization.rs`
+- Description:
+  - The circuit has fixed arity and includes per-slot public inputs even when a slot is inactive (`public_depth == 0`).
+  - Enforcing canonical zeros for inactive-slot per-slot fields removes ambiguity and prevents future misuse where callers treat those fields as meaningful statement components.
+- Remediation:
+  - Added explicit constraints for inactive slots:
+    - `inactive * ledger_index_public == 0`
+    - `inactive * seed_public == 0`
+    - `inactive * expected_rc_public == 0`
+    - `inactive * leaf_input == 0`
+  - Added a constraint-system regression test asserting non-zero values make the circuit unsatisfied.
+
+### FND-011: Active-flag Merkle depth gating allowed non-prefix patterns
+- Severity: Medium
+- Affected area: `src/circuit/synth.rs`, `src/circuit/gadgets/merkle.rs`
+- Description:
+  - File-tree Merkle verification uses per-level boolean `active_flags` to gate hashing for a variable effective depth.
+  - Constraining only `sum(active_flags) == public_depth` is insufficient; it allows non-prefix patterns (e.g. `1,0,1,0,...`) that do not correspond to a well-formed depth truncation.
+- Remediation:
+  - Enforced a prefix-ones pattern via constraints: for each level `i > 0`, `active[i] => active[i-1]`.
+  - Added a regression test that asserts the prefix constraints are present in the synthesized constraint system.
+
 ## Validation executed
 - `cargo test --test api_functionality -- --nocapture`
 - `cargo test --test validation -- --nocapture`
 - `cargo test --test verifier_edge_cases -- --nocapture`
 - `cargo test --test circuit_uniformity_regression -- --nocapture`
 - `cargo test --test security_constraint_regressions -- --nocapture`
+- `cargo test --test security_padding_slot_canonicalization -- --nocapture`
+- `cargo test --test security_active_flags_prefix_regression -- --nocapture`
 - `cargo test --test security_replay_attack -- --nocapture`
 - `cargo test --test security_malicious_prover -- --nocapture`
 - `cargo test --test security_ledger -- --nocapture`
