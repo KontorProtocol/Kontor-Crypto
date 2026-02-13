@@ -134,6 +134,12 @@ For a practical overnight run plan (mixed "conclusive with precondition" and "be
 tools/picus/run-overnight.sh /path/to/run-picus
 ```
 
+## CI Smoke Workflow
+A deterministic Picus smoke test workflow is available at:
+- `.github/workflows/formal-picus-smoke.yml`
+
+It runs Picus via Docker with a pinned image digest and verifies a small-scope fixture (`single-file-tiny-depth1`) using `--output-prefix-len 1` and `--picus-witness-precondition`.
+
 Recommended local command (incremental + bounded):
 ```bash
 cargo run --bin picus_verify -- --all \

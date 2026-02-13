@@ -1,0 +1,78 @@
+---
+name: Formal Picus Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly (UTC). Adjust as needed.
+    - cron: "0 6 * * *"
+
+concurrency:
+  group: formal-picus-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  picus_smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Pin Picus Docker image digest for determinism.
+      PICUS_DOCKER_IMAGE: >-
+        veridise/picus:base@sha256:fc396dbabd92cb0026a52dd3f2f72893374a1fc29367409cb49f251923089162
+      PICUS_DOCKER_PLATFORM: linux/amd64
+      # Keep within GitHub hosted runner memory constraints.
+      PICUS_DOCKER_MEMORY: 5g
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: >-
+            ${{ runner.os }}-cargo-formal-picus-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-formal-picus-
+
+      - name: Docker Info
+        run: |
+          docker version
+          docker info
+
+      - name: Pull Picus Image
+        run: docker pull "${PICUS_DOCKER_IMAGE}"
+
+      - name: Run Picus Smoke (Small Scope)
+        run: |
+          cargo run --release --bin picus_verify -- \
+            --fixture single-file-tiny-depth1 \
+            --picus-bin tools/picus/run-picus-docker.sh \
+            --solver cvc5 \
+            --picus-log-level PROGRESS \
+            --timeout-secs 1200 \
+            --hard-timeout-grace-secs 120 \
+            --output-prefix-len 1 \
+            --picus-witness-precondition
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: formal-picus-smoke-artifacts
+          path: |
+            artifacts/picus/summary.json
+            artifacts/picus/summary.md
+            artifacts/picus/*/picus-result.json
+            artifacts/picus/*/export-metadata.json
+            artifacts/picus/*/circuit*.r1cs
+            artifacts/picus/*/circuit*.sym
+            artifacts/picus/*/picus-precondition.json
