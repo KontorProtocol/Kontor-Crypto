@@ -43,6 +43,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout Picus (Pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Veridise/Picus
+          ref: v2.2.0
+          path: Picus
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -69,6 +76,9 @@ jobs:
         run: docker pull "${PICUS_DOCKER_IMAGE}"
 
       - name: Run Picus Smoke (Small Scope)
+        env:
+          # Ensure the container runs the pinned Picus checkout.
+          PICUS_SOURCE_DIR: ${{ github.workspace }}/Picus
         run: |
           cargo run --release --bin picus_verify -- \
             --fixture single-file-tiny-depth1 \
