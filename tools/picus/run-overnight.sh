@@ -28,14 +28,14 @@ echo "Picus:   $PICUS_BIN"
 echo "Solver:  ${SOLVER_PATH:-cvc5-on-PATH}"
 
 # Ensure artifacts exist (and keep it deterministic).
-cargo run -q --bin picus_export -- --all
+cargo run -q --release --bin picus_export -- --all
 
 # Phase A: witness-guided precondition, root-only target.
 # Goal: get conclusive signal quickly that exported R1CS is not trivially underconstrained.
 for fx in single-file-minimal single-file-depth10 multi-file-minimal multi-file-mixed-depth multi-file-padding; do
   echo
   echo "=== Phase A: $fx (precondition, prefix=1, 30m budget) ==="
-  cargo run -q --bin picus_verify -- \
+  cargo run -q --release --bin picus_verify -- \
     --fixture "$fx" \
     --picus-bin "$PICUS_BIN" \
     --solver cvc5 \
@@ -55,7 +55,7 @@ done
 for fx in single-file-minimal multi-file-minimal; do
   echo
   echo "=== Phase B: $fx (no precondition, prefix=1, 2h budget) ==="
-  cargo run -q --bin picus_verify -- \
+  cargo run -q --release --bin picus_verify -- \
     --fixture "$fx" \
     --picus-bin "$PICUS_BIN" \
     --solver cvc5 \
@@ -71,4 +71,3 @@ done
 
 echo
 echo "Done. Summaries in $OUT_ROOT"
-
