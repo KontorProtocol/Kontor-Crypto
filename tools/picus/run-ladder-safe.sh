@@ -225,7 +225,7 @@ run_case() {
     "${runtime_s}" \
     "${out_dir}" >> "${PROGRESS_TSV}"
 
-  echo "${fx} ${case_id} => exit=${code} runtime=${runtime_s}s (${out_dir})"
+  echo "${fx} ${case_id} => exit=${code} runtime=${runtime_s}s out_dir=${out_dir}"
 }
 
 for fx in "${FIXTURES[@]}"; do
