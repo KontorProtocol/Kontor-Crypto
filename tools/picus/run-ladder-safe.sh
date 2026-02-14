@@ -153,20 +153,22 @@ run_case() {
   start_s="$(date +%s)"
 
   if [[ "${want_pre}" == "1" ]]; then
-    "${PICUS_BIN}" \
-      --json "${json}" \
-      --timeout "${timeout_ms}" \
-      --solver "${SOLVER}" \
-      --log-level "${LOG_LEVEL}" \
-      --precondition "${pre}" \
-      "${r1cs}" >"${out}" 2>"${err}"
+    script -q "${out}" \
+      "${PICUS_BIN}" \
+        --json "${json}" \
+        --timeout "${timeout_ms}" \
+        --solver "${SOLVER}" \
+        --log-level "${LOG_LEVEL}" \
+        --precondition "${pre}" \
+        "${r1cs}" 2>"${err}"
   else
-    "${PICUS_BIN}" \
-      --json "${json}" \
-      --timeout "${timeout_ms}" \
-      --solver "${SOLVER}" \
-      --log-level "${LOG_LEVEL}" \
-      "${r1cs}" >"${out}" 2>"${err}"
+    script -q "${out}" \
+      "${PICUS_BIN}" \
+        --json "${json}" \
+        --timeout "${timeout_ms}" \
+        --solver "${SOLVER}" \
+        --log-level "${LOG_LEVEL}" \
+        "${r1cs}" 2>"${err}"
   fi
   local code=$?
 
