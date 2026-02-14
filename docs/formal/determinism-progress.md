@@ -29,6 +29,7 @@ Notes:
 - `artifacts/picus-runs/<run-id>/progress.tsv` (append-only index)
 - `artifacts/picus-runs/<run-id>/<fixture>/<case>/` (stdout/stderr, JSON log, exit code)
 
-The recommended runner is:
+Recommended helpers:
 - `tools/picus/run-ladder-safe.sh` (never kills solver processes)
-
+- `tools/picus/run-matrix-safe.sh` (parallelize independent proofs to use more cores)
+- `tools/picus/status.sh` (file-based status: shows what is still running vs done)
