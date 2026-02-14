@@ -1,6 +1,6 @@
 # Determinism Verification Report
 
-Last updated: February 13, 2026
+Last updated: February 14, 2026
 
 ## Scope
 - Circuit: `PorCircuit` one-step relation.
@@ -13,16 +13,26 @@ Last updated: February 13, 2026
 - Picus input artifact: `artifacts/picus/<fixture>/circuit.r1cs`
 
 ## Latest Results
-From `artifacts/picus-overnight/20260212-232000/*.summary.json` (overnight run):
-1. Phase A (witness precondition, root-only target via `--output-prefix-len 1`, 30m per fixture):
-   - `single-file-minimal`: `pass` (326,967ms)
-   - `single-file-depth10`: `pass` (391,485ms)
-   - `multi-file-minimal`: `pass` (803,226ms)
-   - `multi-file-mixed-depth`: `pass` (926,824ms)
-   - `multi-file-padding`: `pass` (1,748,492ms)
-2. Phase B (no precondition, root-only target, 2h per fixture):
-   - `single-file-minimal`: `inconclusive` (timeout/unknown, ~2h)
-   - `multi-file-minimal`: `inconclusive` (timeout/unknown, ~2h)
+From `artifacts/picus-runs/*/progress.tsv`:
+
+1. Root-only target (output prefix len = 1), witness precondition, 30m per fixture:
+   - Run: `artifacts/picus-runs/20260214-111246/`
+   - `single-file-minimal`: `pass` (`exit=8`, 346s)
+   - `single-file-depth10`: `pass` (`exit=8`, 408s)
+   - `multi-file-minimal`: `pass` (`exit=8`, 827s)
+   - `multi-file-mixed-depth`: `pass` (`exit=8`, 959s)
+   - `multi-file-padding`: `pass` (`exit=8`, 1797s)
+
+2. Root-only target (output prefix len = 1), no precondition, 20m:
+   - Run: `artifacts/picus-runs/20260214-115934/`
+   - `single-file-minimal`: `inconclusive` (`exit=0`, 1260s)
+
+3. Output prefix len = 2, witness precondition, 30m:
+   - Run: `artifacts/picus-runs/20260214-120130/`
+   - `single-file-minimal`: `pass` (`exit=8`, 360s)
+   - `single-file-depth10`: `pass` (`exit=8`, 420s)
+   - `multi-file-minimal`: `pass` (`exit=8`, 840s)
+   - `multi-file-mixed-depth`: `pass` (`exit=8`, 1020s)
 
 Current conclusion:
 - Harness is functioning and bounded.
