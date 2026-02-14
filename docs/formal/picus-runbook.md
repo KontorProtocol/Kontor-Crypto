@@ -141,6 +141,51 @@ cargo run --bin picus_export -- --all
 cargo run --bin picus_verify -- --all --timeout-secs 600
 ```
 
+## Important: Avoid Killing Other Solves
+`picus_verify` performs best-effort cleanup of stale solver processes between fixtures. This is useful after timeouts, but it can also accidentally terminate other long-running `run-picus`/`cvc5` processes on the same machine.
+
+If you have a valuable long-running solve in progress, prefer invoking Picus directly (see "Run Picus Directly" below), or use `tools/picus/run-ladder-safe.sh`, which never kills solver processes.
+
+## Export Variants (Prefix + Witness Precondition)
+`picus_export` can optionally export a reduced-output Picus circuit and emit a witness-guided Picus precondition:
+
+```bash
+cargo run --release --bin picus_export -- \
+  --fixture single-file-minimal \
+  --output-prefix-len 1 \
+  --picus-witness-precondition
+```
+
+This writes (under `artifacts/picus/<fixture>/`):
+- `circuit.r1cs` (full outputs, always)
+- `circuit.prefix1.r1cs` (reduced outputs, when `--output-prefix-len 1`)
+- `picus-precondition.json` (when `--picus-witness-precondition`)
+
+## Run Picus Directly (Recommended For Incremental Work)
+Directly invoking `run-picus` makes it easy to:
+- capture exit codes and JSON logs,
+- run multiple fixtures concurrently,
+- and avoid cleanup that might interrupt other solves.
+
+Example (no precondition, root-only target):
+```bash
+export SOLVER_PATH=/tmp/cvc5-install/bin/cvc5
+/path/to/run-picus \
+  --json artifacts/picus/single-file-minimal/picus-nopre.json \
+  --timeout 1200000 \
+  --solver cvc5 \
+  --log-level PROGRESS \
+  artifacts/picus/single-file-minimal/circuit.prefix1.r1cs
+echo $?
+```
+
+## Safe Ladder Runner
+For a "do the incremental thing for me" runner that never kills solver processes:
+```bash
+export SOLVER_PATH=/tmp/cvc5-install/bin/cvc5
+tools/picus/run-ladder-safe.sh --picus-bin /path/to/run-picus --all
+```
+
 ## Overnight Run Plan
 For a practical overnight run plan (mixed "conclusive with precondition" and "best-effort without precondition"), use:
 ```bash
