@@ -76,7 +76,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 if [[ "${ALL}" == "1" ]]; then
-  mapfile -t FIXTURES < <(python3 -c 'import json; print("\n".join(json.load(open("tools/picus/manifest.json"))["fixtures"]))')
+  FIXTURES=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && FIXTURES+=("${line}")
+  done < <(python3 -c 'import json; print("\n".join(json.load(open("tools/picus/manifest.json"))["fixtures"]))')
 fi
 
 if [[ "${#FIXTURES[@]}" -eq 0 ]]; then
