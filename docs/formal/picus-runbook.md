@@ -186,6 +186,35 @@ export SOLVER_PATH=/tmp/cvc5-install/bin/cvc5
 tools/picus/run-ladder-safe.sh --picus-bin /path/to/run-picus --all
 ```
 
+## Status / Progress Tracking
+Picus can spend a long time in the SMT solver without producing additional log
+lines. Use the file-based status helper to avoid guessing whether a run is hung:
+
+```bash
+tools/picus/status.sh
+tools/picus/status.sh --run-id 20260214-111246
+tools/picus/status.sh --watch --interval-secs 30
+```
+
+Both `tools/picus/run-ladder-safe.sh` and `tools/picus/run-matrix-safe.sh` also
+print periodic `still running:` heartbeats (default every 60s) while a case is
+actively solving.
+
+## Matrix Runner (Better Multi-Core Utilization)
+If you want to use multiple cores, the simplest strategy is to run multiple
+independent Picus proofs simultaneously:
+
+```bash
+export SOLVER_PATH=/tmp/cvc5-install/bin/cvc5
+tools/picus/run-matrix-safe.sh \
+  --picus-bin /path/to/run-picus \
+  --fixture single-file-minimal \
+  --prefix-lens 1,2,4 \
+  --stages witness \
+  --timeout-witness-secs 1800 \
+  --jobs 3
+```
+
 ## Overnight Run Plan
 For a practical overnight run plan (mixed "conclusive with precondition" and "best-effort without precondition"), use:
 ```bash

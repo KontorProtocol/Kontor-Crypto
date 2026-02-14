@@ -1,39 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Safe incremental Picus runs that do NOT kill solver processes.
+# Parallelize *independent* Picus proofs (fixture x prefix_len x stage) safely.
+# This does not kill solver processes and is safe to run alongside other long
+# running solves.
 #
-# Why "safe"? The repository's `picus_verify` binary performs best-effort cleanup
-# of stale Picus/cvc5 processes, which can accidentally terminate unrelated long
-# running solves. This script avoids that by calling `run-picus` directly.
+# Compared to run-ladder-safe.sh:
+# - This schedules each (fixture, prefix_len, stage) as its own job so you can
+#   easily saturate multiple CPU cores.
+# - Exports into each case directory to avoid export races under parallelism.
 #
-# Usage:
-#   tools/picus/run-ladder-safe.sh --picus-bin /path/to/run-picus --all
-#   tools/picus/run-ladder-safe.sh --picus-bin /path/to/run-picus --fixture single-file-minimal
+# Usage examples:
+#   export SOLVER_PATH=/tmp/cvc5-install/bin/cvc5
+#   tools/picus/run-matrix-safe.sh --picus-bin /Users/adam/dev/Picus/run-picus --all \
+#     --prefix-lens 1,2,4 --stages witness --timeout-witness-secs 1800 --jobs 6
 #
-# Environment:
-# - SOLVER_PATH should point to a CoCoA-enabled cvc5 for `--solver cvc5`.
-#   Example: export SOLVER_PATH=/tmp/cvc5-install/bin/cvc5
-#
-# Output:
-# - artifacts/picus-runs/<run-id>/progress.tsv (append-only status log)
-# - per-case folders with stdout/stderr + Picus JSON logs + exit code
+#   tools/picus/run-matrix-safe.sh --picus-bin /Users/adam/dev/Picus/run-picus \
+#     --fixture single-file-minimal --prefix-lens 1 --stages nopre --timeout-nopre-secs 7200 --jobs 1
 
 usage() {
   cat <<'EOF' >&2
 usage:
-  tools/picus/run-ladder-safe.sh --picus-bin /path/to/run-picus [--all | --fixture <id> ...]
+  tools/picus/run-matrix-safe.sh --picus-bin /path/to/run-picus [--all | --fixture <id> ...]
 
 optional:
   --run-id <id>                 default: YYYYmmdd-HHMMSS
   --solver <solver>             default: cvc5
   --log-level <level>           default: PROGRESS
   --jobs <n>                    default: 4
-  --heartbeat-secs <n>          default: 60 (prints liveness while solver runs)
-  --prefix-len <n>              default: 1
+  --heartbeat-secs <n>          default: 60
+  --prefix-lens <list>          default: 1   (comma/space-separated, e.g. "1,2,4")
+  --stages <list>               default: witness,nopre (comma/space-separated; values: witness, nopre)
   --timeout-witness-secs <n>    default: 1800 (30m)
   --timeout-nopre-secs <n>      default: 1200 (20m)
-  --no-nopre                    only run witness-precondition stage
 EOF
   exit 2
 }
@@ -44,10 +43,10 @@ SOLVER="cvc5"
 LOG_LEVEL="PROGRESS"
 JOBS=4
 HEARTBEAT_SECS=60
-PREFIX_LEN=1
+PREFIX_LENS_RAW="1"
+STAGES_RAW="witness,nopre"
 TIMEOUT_WITNESS_SECS=1800
 TIMEOUT_NOPRE_SECS=1200
-DO_NOPRE=1
 ALL=0
 FIXTURES=()
 
@@ -59,10 +58,10 @@ while [[ $# -gt 0 ]]; do
     --log-level) LOG_LEVEL="${2:-}"; shift 2 ;;
     --jobs) JOBS="${2:-}"; shift 2 ;;
     --heartbeat-secs) HEARTBEAT_SECS="${2:-}"; shift 2 ;;
-    --prefix-len) PREFIX_LEN="${2:-}"; shift 2 ;;
+    --prefix-lens) PREFIX_LENS_RAW="${2:-}"; shift 2 ;;
+    --stages) STAGES_RAW="${2:-}"; shift 2 ;;
     --timeout-witness-secs) TIMEOUT_WITNESS_SECS="${2:-}"; shift 2 ;;
     --timeout-nopre-secs) TIMEOUT_NOPRE_SECS="${2:-}"; shift 2 ;;
-    --no-nopre) DO_NOPRE=0; shift ;;
     --all) ALL=1; shift ;;
     --fixture) FIXTURES+=("${2:-}"); shift 2 ;;
     -h|--help) usage ;;
@@ -90,8 +89,17 @@ if [[ "${#FIXTURES[@]}" -eq 0 ]]; then
   exit 2
 fi
 
+split_list() {
+  # Split comma/space separated list into one item per line.
+  echo "$1" | tr ',' ' ' | tr -s ' ' '\n' | sed '/^$/d'
+}
+
+PREFIX_LENS=()
+while IFS= read -r x; do PREFIX_LENS+=("${x}"); done < <(split_list "${PREFIX_LENS_RAW}")
+STAGES=()
+while IFS= read -r x; do STAGES+=("${x}"); done < <(split_list "${STAGES_RAW}")
+
 OUT_ROOT="artifacts/picus-runs/${RUN_ID}"
-EXPORT_DIR="${OUT_ROOT}/export"
 mkdir -p "${OUT_ROOT}"
 
 PROGRESS_TSV="${OUT_ROOT}/progress.tsv"
@@ -99,11 +107,23 @@ if [[ ! -f "${PROGRESS_TSV}" ]]; then
   printf "ts_utc\tfixture\tcase\tprefix_len\tprecondition\ttimeout_ms\texit_code\truntime_s\tout_dir\n" > "${PROGRESS_TSV}"
 fi
 
+LOCK_DIR="${OUT_ROOT}/.progress_lock"
+
+append_progress_line() {
+  local line="$1"
+  while ! mkdir "${LOCK_DIR}" 2>/dev/null; do
+    sleep 0.05
+  done
+  printf "%s\n" "${line}" >> "${PROGRESS_TSV}"
+  rmdir "${LOCK_DIR}" 2>/dev/null || true
+}
+
 echo "Run ID:     ${RUN_ID}"
 echo "Output:     ${OUT_ROOT}"
 echo "Picus bin:  ${PICUS_BIN}"
 echo "Solver:     ${SOLVER} (SOLVER_PATH=${SOLVER_PATH:-<unset>})"
-echo "Prefix len: ${PREFIX_LEN}"
+echo "Prefixes:   ${PREFIX_LENS[*]}"
+echo "Stages:     ${STAGES[*]}"
 echo "Jobs:       ${JOBS}"
 echo "Heartbeat:  ${HEARTBEAT_SECS}s"
 echo
@@ -141,28 +161,37 @@ run_with_heartbeat() {
 
 run_case() {
   local fx="$1"
-  local case_id="$2"
-  local want_pre="$3" # 1/0
-  local timeout_secs="$4"
+  local prefix_len="$2"
+  local stage="$3" # witness|nopre
 
+  local pre_label="none"
+  local want_pre=0
+  local timeout_secs="${TIMEOUT_NOPRE_SECS}"
+  if [[ "${stage}" == "witness" ]]; then
+    pre_label="witness"
+    want_pre=1
+    timeout_secs="${TIMEOUT_WITNESS_SECS}"
+  fi
+
+  local case_id="prefix${prefix_len}/${stage}"
   local out_dir="${OUT_ROOT}/${fx}/${case_id}"
   mkdir -p "${out_dir}"
 
+  # Export into this case's directory to avoid races between parallel jobs.
+  local export_dir="${out_dir}/export"
   local export_args=(
     --fixture "${fx}"
-    --artifacts-dir "${EXPORT_DIR}"
-    --output-prefix-len "${PREFIX_LEN}"
+    --artifacts-dir "${export_dir}"
+    --output-prefix-len "${prefix_len}"
   )
   if [[ "${want_pre}" == "1" ]]; then
     export_args+=(--picus-witness-precondition)
   fi
 
-  # Export is deterministic and should be fast; run it in the case subshell so
-  # each case is self-contained (no shared mutable state besides EXPORT_DIR).
   "${PICUS_EXPORT_BIN}" "${export_args[@]}"
 
-  local r1cs="${EXPORT_DIR}/${fx}/circuit.prefix${PREFIX_LEN}.r1cs"
-  local pre="${EXPORT_DIR}/${fx}/picus-precondition.json"
+  local r1cs="${export_dir}/${fx}/circuit.prefix${prefix_len}.r1cs"
+  local pre="${export_dir}/${fx}/picus-precondition.json"
   local json="${out_dir}/picus.json"
   local out="${out_dir}/stdout.log"
   local err="${out_dir}/stderr.log"
@@ -200,8 +229,8 @@ run_case() {
           --log-level "${LOG_LEVEL}" \
           "${r1cs}" 2>"${err}"
   fi
-  local code=$?
 
+  local code=$?
   local end_s
   end_s="$(date +%s)"
   local runtime_s=$((end_s - start_s))
@@ -209,42 +238,35 @@ run_case() {
   echo "${code}" > "${out_dir}/exit_code.txt"
   echo "${runtime_s}" > "${out_dir}/runtime_s.txt"
 
-  local pre_label="none"
-  if [[ "${want_pre}" == "1" ]]; then
-    pre_label="witness"
-  fi
-
-  printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+  append_progress_line "$(printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "${fx}" \
     "${case_id}" \
-    "${PREFIX_LEN}" \
+    "${prefix_len}" \
     "${pre_label}" \
     "${timeout_ms}" \
     "${code}" \
     "${runtime_s}" \
-    "${out_dir}" >> "${PROGRESS_TSV}"
+    "${out_dir}")"
 
   echo "${fx} ${case_id} => exit=${code} runtime=${runtime_s}s (${out_dir})"
 }
 
 for fx in "${FIXTURES[@]}"; do
-  throttle
-  (
-    set +e
-    run_case "${fx}" "prefix${PREFIX_LEN}/witness" 1 "${TIMEOUT_WITNESS_SECS}"
-    rc=$?
-    if [[ "${rc}" -ne 0 ]]; then
-      echo "${fx} witness case failed (rc=${rc})" >&2
-      exit "${rc}"
-    fi
-
-    if [[ "${DO_NOPRE}" == "1" ]]; then
-      run_case "${fx}" "prefix${PREFIX_LEN}/nopre" 0 "${TIMEOUT_NOPRE_SECS}"
-      exit $?
-    fi
-    exit 0
-  ) &
+  for prefix_len in "${PREFIX_LENS[@]}"; do
+    for stage in "${STAGES[@]}"; do
+      if [[ "${stage}" != "witness" ]] && [[ "${stage}" != "nopre" ]]; then
+        echo "invalid stage: ${stage} (expected witness or nopre)" >&2
+        exit 2
+      fi
+      throttle
+      (
+        set +e
+        run_case "${fx}" "${prefix_len}" "${stage}"
+        exit $?
+      ) &
+    done
+  done
 done
 
 wait
@@ -252,3 +274,4 @@ wait
 echo
 echo "Done. Progress log: ${PROGRESS_TSV}"
 echo "Tip: column -t -s $'\\t' ${PROGRESS_TSV} | less -S"
+
