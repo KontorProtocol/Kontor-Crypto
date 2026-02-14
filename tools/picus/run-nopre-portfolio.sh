@@ -32,7 +32,7 @@ optional:
 
 environment:
   SOLVER_PATH should point to a CoCoA-enabled cvc5 (recommended: wrapper).
-  If SOLVER_PATH is unset, we default it to tools/picus/cvc5-portfolio-wrapper.sh.
+  If SOLVER_PATH is unset, we default it to tools/picus/cvc5-args-wrapper.sh.
   If CVC5_BIN is unset, we default it to /tmp/cvc5-install/bin/cvc5.
 EOF
   exit 2
@@ -75,16 +75,10 @@ if [[ -z "${PICUS_BIN}" ]] || [[ -z "${FIXTURE}" ]]; then
 fi
 
 if [[ -z "${SOLVER_PATH:-}" ]]; then
-  export SOLVER_PATH="tools/picus/cvc5-portfolio-wrapper.sh"
+  export SOLVER_PATH="tools/picus/cvc5-args-wrapper.sh"
 fi
 if [[ -z "${CVC5_BIN:-}" ]]; then
   export CVC5_BIN="/tmp/cvc5-install/bin/cvc5"
-fi
-# When running a process-level portfolio (many independent Picus runs), we
-# generally do not want cvc5 to also spawn an internal parallel portfolio unless
-# the user explicitly opts in. Default to 1 job for the wrapper.
-if [[ -z "${CVC5_PORTFOLIO_JOBS:-}" ]]; then
-  export CVC5_PORTFOLIO_JOBS=1
 fi
 
 echo "Run base:    ${RUN_BASE_ID}"
@@ -95,7 +89,7 @@ echo "Max parallel:${MAX_PARALLEL}"
 echo "Seeds:       ${SEEDS_RAW}"
 echo "FF solvers:  ${FF_SOLVERS_RAW}"
 echo "Picus bin:   ${PICUS_BIN}"
-echo "Solver:      ${SOLVER} (SOLVER_PATH=${SOLVER_PATH}, CVC5_BIN=${CVC5_BIN}, CVC5_PORTFOLIO_JOBS=${CVC5_PORTFOLIO_JOBS})"
+echo "Solver:      ${SOLVER} (SOLVER_PATH=${SOLVER_PATH}, CVC5_BIN=${CVC5_BIN})"
 echo
 
 throttle() {
