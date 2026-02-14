@@ -26,7 +26,12 @@ optional:
   --timeout-secs <n>        default: 7200 (2h)
   --max-parallel <n>        default: 4
   --seeds "<list>"          default: "1 2 3 4"
-  --ff-solvers "<list>"     default: "gb split" (gb = default; split = --ff-solver=split)
+  --ff-solvers "<list>"     default: "gb split"
+                            supported:
+                              - gb:         --ff
+                              - split:      --ff --ff-solver=split
+                              - gb_polys:   --ff --ff-field-polys
+                              - split_polys:--ff --ff-solver=split --ff-field-polys
   --solver <solver>         default: cvc5
   --log-level <level>       default: PROGRESS
 
@@ -120,8 +125,14 @@ for ff in "${FF_SOLVERS[@]}"; do
         split)
           export CVC5_EXTRA_ARGS="--ff --ff-solver=split --seed=${seed}"
           ;;
+        gb_polys)
+          export CVC5_EXTRA_ARGS="--ff --ff-field-polys --seed=${seed}"
+          ;;
+        split_polys)
+          export CVC5_EXTRA_ARGS="--ff --ff-solver=split --ff-field-polys --seed=${seed}"
+          ;;
         *)
-          echo "unknown ff solver mode: ${ff} (expected: gb, split)" >&2
+          echo "unknown ff solver mode: ${ff} (expected: gb, split, gb_polys, split_polys)" >&2
           exit 2
           ;;
       esac
