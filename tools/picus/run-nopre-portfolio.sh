@@ -80,6 +80,12 @@ fi
 if [[ -z "${CVC5_BIN:-}" ]]; then
   export CVC5_BIN="/tmp/cvc5-install/bin/cvc5"
 fi
+# When running a process-level portfolio (many independent Picus runs), we
+# generally do not want cvc5 to also spawn an internal parallel portfolio unless
+# the user explicitly opts in. Default to 1 job for the wrapper.
+if [[ -z "${CVC5_PORTFOLIO_JOBS:-}" ]]; then
+  export CVC5_PORTFOLIO_JOBS=1
+fi
 
 echo "Run base:    ${RUN_BASE_ID}"
 echo "Fixture:     ${FIXTURE}"
@@ -89,7 +95,7 @@ echo "Max parallel:${MAX_PARALLEL}"
 echo "Seeds:       ${SEEDS_RAW}"
 echo "FF solvers:  ${FF_SOLVERS_RAW}"
 echo "Picus bin:   ${PICUS_BIN}"
-echo "Solver:      ${SOLVER} (SOLVER_PATH=${SOLVER_PATH}, CVC5_BIN=${CVC5_BIN})"
+echo "Solver:      ${SOLVER} (SOLVER_PATH=${SOLVER_PATH}, CVC5_BIN=${CVC5_BIN}, CVC5_PORTFOLIO_JOBS=${CVC5_PORTFOLIO_JOBS})"
 echo
 
 throttle() {
@@ -148,4 +154,3 @@ echo
 echo "All portfolio jobs finished. To inspect:"
 echo "  ls -1 artifacts/picus-runs | rg \"^${RUN_BASE_ID}\""
 echo "  tools/picus/status.sh --watch --interval-secs 30"
-
