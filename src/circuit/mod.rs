@@ -12,6 +12,7 @@
 #[cfg(debug_assertions)]
 pub mod debug;
 pub mod gadgets;
+pub mod lite;
 pub mod synth;
 pub mod witness;
 

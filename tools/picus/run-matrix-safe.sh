@@ -27,11 +27,16 @@ optional:
   --run-id <id>                 default: YYYYmmdd-HHMMSS
   --solver <solver>             default: cvc5
   --log-level <level>           default: PROGRESS
+  --selector <selector>         default: (Picus default)
+                               values: counter | first
+  --noprop                      disable Picus propagation
   --jobs <n>                    default: 4
   --heartbeat-secs <n>          default: 60
   --prefix-lens <list>          default: 1   (comma/space-separated, e.g. "1,2,4")
-  --stages <list>               default: witness,nopre (comma/space-separated; values: witness, nopre)
+  --stages <list>               default: witness,nopre (comma/space-separated; values: witness, leafpath, inputs, nopre)
   --timeout-witness-secs <n>    default: 1800 (30m)
+  --timeout-leafpath-secs <n>   default: 900 (15m)
+  --timeout-inputs-secs <n>     default: 900 (15m)
   --timeout-nopre-secs <n>      default: 1200 (20m)
 EOF
   exit 2
@@ -41,11 +46,15 @@ PICUS_BIN=""
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 SOLVER="cvc5"
 LOG_LEVEL="PROGRESS"
+SELECTOR=""
+NOPROP=0
 JOBS=4
 HEARTBEAT_SECS=60
 PREFIX_LENS_RAW="1"
 STAGES_RAW="witness,nopre"
 TIMEOUT_WITNESS_SECS=1800
+TIMEOUT_LEAFPATH_SECS=900
+TIMEOUT_INPUTS_SECS=900
 TIMEOUT_NOPRE_SECS=1200
 ALL=0
 FIXTURES=()
@@ -56,11 +65,15 @@ while [[ $# -gt 0 ]]; do
     --run-id) RUN_ID="${2:-}"; shift 2 ;;
     --solver) SOLVER="${2:-}"; shift 2 ;;
     --log-level) LOG_LEVEL="${2:-}"; shift 2 ;;
+    --selector) SELECTOR="${2:-}"; shift 2 ;;
+    --noprop) NOPROP=1; shift ;;
     --jobs) JOBS="${2:-}"; shift 2 ;;
     --heartbeat-secs) HEARTBEAT_SECS="${2:-}"; shift 2 ;;
     --prefix-lens) PREFIX_LENS_RAW="${2:-}"; shift 2 ;;
     --stages) STAGES_RAW="${2:-}"; shift 2 ;;
     --timeout-witness-secs) TIMEOUT_WITNESS_SECS="${2:-}"; shift 2 ;;
+    --timeout-leafpath-secs) TIMEOUT_LEAFPATH_SECS="${2:-}"; shift 2 ;;
+    --timeout-inputs-secs) TIMEOUT_INPUTS_SECS="${2:-}"; shift 2 ;;
     --timeout-nopre-secs) TIMEOUT_NOPRE_SECS="${2:-}"; shift 2 ;;
     --all) ALL=1; shift ;;
     --fixture) FIXTURES+=("${2:-}"); shift 2 ;;
@@ -122,6 +135,12 @@ echo "Run ID:     ${RUN_ID}"
 echo "Output:     ${OUT_ROOT}"
 echo "Picus bin:  ${PICUS_BIN}"
 echo "Solver:     ${SOLVER} (SOLVER_PATH=${SOLVER_PATH:-<unset>})"
+if [[ -n "${SELECTOR}" ]]; then
+  echo "Selector:   ${SELECTOR}"
+fi
+if [[ "${NOPROP}" == "1" ]]; then
+  echo "Propagation: disabled (--noprop)"
+fi
 echo "Prefixes:   ${PREFIX_LENS[*]}"
 echo "Stages:     ${STAGES[*]}"
 echo "Jobs:       ${JOBS}"
@@ -162,7 +181,7 @@ run_with_heartbeat() {
 run_case() {
   local fx="$1"
   local prefix_len="$2"
-  local stage="$3" # witness|nopre
+  local stage="$3" # witness|leafpath|inputs|nopre
 
   local pre_label="none"
   local want_pre=0
@@ -171,6 +190,14 @@ run_case() {
     pre_label="witness"
     want_pre=1
     timeout_secs="${TIMEOUT_WITNESS_SECS}"
+  elif [[ "${stage}" == "leafpath" ]]; then
+    pre_label="leafpath"
+    want_pre=1
+    timeout_secs="${TIMEOUT_LEAFPATH_SECS}"
+  elif [[ "${stage}" == "inputs" ]]; then
+    pre_label="inputs"
+    want_pre=1
+    timeout_secs="${TIMEOUT_INPUTS_SECS}"
   fi
 
   local case_id="prefix${prefix_len}/${stage}"
@@ -184,8 +211,12 @@ run_case() {
     --artifacts-dir "${export_dir}"
     --output-prefix-len "${prefix_len}"
   )
-  if [[ "${want_pre}" == "1" ]]; then
+  if [[ "${stage}" == "witness" ]]; then
     export_args+=(--picus-witness-precondition)
+  elif [[ "${stage}" == "leafpath" ]]; then
+    export_args+=(--picus-leafpath-precondition)
+  elif [[ "${stage}" == "inputs" ]]; then
+    export_args+=(--picus-input-precondition)
   fi
 
   "${PICUS_EXPORT_BIN}" "${export_args[@]}"
@@ -209,24 +240,31 @@ run_case() {
   local start_s
   start_s="$(date +%s)"
 
+  local picus_args=(
+    --json "${json}"
+    --timeout "${timeout_ms}"
+    --solver "${SOLVER}"
+    --log-level "${LOG_LEVEL}"
+  )
+  if [[ -n "${SELECTOR}" ]]; then
+    picus_args+=(--selector "${SELECTOR}")
+  fi
+  if [[ "${NOPROP}" == "1" ]]; then
+    picus_args+=(--noprop)
+  fi
+
   if [[ "${want_pre}" == "1" ]]; then
     run_with_heartbeat "${fx} ${case_id}" "${HEARTBEAT_SECS}" \
       script -q "${out}" \
         "${PICUS_BIN}" \
-          --json "${json}" \
-          --timeout "${timeout_ms}" \
-          --solver "${SOLVER}" \
-          --log-level "${LOG_LEVEL}" \
+          "${picus_args[@]}" \
           --precondition "${pre}" \
           "${r1cs}" 2>"${err}"
   else
     run_with_heartbeat "${fx} ${case_id}" "${HEARTBEAT_SECS}" \
       script -q "${out}" \
         "${PICUS_BIN}" \
-          --json "${json}" \
-          --timeout "${timeout_ms}" \
-          --solver "${SOLVER}" \
-          --log-level "${LOG_LEVEL}" \
+          "${picus_args[@]}" \
           "${r1cs}" 2>"${err}"
   fi
 
@@ -255,8 +293,8 @@ run_case() {
 for fx in "${FIXTURES[@]}"; do
   for prefix_len in "${PREFIX_LENS[@]}"; do
     for stage in "${STAGES[@]}"; do
-      if [[ "${stage}" != "witness" ]] && [[ "${stage}" != "nopre" ]]; then
-        echo "invalid stage: ${stage} (expected witness or nopre)" >&2
+      if [[ "${stage}" != "witness" ]] && [[ "${stage}" != "leafpath" ]] && [[ "${stage}" != "inputs" ]] && [[ "${stage}" != "nopre" ]]; then
+        echo "invalid stage: ${stage} (expected witness, leafpath, inputs, or nopre)" >&2
         exit 2
       fi
       throttle
@@ -274,4 +312,3 @@ wait
 echo
 echo "Done. Progress log: ${PROGRESS_TSV}"
 echo "Tip: column -t -s $'\\t' ${PROGRESS_TSV} | less -S"
-

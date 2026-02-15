@@ -6,7 +6,14 @@ This specification covers the one-step `PorCircuit` relation used by the Nova pr
 This does not claim determinism for Nova recursion internals; it targets the step relation itself.
 
 ## Statement
-For a fixed circuit shape `(files_per_step, file_tree_depth, aggregated_tree_depth)` and fixed public vector `z`, there must not exist two satisfying witnesses that violate intended binding semantics.
+The production `PorCircuit` is inherently a *relation*, not a function of public `z` alone:
+`state_out = Poseidon(state_in, leaf)` where `leaf` is witness-private.
+
+We therefore target the following determinism/uniqueness statement for formal verification:
+
+For a fixed circuit shape `(files_per_step, file_tree_depth, aggregated_tree_depth)`, fixed public vector `z`,
+and fixed witness material that defines the transition (leaf + Merkle siblings, and the associated selector/gating bits),
+Picus must conclude the circuit is properly constrained (no alternative satisfying assignments that change the step outputs).
 
 ## Required Properties
 1. Public output binding:
@@ -37,6 +44,6 @@ Each fixture export must include:
 
 ## Acceptance Criteria
 1. For each fixture in `tools/picus/manifest.json`, artifacts export deterministically.
-2. Picus analysis classifies each fixture as `safe` (or `pass` in wrapper status mapping).
-3. Any `unsafe` classification is treated as a determinism violation and must be fixed before acceptance.
-4. `unknown`/timeout is inconclusive and must be explicitly tracked.
+2. Picus analysis classifies each fixture as `safe` (`exit=8`) under the leaf+path precondition.
+3. Any `unsafe` classification (`exit=9`) is treated as a determinism/underconstraint violation and must be fixed before acceptance.
+4. `unknown`/timeout (`exit=0`) is inconclusive and must be explicitly tracked.

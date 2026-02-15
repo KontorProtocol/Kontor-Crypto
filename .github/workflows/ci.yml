@@ -70,3 +70,40 @@ jobs:
           fi
       - name: Run security audit
         run: cargo audit
+
+  formal_determinism_smoke:
+    if: ${{ vars.ENABLE_FORMAL_PICUS_SMOKE == 'true' }}
+    runs-on: ubuntu-x86-8cpu
+    env:
+      PICUS_R1CS_CONVERTER_BIN: ${{ vars.PICUS_R1CS_CONVERTER_BIN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-formal-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-formal-
+
+      - name: Install Picus
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install "git+https://github.com/Veridise/Picus.git@v2.2.0"
+
+      - name: Run formal determinism smoke fixtures
+        run: |
+          cargo run --bin picus_verify -- \
+            --fixture single-file-minimal \
+            --fixture multi-file-minimal \
+            --timeout-secs 300

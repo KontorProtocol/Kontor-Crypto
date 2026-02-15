@@ -1,0 +1,32 @@
+{
+  "fixture_id": "single-file-tiny-depth2-ch1-lite-merkle-poseidon-challenge-bits",
+  "description": "Merkle+Poseidon rung: Poseidon->to_bits path selection feeding real Merkle gadget (no witness freedom)",
+  "scenario_kind": "tiny_merkle",
+  "circuit_kind": "lite_merkle_poseidon_challenge_bits",
+  "challenge_count": 1,
+  "seed": 62345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": false,
+  "file_specs": [
+    {
+      "size": 124,
+      "seed": 601,
+      "toy_padded_len": 4
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 2,
+    "aggregated_tree_depth": 0
+  },
+  "tags": [
+    "toy",
+    "single",
+    "tiny",
+    "depth2",
+    "challenge1",
+    "lite_merkle_poseidon_challenge_bits"
+  ]
+}
+

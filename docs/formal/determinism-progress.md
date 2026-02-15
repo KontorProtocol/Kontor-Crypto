@@ -23,7 +23,8 @@ We aim to climb this ladder, stopping only when we get conclusive `8`/`9` result
 
 Notes:
 - A `pass` under witness precondition is a smoke/sanity check, not the final proof.
-- The key evidence is `pass` under no precondition.
+- The production `PorCircuit` is a relation; "no precondition" runs are expected to be difficult/inconclusive.
+- The key evidence is `pass` under the leaf+path precondition (see `determinism-spec.md`).
 
 ## Recorded Runs
 
@@ -44,6 +45,20 @@ Run: `artifacts/picus-runs/20260214-120130/` (witness precondition, 30m budget)
 - `single-file-depth10 prefix2/witness`: `exit=8` (`pass`), 420s
 - `multi-file-minimal prefix2/witness`: `exit=8` (`pass`), 840s
 - `multi-file-mixed-depth prefix2/witness`: `exit=8` (`pass`), 1020s
+
+### February 15, 2026 (Prefix Len = 2, Leaf+Path Precondition)
+These runs use `--picus-leafpath-precondition` (pins inputs + leaf + siblings + selector/gating bits for convergence).
+
+- Run: `artifacts/picus-runs/20260215-single-file-minimal-leafpath-prefix2/`
+  - `single-file-minimal prefix2/leafpath`: `exit=8` (`pass`), 480s
+- Run: `artifacts/picus-runs/20260215-single-file-depth10-leafpath-prefix2/`
+  - `single-file-depth10 prefix2/leafpath`: `exit=8` (`pass`), 420s
+- Run: `artifacts/picus-runs/20260215-multi-file-minimal-leafpath-prefix2/`
+  - `multi-file-minimal prefix2/leafpath`: `exit=8` (`pass`), 900s
+- Run: `artifacts/picus-runs/20260215-multi-file-mixed-depth-leafpath-prefix2/`
+  - `multi-file-mixed-depth prefix2/leafpath`: `exit=8` (`pass`), 1020s
+- Run: `artifacts/picus-runs/20260215-multi-file-padding-leafpath-prefix2/`
+  - `multi-file-padding prefix2/leafpath`: `exit=8` (`pass`), 1860s
 
 ## Where Runs Are Stored
 - `artifacts/picus-runs/<run-id>/progress.tsv` (append-only index)

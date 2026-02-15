@@ -1,6 +1,6 @@
 # Picus Runbook
 
-## Current Status (February 13, 2026)
+## Current Status (February 15, 2026)
 - Deterministic fixture export is implemented and emits Picus-ready `circuit.r1cs` directly from `ShapeCS`.
 - `picus_verify` supports bounded execution with:
   - `--timeout-secs` (forwarded to Picus in ms),
@@ -8,9 +8,10 @@
   - `--solver`,
   - `--picus-log-level`,
   - stale solver cleanup between runs/fixtures.
-- Toolchain is now producing conclusive results on small scopes when using a correct finite-field solver setup:
-  - `single-file-tiny-depth1` with `--output-prefix-len 1` can reach `pass` using `cvc5` (CoCoA-enabled).
-- Formal conclusion for the main fixture matrix (`tools/picus/manifest.json`) is not complete yet.
+- Toolchain is producing conclusive results on production circuit fixtures using a "leaf+path" precondition:
+  - `--picus-leafpath-precondition` fixes public inputs plus the witness material needed to define the transition (leaf + Merkle siblings),
+    and for convergence it also pins the derived path selector bits and active-flag gating bits.
+  - Under this scope, Picus reaches `safe` (`exit=8`) on all fixtures in `tools/picus/manifest.json` with `--output-prefix-len 2`.
 
 ## Big-Picture Goal
 Prove the `PorCircuit` one-step relation is deterministically constrained for fixed public inputs and fixed shape. See `docs/formal/determinism-spec.md`.
@@ -161,6 +162,22 @@ This writes (under `artifacts/picus/<fixture>/`):
 - `circuit.prefix1.r1cs` (reduced outputs, when `--output-prefix-len 1`)
 - `picus-precondition.json` (when `--picus-witness-precondition`)
 
+## Export Variant (Leaf+Path Precondition)
+To pin only the witness material relevant to state transition (instead of fixing all aux wires):
+
+```bash
+cargo run --release --bin picus_export -- \
+  --fixture single-file-minimal \
+  --output-prefix-len 2 \
+  --picus-leafpath-precondition
+```
+
+This writes `picus-precondition.json` that fixes:
+- wire 0 (constant one),
+- all public `z` inputs,
+- witness `leaf` and Merkle siblings,
+- Merkle path selector bits and `active_flags` bits (for convergence).
+
 ## Run Picus Directly (Recommended For Incremental Work)
 Directly invoking `run-picus` makes it easy to:
 - capture exit codes and JSON logs,
@@ -216,8 +233,18 @@ tools/picus/run-matrix-safe.sh \
 ```
 
 ## Overnight Run Plan
-For a practical overnight run plan (mixed "conclusive with precondition" and "best-effort without precondition"), use:
+For a practical run over the main fixture matrix that should converge (single job is safest for memory):
+
 ```bash
+export SOLVER_PATH=/tmp/cvc5-install/bin/cvc5
+tools/picus/run-matrix-safe.sh \
+  --picus-bin /path/to/run-picus \
+  --all \
+  --prefix-lens 2 \
+  --stages leafpath \
+  --timeout-leafpath-secs 3600 \
+  --jobs 1
+```
 tools/picus/run-overnight.sh /path/to/run-picus
 ```
 

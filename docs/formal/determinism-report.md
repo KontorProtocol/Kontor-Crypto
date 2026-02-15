@@ -1,6 +1,6 @@
 # Determinism Verification Report
 
-Last updated: February 14, 2026
+Last updated: February 15, 2026
 
 ## Scope
 - Circuit: `PorCircuit` one-step relation.
@@ -34,11 +34,36 @@ From `artifacts/picus-runs/*/progress.tsv`:
    - `multi-file-minimal`: `pass` (`exit=8`, 840s)
    - `multi-file-mixed-depth`: `pass` (`exit=8`, 1020s)
 
+4. Output prefix len = 2, leaf+path precondition, 60m budgets as needed:
+   - `single-file-minimal`: `pass` (`exit=8`, 480s)
+     - Run: `artifacts/picus-runs/20260215-single-file-minimal-leafpath-prefix2/`
+   - `single-file-depth10`: `pass` (`exit=8`, 420s)
+     - Run: `artifacts/picus-runs/20260215-single-file-depth10-leafpath-prefix2/`
+   - `multi-file-minimal`: `pass` (`exit=8`, 900s)
+     - Run: `artifacts/picus-runs/20260215-multi-file-minimal-leafpath-prefix2/`
+   - `multi-file-mixed-depth`: `pass` (`exit=8`, 1020s)
+     - Run: `artifacts/picus-runs/20260215-multi-file-mixed-depth-leafpath-prefix2/`
+   - `multi-file-padding`: `pass` (`exit=8`, 1860s)
+     - Run: `artifacts/picus-runs/20260215-multi-file-padding-leafpath-prefix2/`
+
 Current conclusion:
 - Harness is functioning and bounded.
-- At least one conclusive `pass` has been achieved on a minimal non-trivial scope.
-- Determinism is not yet proven for the main fixture matrix in `tools/picus/manifest.json`.
-  - Phase A `pass` results used a witness-guided precondition and only targeted the first output; this is useful evidence that the exported constraints are not trivially underconstrained in that scoped configuration, but it is not sufficient to claim full determinism.
+- Picus reaches conclusive `safe` (`exit=8`) on the full fixture matrix in `tools/picus/manifest.json` under the leaf+path precondition.
+- "No precondition" determinism on public `z` alone is not an expected property of the production circuit (it is a relation).
+
+## Critical Known Gap (Must Fix)
+During validation we found that some “carry-forward” outputs are currently allocated as fresh
+aux variables at the end of `PorCircuit` synthesis without enforcing equality constraints back
+to their intended values (e.g. `root_out` should equal the public root input).
+
+This means that a Picus run targeting those outputs can be misleading: if a target signal is
+not actually constrained by the R1CS, then a “safe” result is not establishing the intended
+semantic statement (“outputs are uniquely determined”), because the circuit is not yet
+binding those outputs to the computation.
+
+Next action: add explicit equality constraints for the carry-forward outputs in
+`src/circuit/synth.rs`, re-export the fixtures, and re-run the Picus matrix. See
+`docs/formal/determinism-big-picture.md`.
 
 ## Coverage
 Fixture matrix currently defined:
@@ -61,10 +86,12 @@ This covers:
 - hard timeout enforcement and process-tree cleanup in `src/bin/picus_verify.rs`;
 - stale solver cleanup between fixtures/runs.
 3. New prerequisite: use a CoCoA-enabled `cvc5` for finite-field (`QF_FF`) solving. See `docs/formal/picus-runbook.md`.
-4. Remaining blocker: reaching `pass`/`violation` on main fixtures without relying on witness-guided preconditions (and eventually expanding targets beyond `--output-prefix-len 1`).
+4. Achieved: conclusive `pass` on all manifest fixtures under a leaf+path precondition with `--output-prefix-len 2`.
+5. Remaining work: decide whether to formalize additional properties (e.g., strict uniqueness of gating selectors from public depth) and/or add a negative-control mutant circuit to validate detection power.
 
 ## Residual Risk
-1. Current evidence does not establish `pass` for the main fixture matrix, so the determinism claim is pending.
+1. Until the carry-forward output equality constraints are fixed, `safe` results involving those
+   outputs do not establish the intended determinism claim.
 2. Fixture matrix is finite and may not cover all pathological witness patterns.
 3. Picus one-step analysis does not prove full Nova recursion system correctness.
 

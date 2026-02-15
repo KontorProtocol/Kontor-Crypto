@@ -1,0 +1,32 @@
+{
+  "fixture_id": "single-file-tiny-depth0-ch1-lite-linear",
+  "description": "Stripped-down PorCircuit (lite_linear) on a 1-leaf toy fixture for Picus convergence sanity checks",
+  "scenario_kind": "tiny_merkle",
+  "circuit_kind": "lite_linear",
+  "challenge_count": 1,
+  "seed": 62345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": false,
+  "file_specs": [
+    {
+      "size": 31,
+      "seed": 601,
+      "toy_padded_len": 1
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 1,
+    "aggregated_tree_depth": 0
+  },
+  "tags": [
+    "toy",
+    "single",
+    "tiny",
+    "depth0",
+    "challenge1",
+    "lite_linear"
+  ]
+}
+

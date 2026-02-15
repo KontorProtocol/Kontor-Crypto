@@ -23,6 +23,17 @@ struct Args {
     #[arg(long)]
     picus_witness_precondition: bool,
 
+    /// Emit a Picus precondition that fixes only the public inputs (z) to this fixture's instance.
+    /// This matches the "fixed public z" scope in determinism-spec and is typically much easier
+    /// than a fully symbolic no-precondition run.
+    #[arg(long, conflicts_with = "picus_witness_precondition")]
+    picus_input_precondition: bool,
+
+    /// Emit a Picus precondition that fixes the public inputs plus the witness leaf/path values
+    /// (leaf + Merkle siblings), without fixing intermediate wires.
+    #[arg(long, conflicts_with_all = ["picus_witness_precondition", "picus_input_precondition"])]
+    picus_leafpath_precondition: bool,
+
     /// Path to fixture manifest file
     #[arg(long, default_value = "tools/picus/manifest.json")]
     manifest: PathBuf,
@@ -61,10 +72,26 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
     if args.picus_witness_precondition {
         println!("- Picus witness precondition: enabled");
     }
+    if args.picus_input_precondition {
+        println!("- Picus input-fixed precondition: enabled");
+    }
+    if args.picus_leafpath_precondition {
+        println!("- Picus leaf+path precondition: enabled");
+    }
 
     for fixture_id in fixture_ids {
         let fixture = formal::load_fixture(&args.fixtures_dir, &fixture_id)?;
-        let output = if args.output_prefix_len == 0 && !args.picus_witness_precondition {
+        let picus_pre = if args.picus_witness_precondition {
+            formal::PicusPreconditionKind::WitnessExceptOutputs
+        } else if args.picus_input_precondition {
+            formal::PicusPreconditionKind::InputsOnly
+        } else if args.picus_leafpath_precondition {
+            formal::PicusPreconditionKind::InputsPlusLeafPathOnly
+        } else {
+            formal::PicusPreconditionKind::None
+        };
+
+        let output = if args.output_prefix_len == 0 && picus_pre == formal::PicusPreconditionKind::None {
             formal::export_fixture(&fixture, &args.artifacts_dir)?
         } else {
             formal::export_fixture_for_picus_verify(
@@ -75,7 +102,7 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
                 } else {
                     Some(args.output_prefix_len)
                 },
-                args.picus_witness_precondition,
+                picus_pre,
             )?
         };
 

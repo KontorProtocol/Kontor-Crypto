@@ -1,0 +1,29 @@
+{
+  "fixture_id": "single-file-tiny-depth0-ch1",
+  "description": "Toy single-file fixture with a 1-leaf Merkle tree (depth=0) and challenge_count=1 for fastest Picus convergence testing",
+  "scenario_kind": "tiny_merkle",
+  "challenge_count": 1,
+  "seed": 62345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": false,
+  "file_specs": [
+    {
+      "size": 31,
+      "seed": 601,
+      "toy_padded_len": 1
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 1,
+    "aggregated_tree_depth": 0
+  },
+  "tags": [
+    "toy",
+    "single",
+    "tiny",
+    "depth0",
+    "challenge1"
+  ]
+}

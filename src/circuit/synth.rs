@@ -10,6 +10,7 @@ use nova_snark::frontend::{
         boolean::{AllocatedBit, Boolean},
         num::AllocatedNum,
     },
+    Index,
     ConstraintSystem, SynthesisError,
 };
 #[cfg(debug_assertions)]
@@ -24,6 +25,23 @@ use super::witness::{CircuitWitness, FileProofWitness};
 use crate::config;
 use crate::poseidon::domain_tags;
 
+/// Trace of witness-backed allocations in `PorCircuit` synthesis.
+///
+/// This is used by formal tooling to generate Picus preconditions that pin only the
+/// witness material that should define the transition (e.g. leaf + Merkle siblings),
+/// without fixing all intermediate wires.
+///
+/// For convergence, we also record certain boolean selector/gating bits (path bits and
+/// active flags) that are not outputs but can otherwise make the determinism query expensive.
+#[derive(Debug, Default, Clone)]
+pub struct PorWitnessTrace {
+    pub leaf_aux: Vec<usize>,
+    pub file_sibling_aux: Vec<Vec<usize>>,
+    pub agg_sibling_aux: Vec<Vec<usize>>,
+    pub file_path_bit_aux: Vec<Vec<usize>>,
+    pub active_flag_aux: Vec<Vec<usize>>,
+}
+
 /// Main circuit synthesis function for the Nova PoR circuit
 pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSystem<F>>(
     cs: &mut CS,
@@ -33,6 +51,46 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
     aggregated_tree_depth: usize,
     witness: Option<&CircuitWitness<F>>,
 ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
+    synthesize_por_circuit_with_trace(
+        cs,
+        z,
+        files_per_step,
+        file_tree_depth,
+        aggregated_tree_depth,
+        witness,
+        None,
+    )
+}
+
+/// Synthesize the real `PorCircuit`, optionally recording the aux indices of specific witness
+/// allocations (leaf + siblings) for Picus precondition export.
+pub fn synthesize_por_circuit_with_trace<F: PrimeField + PrimeFieldBits, CS: ConstraintSystem<F>>(
+    cs: &mut CS,
+    z: &[AllocatedNum<F>],
+    files_per_step: usize,
+    file_tree_depth: usize,
+    aggregated_tree_depth: usize,
+    witness: Option<&CircuitWitness<F>>,
+    mut trace: Option<&mut PorWitnessTrace>,
+) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
+    fn aux_index<F: PrimeField>(num: &AllocatedNum<F>) -> Result<usize, SynthesisError> {
+        match num.get_variable().get_unchecked() {
+            Index::Aux(idx) => Ok(idx),
+            Index::Input(_) => Err(SynthesisError::Unsatisfiable),
+        }
+    }
+
+    fn bool_aux_index<F: PrimeField>(b: &Boolean) -> Result<Option<usize>, SynthesisError> {
+        let var = match b {
+            Boolean::Is(bit) | Boolean::Not(bit) => bit.get_variable(),
+            Boolean::Constant(_) => return Ok(None),
+        };
+        match var.get_unchecked() {
+            Index::Aux(idx) => Ok(Some(idx)),
+            Index::Input(_) => Err(SynthesisError::Unsatisfiable),
+        }
+    }
+
     // Use centralized layout helper
     let layout = config::PublicIOLayout::new(files_per_step);
 
@@ -194,6 +252,17 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
             })
             .collect::<Result<_, _>>()?;
 
+        if let Some(t) = trace.as_deref_mut() {
+            t.leaf_aux.push(aux_index(&leaf_alloc)?);
+            t.file_sibling_aux
+                .push(file_siblings_alloc.iter().map(aux_index).collect::<Result<_, _>>()?);
+            // Fill agg siblings with an empty placeholder; updated below in multi-file branch.
+            t.agg_sibling_aux.push(Vec::new());
+            // Filled below after we build them.
+            t.file_path_bit_aux.push(Vec::new());
+            t.active_flag_aux.push(Vec::new());
+        }
+
         // 2. Calculate challenge index for this file
         // Include file_idx to ensure different challenges per file (only for multi-file)
         let file_idx_field = if aggregated_tree_depth > 0 {
@@ -262,6 +331,18 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
             }
         }
 
+        if let Some(t) = trace.as_deref_mut() {
+            if let Some(slot) = t.file_path_bit_aux.get_mut(file_idx) {
+                let mut v = Vec::with_capacity(file_path_indices.len());
+                for b in &file_path_indices {
+                    if let Some(idx) = bool_aux_index::<F>(b)? {
+                        v.push(idx);
+                    }
+                }
+                *slot = v;
+            }
+        }
+
         // 4. Verify Merkle path within this file's tree (gated for correct depth)
         // IMPORTANT: active_flags must be allocated variables (not constants) to maintain uniform constraint count
         // Boolean::Constant() would create different circuit shapes between parameter generation and proving
@@ -276,6 +357,18 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
                 Ok(Boolean::from(bit))
             })
             .collect::<Result<Vec<Boolean>, SynthesisError>>()?;
+
+        if let Some(t) = trace.as_deref_mut() {
+            if let Some(slot) = t.active_flag_aux.get_mut(file_idx) {
+                let mut v = Vec::with_capacity(active_flags.len());
+                for b in &active_flags {
+                    if let Some(idx) = bool_aux_index::<F>(b)? {
+                        v.push(idx);
+                    }
+                }
+                *slot = v;
+            }
+        }
 
         // Gating logic: only process slots with public_depth > 0
         // This prevents padding files from being processed regardless of slot position
@@ -390,6 +483,15 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
                     })
                 })
                 .collect::<Result<_, _>>()?;
+
+            if let Some(t) = trace.as_deref_mut() {
+                if let Some(slot) = t.agg_sibling_aux.get_mut(file_idx) {
+                    *slot = agg_siblings_alloc
+                        .iter()
+                        .map(aux_index)
+                        .collect::<Result<Vec<_>, _>>()?;
+                }
+            }
 
             // Verify that rc is in the aggregated tree at the public ledger index
             let computed_agg_root = verify_aggregation_path_gated(

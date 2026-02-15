@@ -1,0 +1,32 @@
+{
+  "fixture_id": "single-file-tiny-depth1-ch1-lite-poseidon-state-only",
+  "description": "Stripped-down PorCircuit (lite_poseidon_state_only) on a 2-leaf toy fixture to isolate Poseidon gadget determinism/convergence",
+  "scenario_kind": "tiny_merkle",
+  "circuit_kind": "lite_poseidon_state_only",
+  "challenge_count": 1,
+  "seed": 62345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": false,
+  "file_specs": [
+    {
+      "size": 62,
+      "seed": 601,
+      "toy_padded_len": 2
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 1,
+    "aggregated_tree_depth": 0
+  },
+  "tags": [
+    "toy",
+    "single",
+    "tiny",
+    "depth1",
+    "challenge1",
+    "lite_poseidon_state_only"
+  ]
+}
+

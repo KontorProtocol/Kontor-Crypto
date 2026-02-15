@@ -5,6 +5,12 @@
 
 use crate::api::{prepare_file, tree_depth_from_metadata, Challenge, FieldElement, PreparedFile};
 use crate::circuit::PorCircuit;
+use crate::circuit::lite::{
+    PorCircuitLiteLinear, PorCircuitLiteMerklePoseidonDet, PorCircuitLiteMul,
+    PorCircuitLiteMerklePoseidonChallengeBits, PorCircuitLitePoseidonBits,
+    PorCircuitLitePoseidonStateOnly,
+};
+use crate::circuit::synth::{synthesize_por_circuit_with_trace, PorWitnessTrace};
 use crate::config::{self, PublicIOLayout};
 use crate::ledger::FileLedger;
 use crate::poseidon::calculate_root_commitment;
@@ -47,6 +53,28 @@ pub enum ScenarioKind {
     TinyMerkle,
 }
 
+/// Which circuit implementation to synthesize for a fixture export.
+///
+/// `full` is the production `PorCircuit`. Other kinds are stripped-down variants used to get
+/// conclusive Picus results and to isolate solver bottlenecks.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CircuitKind {
+    Full,
+    LiteLinear,
+    LiteMul,
+    LitePoseidonStateOnly,
+    LiteMerklePoseidonDet,
+    LitePoseidonBits,
+    LiteMerklePoseidonChallengeBits,
+}
+
+impl Default for CircuitKind {
+    fn default() -> Self {
+        Self::Full
+    }
+}
+
 /// Expected circuit shape metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExpectedShape {
@@ -71,6 +99,8 @@ pub struct FormalFixture {
     pub fixture_id: String,
     pub description: String,
     pub scenario_kind: ScenarioKind,
+    #[serde(default)]
+    pub circuit_kind: CircuitKind,
     pub challenge_count: usize,
     pub seed: u64,
     pub block_height: u64,
@@ -220,7 +250,7 @@ pub fn load_manifest_fixtures(
 
 /// Export one fixture to deterministic Nova artifacts.
 pub fn export_fixture(fixture: &FormalFixture, artifacts_root: &Path) -> Result<ExportOutput> {
-    export_fixture_impl(fixture, artifacts_root, None, false)
+    export_fixture_impl(fixture, artifacts_root, None, PicusPreconditionKind::None)
 }
 
 /// Export one fixture but write a Picus .r1cs variant where only the first `prefix_len`
@@ -235,21 +265,45 @@ pub fn export_fixture_with_picus_output_prefix(
     if prefix_len == 0 {
         return export_fixture(fixture, artifacts_root);
     }
-    export_fixture_impl(fixture, artifacts_root, Some(prefix_len), false)
+    export_fixture_impl(
+        fixture,
+        artifacts_root,
+        Some(prefix_len),
+        PicusPreconditionKind::None,
+    )
 }
 
-/// Export one fixture for Picus verification and optionally emit a witness-guided Picus precondition.
+/// Which Picus precondition (if any) to emit alongside an exported Picus-ready R1CS.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum PicusPreconditionKind {
+    None,
+    /// Fix all non-output wires to a known satisfying assignment.
+    WitnessExceptOutputs,
+    /// Fix only public inputs (and the constant-one wire) to the fixture's `z` instance values.
+    InputsOnly,
+    /// Fix public inputs plus the witness leaf + Merkle sibling values (and nothing else).
+    ///
+    /// This is intended to make the production circuit behave "functionally" for the
+    /// witness material that actually defines the transition, while still allowing Picus
+    /// to explore intermediate wires.
+    ///
+    /// Note: for convergence, this also pins the derived Merkle path selector bits and
+    /// the `active_flags` gating bits used in the production Merkle gadget.
+    InputsPlusLeafPathOnly,
+}
+
+/// Export one fixture for Picus verification and optionally emit a Picus precondition.
 pub fn export_fixture_for_picus_verify(
     fixture: &FormalFixture,
     artifacts_root: &Path,
     picus_output_prefix_len: Option<usize>,
-    write_witness_precondition: bool,
+    picus_precondition: PicusPreconditionKind,
 ) -> Result<ExportOutput> {
     export_fixture_impl(
         fixture,
         artifacts_root,
         picus_output_prefix_len,
-        write_witness_precondition,
+        picus_precondition,
     )
 }
 
@@ -300,7 +354,7 @@ fn export_fixture_impl(
     fixture: &FormalFixture,
     artifacts_root: &Path,
     picus_output_prefix_len: Option<usize>,
-    write_witness_precondition: bool,
+    picus_precondition: PicusPreconditionKind,
 ) -> Result<ExportOutput> {
     validate_fixture(fixture)?;
 
@@ -338,12 +392,7 @@ fn export_fixture_impl(
         &plan.ledger_indices,
     )?;
 
-    let circuit = PorCircuit::<FieldElement>::new(
-        plan.files_per_step,
-        plan.file_tree_depth,
-        plan.aggregated_tree_depth,
-        Some(circuit_witness.witnesses().to_vec()),
-    );
+    let witnesses_vec = circuit_witness.witnesses().to_vec();
 
     let z0_primary = plan.public_io_layout.build_z0_primary(
         plan.aggregated_root,
@@ -354,9 +403,65 @@ fn export_fixture_impl(
 
     let mut shape_cs: ShapeCS<E1> = ShapeCS::new();
     let z_shape = alloc_z_inputs(&mut shape_cs, &z0_primary).map_err(circuit_err)?;
-    let z_next_shape = circuit
-        .synthesize(&mut shape_cs, &z_shape)
-        .map_err(circuit_err)?;
+    let z_next_shape = match fixture.circuit_kind {
+        CircuitKind::Full => {
+            let circuit = PorCircuit::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+                Some(witnesses_vec.clone()),
+            );
+            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
+        }
+        CircuitKind::LiteLinear => {
+            let circuit = PorCircuitLiteLinear::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
+        }
+        CircuitKind::LiteMul => {
+            let circuit = PorCircuitLiteMul::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
+        }
+        CircuitKind::LitePoseidonStateOnly => {
+            let circuit = PorCircuitLitePoseidonStateOnly::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
+        }
+        CircuitKind::LiteMerklePoseidonDet => {
+            let circuit = PorCircuitLiteMerklePoseidonDet::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
+        }
+        CircuitKind::LitePoseidonBits => {
+            let circuit = PorCircuitLitePoseidonBits::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
+        }
+        CircuitKind::LiteMerklePoseidonChallengeBits => {
+            let circuit = PorCircuitLiteMerklePoseidonChallengeBits::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
+        }
+    };
 
     let num_constraints = shape_cs.num_constraints();
     let num_inputs = shape_cs.num_inputs();
@@ -366,9 +471,81 @@ fn export_fixture_impl(
 
     let mut sat_cs = SatisfyingAssignment::<E1>::new();
     let z_sat = alloc_z_inputs(&mut sat_cs, &z0_primary).map_err(circuit_err)?;
-    let _ = circuit
-        .synthesize(&mut sat_cs, &z_sat)
-        .map_err(circuit_err)?;
+    let mut por_trace: Option<PorWitnessTrace> = None;
+    match fixture.circuit_kind {
+        CircuitKind::Full => {
+            let circuit = PorCircuit::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+                Some(witnesses_vec),
+            );
+            if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                let mut trace = PorWitnessTrace::default();
+                let _ = synthesize_por_circuit_with_trace(
+                    &mut sat_cs,
+                    &z_sat,
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                    circuit.witness.as_ref(),
+                    Some(&mut trace),
+                )
+                .map_err(circuit_err)?;
+                por_trace = Some(trace);
+            } else {
+                let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
+            }
+        }
+        CircuitKind::LiteLinear => {
+            let circuit = PorCircuitLiteLinear::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
+        }
+        CircuitKind::LiteMul => {
+            let circuit = PorCircuitLiteMul::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
+        }
+        CircuitKind::LitePoseidonStateOnly => {
+            let circuit = PorCircuitLitePoseidonStateOnly::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
+        }
+        CircuitKind::LiteMerklePoseidonDet => {
+            let circuit = PorCircuitLiteMerklePoseidonDet::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
+        }
+        CircuitKind::LitePoseidonBits => {
+            let circuit = PorCircuitLitePoseidonBits::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
+        }
+        CircuitKind::LiteMerklePoseidonChallengeBits => {
+            let circuit = PorCircuitLiteMerklePoseidonChallengeBits::<FieldElement>::new(
+                plan.files_per_step,
+                plan.file_tree_depth,
+                plan.aggregated_tree_depth,
+            );
+            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
+        }
+    }
     let (instance, witness) = sat_cs
         .r1cs_instance_and_witness(&shape, &ck)
         .map_err(snark_err)?;
@@ -413,16 +590,37 @@ fn export_fixture_impl(
             (Some(wiring), None)
         };
 
-    let picus_precondition_path = if write_witness_precondition {
-        let path = artifact_dir.join("picus-precondition.json");
-        if let Some(wiring) = &picus_selected_wiring {
-            write_picus_precondition_fix_witness_except_outputs(&sat_cs, wiring, &path)?;
-            Some(path)
-        } else {
-            None
+    let picus_precondition_path = match picus_precondition {
+        PicusPreconditionKind::None => None,
+        PicusPreconditionKind::WitnessExceptOutputs
+        | PicusPreconditionKind::InputsOnly
+        | PicusPreconditionKind::InputsPlusLeafPathOnly => {
+            let path = artifact_dir.join("picus-precondition.json");
+            if let Some(wiring) = &picus_selected_wiring {
+                match picus_precondition {
+                    PicusPreconditionKind::WitnessExceptOutputs => {
+                        write_picus_precondition_fix_witness_except_outputs(&sat_cs, wiring, &path)?
+                    }
+                    PicusPreconditionKind::InputsOnly => {
+                        write_picus_precondition_fix_inputs_only(&sat_cs, wiring, &path)?
+                    }
+                    PicusPreconditionKind::InputsPlusLeafPathOnly => {
+                        let trace = por_trace.as_ref().ok_or_else(|| {
+                            KontorPoRError::InvalidInput(
+                                "InputsPlusLeafPathOnly requires PorCircuit trace".to_string(),
+                            )
+                        })?;
+                        write_picus_precondition_fix_inputs_plus_leafpath_only(
+                            &sat_cs, wiring, trace, &path,
+                        )?
+                    }
+                    PicusPreconditionKind::None => {}
+                }
+                Some(path)
+            } else {
+                None
+            }
         }
-    } else {
-        None
     };
 
     let checksums = ArtifactChecksums {
@@ -736,6 +934,160 @@ fn write_picus_precondition_fix_witness_except_outputs(
             "[\"wire_{wire}_aux_{aux_idx}\",[\"rassert\",[\"req\",[\"rvar\",{wire}],[\"rint\",{}]]]]",
             field_to_dec(val)
         );
+    }
+
+    out.push(']');
+    fs::write(path, out).map_err(|e| io_err(format!("Failed to write {}", path.display()), e))
+}
+
+fn write_picus_precondition_fix_inputs_only(
+    sat_cs: &SatisfyingAssignment<E1>,
+    wiring: &PicusWiring,
+    path: &Path,
+) -> Result<()> {
+    use std::fmt::Write as _;
+
+    let inputs = sat_cs.input_assignment();
+
+    let mut is_output_wire = vec![false; wiring.n_wires as usize];
+    for w in &wiring.output_wires {
+        if let Some(slot) = is_output_wire.get_mut(*w as usize) {
+            *slot = true;
+        }
+    }
+
+    let mut out = String::new();
+    out.push('[');
+
+    // Fix constant wire 0 to 1 (Picus expects x0 to behave as constant one).
+    {
+        let _ = write!(
+            &mut out,
+            "[\"wire_0_one\",[\"rassert\",[\"req\",[\"rvar\",0],[\"rint\",1]]]]"
+        );
+    }
+
+    // Fix all non-output input wires (i.e., fix z to this fixture's instance).
+    for (idx, wire_opt) in wiring.input_to_wire.iter().enumerate() {
+        if idx == 0 {
+            continue;
+        }
+        let Some(wire) = *wire_opt else {
+            continue;
+        };
+        if wire as usize >= is_output_wire.len() || is_output_wire[wire as usize] {
+            continue;
+        }
+        let Some(val) = inputs.get(idx) else {
+            continue;
+        };
+
+        out.push(',');
+        let _ = write!(
+            &mut out,
+            "[\"wire_{wire}_input_{idx}\",[\"rassert\",[\"req\",[\"rvar\",{wire}],[\"rint\",{}]]]]",
+            field_to_dec(val)
+        );
+    }
+
+    out.push(']');
+    fs::write(path, out).map_err(|e| io_err(format!("Failed to write {}", path.display()), e))
+}
+
+fn write_picus_precondition_fix_inputs_plus_leafpath_only(
+    sat_cs: &SatisfyingAssignment<E1>,
+    wiring: &PicusWiring,
+    trace: &PorWitnessTrace,
+    path: &Path,
+) -> Result<()> {
+    use std::fmt::Write as _;
+
+    let inputs = sat_cs.input_assignment();
+    let aux = sat_cs.aux_assignment();
+
+    let mut is_output_wire = vec![false; wiring.n_wires as usize];
+    for w in &wiring.output_wires {
+        if let Some(slot) = is_output_wire.get_mut(*w as usize) {
+            *slot = true;
+        }
+    }
+
+    let mut fixed_wires = BTreeSet::<u32>::new();
+
+    let mut out = String::new();
+    out.push('[');
+    let mut first = true;
+
+    let mut push_wire_assert = |tag: &str, wire: u32, val_dec: String| {
+        if wire as usize >= is_output_wire.len() || is_output_wire[wire as usize] {
+            return;
+        }
+        if !fixed_wires.insert(wire) {
+            return;
+        }
+        if !first {
+            out.push(',');
+        }
+        first = false;
+        let _ = write!(
+            &mut out,
+            "[\"{tag}\",[\"rassert\",[\"req\",[\"rvar\",{wire}],[\"rint\",{val_dec}]]]]"
+        );
+    };
+
+    // Fix constant wire 0 to 1 (Picus expects x0 to behave as constant one).
+    push_wire_assert("wire_0_one", 0, "1".to_string());
+
+    // Fix all non-output input wires (i.e., fix z to this fixture's instance).
+    for (idx, wire_opt) in wiring.input_to_wire.iter().enumerate() {
+        if idx == 0 {
+            continue;
+        }
+        let Some(wire) = *wire_opt else {
+            continue;
+        };
+        let Some(val) = inputs.get(idx) else {
+            continue;
+        };
+        push_wire_assert(
+            &format!("wire_{wire}_input_{idx}"),
+            wire,
+            field_to_dec(val),
+        );
+    }
+
+    // Additionally fix the witness material that should define the transition: leaf + siblings.
+    let mut aux_indices = Vec::<usize>::new();
+    aux_indices.extend(trace.leaf_aux.iter().copied());
+    for v in &trace.file_sibling_aux {
+        aux_indices.extend(v.iter().copied());
+    }
+    for v in &trace.agg_sibling_aux {
+        aux_indices.extend(v.iter().copied());
+    }
+    for v in &trace.file_path_bit_aux {
+        aux_indices.extend(v.iter().copied());
+    }
+    for v in &trace.active_flag_aux {
+        aux_indices.extend(v.iter().copied());
+    }
+
+    aux_indices.sort_unstable();
+    aux_indices.dedup();
+
+    for aux_idx in aux_indices {
+        let Some(wire) = wiring
+            .aux_to_wire
+            .get(aux_idx)
+            .copied()
+            .flatten()
+        else {
+            continue;
+        };
+        let Some(val) = aux.get(aux_idx) else {
+            continue;
+        };
+        push_wire_assert(&format!("wire_{wire}_aux_{aux_idx}"), wire, field_to_dec(val));
     }
 
     out.push(']');
@@ -1353,6 +1705,7 @@ mod tests {
             fixture_id: String::from("sample"),
             description: String::from("sample fixture"),
             scenario_kind: ScenarioKind::SingleFile,
+            circuit_kind: CircuitKind::Full,
             challenge_count: 1,
             seed: 1,
             block_height: 1,

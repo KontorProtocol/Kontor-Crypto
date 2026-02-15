@@ -83,6 +83,17 @@ struct Args {
     #[arg(long)]
     picus_witness_precondition: bool,
 
+    /// Generate and pass an input-fixed Picus precondition that constrains only the public inputs
+    /// (z) to this fixture's instance values. This matches the "fixed public z" scope and is
+    /// typically easier than a fully symbolic no-precondition run.
+    #[arg(long, conflicts_with = "picus_witness_precondition")]
+    picus_input_precondition: bool,
+
+    /// Generate and pass a precondition that fixes public inputs plus the witness leaf/path
+    /// values (leaf + Merkle siblings), without fixing intermediate wires.
+    #[arg(long, conflicts_with_all = ["picus_witness_precondition", "picus_input_precondition"])]
+    picus_leafpath_precondition: bool,
+
     /// Allow inconclusive fixtures without failing the process exit code
     #[arg(long)]
     allow_inconclusive: bool,
@@ -229,6 +240,16 @@ fn run_fixture(
     cleanup_picus_solver_processes();
 
     let fixture = formal::load_fixture(&args.fixtures_dir, fixture_id)?;
+    let picus_pre = if args.picus_witness_precondition {
+        formal::PicusPreconditionKind::WitnessExceptOutputs
+    } else if args.picus_input_precondition {
+        formal::PicusPreconditionKind::InputsOnly
+    } else if args.picus_leafpath_precondition {
+        formal::PicusPreconditionKind::InputsPlusLeafPathOnly
+    } else {
+        formal::PicusPreconditionKind::None
+    };
+
     let exported = formal::export_fixture_for_picus_verify(
         &fixture,
         &args.artifacts_dir,
@@ -237,7 +258,7 @@ fn run_fixture(
         } else {
             Some(args.output_prefix_len)
         },
-        args.picus_witness_precondition,
+        picus_pre,
     )?;
 
     let picus_json_path = exported.artifact_dir.join("picus-result.json");
@@ -300,7 +321,7 @@ fn run_fixture(
         cmd.arg("--log-level").arg(log_level);
     }
 
-    if args.picus_witness_precondition {
+    if args.picus_witness_precondition || args.picus_input_precondition {
         if let Some(pre) = &exported.picus_precondition_path {
             cmd.arg("--precondition").arg(pre);
         }

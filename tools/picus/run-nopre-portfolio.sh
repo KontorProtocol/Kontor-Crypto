@@ -23,7 +23,8 @@ usage:
 optional:
   --run-base-id <id>        default: YYYYmmdd-HHMMSS
   --prefix-len <n>          default: 1
-  --timeout-secs <n>        default: 7200 (2h)
+  --stage <stage>           default: nopre (values: inputs | nopre)
+  --timeout-secs <n>        default: 7200 (applies to chosen stage)
   --max-parallel <n>        default: 4
   --seeds "<list>"          default: "1 2 3 4"
   --ff-solvers "<list>"     default: "gb split"
@@ -32,6 +33,9 @@ optional:
                               - split:      --ff --ff-solver=split
                               - gb_polys:   --ff --ff-field-polys
                               - split_polys:--ff --ff-solver=split --ff-field-polys
+  --selector <selector>     default: (Picus default)
+                            values: counter | first
+  --noprop                  disable Picus propagation
   --solver <solver>         default: cvc5
   --log-level <level>       default: PROGRESS
 
@@ -50,12 +54,15 @@ PICUS_BIN=""
 FIXTURE=""
 RUN_BASE_ID="$(date +%Y%m%d-%H%M%S)"
 PREFIX_LEN=1
+STAGE="nopre"
 TIMEOUT_SECS=7200
 MAX_PARALLEL=4
 SEEDS_RAW="1 2 3 4"
 FF_SOLVERS_RAW="gb split"
 SOLVER="cvc5"
 LOG_LEVEL="PROGRESS"
+SELECTOR=""
+NOPROP=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -63,10 +70,13 @@ while [[ $# -gt 0 ]]; do
     --fixture) FIXTURE="${2:-}"; shift 2 ;;
     --run-base-id) RUN_BASE_ID="${2:-}"; shift 2 ;;
     --prefix-len) PREFIX_LEN="${2:-}"; shift 2 ;;
+    --stage) STAGE="${2:-}"; shift 2 ;;
     --timeout-secs) TIMEOUT_SECS="${2:-}"; shift 2 ;;
     --max-parallel) MAX_PARALLEL="${2:-}"; shift 2 ;;
     --seeds) SEEDS_RAW="${2:-}"; shift 2 ;;
     --ff-solvers) FF_SOLVERS_RAW="${2:-}"; shift 2 ;;
+    --selector) SELECTOR="${2:-}"; shift 2 ;;
+    --noprop) NOPROP=1; shift ;;
     --solver) SOLVER="${2:-}"; shift 2 ;;
     --log-level) LOG_LEVEL="${2:-}"; shift 2 ;;
     -h|--help) usage ;;
@@ -89,13 +99,25 @@ fi
 echo "Run base:    ${RUN_BASE_ID}"
 echo "Fixture:     ${FIXTURE}"
 echo "Prefix len:  ${PREFIX_LEN}"
+echo "Stage:       ${STAGE}"
 echo "Timeout:     ${TIMEOUT_SECS}s"
 echo "Max parallel:${MAX_PARALLEL}"
 echo "Seeds:       ${SEEDS_RAW}"
 echo "FF solvers:  ${FF_SOLVERS_RAW}"
 echo "Picus bin:   ${PICUS_BIN}"
 echo "Solver:      ${SOLVER} (SOLVER_PATH=${SOLVER_PATH}, CVC5_BIN=${CVC5_BIN})"
+if [[ -n "${SELECTOR}" ]]; then
+  echo "Selector:    ${SELECTOR}"
+fi
+if [[ "${NOPROP}" == "1" ]]; then
+  echo "Propagation: disabled (--noprop)"
+fi
 echo
+
+if [[ "${STAGE}" != "nopre" ]] && [[ "${STAGE}" != "inputs" ]]; then
+  echo "invalid --stage '${STAGE}' (expected: inputs | nopre)" >&2
+  exit 2
+fi
 
 throttle() {
   while [[ "$(jobs -pr | wc -l | tr -d ' ')" -ge "${MAX_PARALLEL}" ]]; do
@@ -137,18 +159,31 @@ for ff in "${FF_SOLVERS[@]}"; do
           ;;
       esac
 
-      run_id="${RUN_BASE_ID}-${FIXTURE}-p${PREFIX_LEN}-nopre-${ff}-seed${seed}"
+      run_id="${RUN_BASE_ID}-${FIXTURE}-p${PREFIX_LEN}-${STAGE}-${ff}-seed${seed}"
 
-      tools/picus/run-matrix-safe.sh \
-        --run-id "${run_id}" \
-        --picus-bin "${PICUS_BIN}" \
-        --fixture "${FIXTURE}" \
-        --prefix-lens "${PREFIX_LEN}" \
-        --stages nopre \
-        --timeout-nopre-secs "${TIMEOUT_SECS}" \
-        --solver "${SOLVER}" \
-        --log-level "${LOG_LEVEL}" \
+      matrix_args=(
+        --run-id "${run_id}"
+        --picus-bin "${PICUS_BIN}"
+        --fixture "${FIXTURE}"
+        --prefix-lens "${PREFIX_LEN}"
+        --stages "${STAGE}"
+        --solver "${SOLVER}"
+        --log-level "${LOG_LEVEL}"
         --jobs 1
+      )
+      if [[ "${STAGE}" == "nopre" ]]; then
+        matrix_args+=(--timeout-nopre-secs "${TIMEOUT_SECS}")
+      else
+        matrix_args+=(--timeout-inputs-secs "${TIMEOUT_SECS}")
+      fi
+      if [[ -n "${SELECTOR}" ]]; then
+        matrix_args+=(--selector "${SELECTOR}")
+      fi
+      if [[ "${NOPROP}" == "1" ]]; then
+        matrix_args+=(--noprop)
+      fi
+
+      tools/picus/run-matrix-safe.sh "${matrix_args[@]}"
     ) &
   done
 done
