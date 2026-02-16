@@ -208,6 +208,7 @@ pub fn synthesize_challenge_component<F: PrimeField + PrimeFieldBits, CS: Constr
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn synthesize_file_merkle_component<F: PrimeField + PrimeFieldBits, CS: ConstraintSystem<F>>(
     cs: &mut CS,
     z: &[AllocatedNum<F>],
@@ -354,6 +355,7 @@ pub fn synthesize_file_merkle_component<F: PrimeField + PrimeFieldBits, CS: Cons
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn synthesize_aggregation_merkle_component<
     F: PrimeField + PrimeFieldBits,
     CS: ConstraintSystem<F>,
@@ -448,6 +450,7 @@ pub fn synthesize_aggregation_merkle_component<
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn synthesize_state_update_component<
     F: PrimeField + PrimeFieldBits,
     CS: ConstraintSystem<F>,
