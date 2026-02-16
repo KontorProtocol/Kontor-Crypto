@@ -17,7 +17,7 @@ struct Args {
     artifacts_dir: PathBuf,
 
     /// Picus executable name/path
-    #[arg(long, default_value = "/Users/adam/dev/Picus/run-picus")]
+    #[arg(long, default_value = "run-picus")]
     picus_bin: String,
 
     /// Picus solver override (cvc4 | cvc5 | z3)
@@ -120,7 +120,17 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         return s.to_string();
     }
-    format!("{}...\n(truncated)\n", &s[..max])
+
+    let mut end = max.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    if end == 0 {
+        return "...\n(truncated)\n".to_string();
+    }
+
+    format!("{}...\n(truncated)\n", &s[..end])
 }
 
 enum ProcessRunResult {

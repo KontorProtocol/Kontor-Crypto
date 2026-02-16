@@ -717,5 +717,14 @@ fn truncate_text(input: &str, max_len: usize) -> String {
         return input.to_string();
     }
 
-    format!("{}...", &input[..max_len])
+    let mut end = max_len.min(input.len());
+    while end > 0 && !input.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    if end == 0 {
+        return "...".to_string();
+    }
+
+    format!("{}...", &input[..end])
 }
