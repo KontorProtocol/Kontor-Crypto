@@ -1,36 +1,22 @@
----
-name: Formal Picus Smoke
+name: Formal Picus (Determinism)
 
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - "src/**"
-      - "tools/picus/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/formal-picus-smoke.yml"
+    branches: ["main"]
   push:
-    # Allow this branch to validate the workflow end-to-end before merge.
-    branches:
-      - "adam/audit"
-    paths:
-      - "src/**"
-      - "tools/picus/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/formal-picus-smoke.yml"
+    branches: ["main"]
   schedule:
     # Nightly (UTC). Adjust as needed.
     - cron: "0 6 * * *"
 
 concurrency:
-  group: formal-picus-smoke-${{ github.ref }}
+  group: formal-picus-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  picus_smoke:
-    runs-on: ubuntu-latest
+  full_matrix:
+    runs-on: ubuntu-x86-8cpu
     timeout-minutes: 60
     env:
       # Pin Picus Docker image digest for determinism.
@@ -38,7 +24,7 @@ jobs:
         veridise/picus:base@sha256:fc396dbabd92cb0026a52dd3f2f72893374a1fc29367409cb49f251923089162
       PICUS_DOCKER_PLATFORM: linux/amd64
       # Keep within GitHub hosted runner memory constraints.
-      PICUS_DOCKER_MEMORY: 5g
+      PICUS_DOCKER_MEMORY: 6g
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -76,26 +62,26 @@ jobs:
       - name: Pull Picus Image
         run: docker pull "${PICUS_DOCKER_IMAGE}"
 
-      - name: Run Picus Smoke (Small Scope)
+      - name: Run Picus Full Fixture Matrix (Leaf+Path Scope)
         env:
           # Ensure the container runs the pinned Picus checkout.
           PICUS_SOURCE_DIR: ${{ github.workspace }}/Picus
         run: |
           cargo run --release --bin picus_verify -- \
-            --fixture single-file-tiny-depth1 \
+            --all \
             --picus-bin tools/picus/run-picus-docker.sh \
             --solver cvc5 \
             --picus-log-level PROGRESS \
             --timeout-secs 1200 \
             --hard-timeout-grace-secs 120 \
-            --output-prefix-len 1 \
-            --picus-witness-precondition
+            --output-prefix-len 2 \
+            --picus-leafpath-precondition
 
       - name: Upload Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: formal-picus-smoke-artifacts
+          name: formal-picus-artifacts
           path: |
             artifacts/picus/summary.json
             artifacts/picus/summary.md
@@ -104,3 +90,4 @@ jobs:
             artifacts/picus/*/circuit*.r1cs
             artifacts/picus/*/circuit*.sym
             artifacts/picus/*/picus-precondition.json
+

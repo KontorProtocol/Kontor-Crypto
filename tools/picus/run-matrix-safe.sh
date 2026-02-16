@@ -5,10 +5,9 @@ set -euo pipefail
 # This does not kill solver processes and is safe to run alongside other long
 # running solves.
 #
-# Compared to run-ladder-safe.sh:
-# - This schedules each (fixture, prefix_len, stage) as its own job so you can
-#   easily saturate multiple CPU cores.
-# - Exports into each case directory to avoid export races under parallelism.
+# This schedules each (fixture, prefix_len, stage) as its own job so you can
+# easily saturate multiple CPU cores. It exports into each case directory to
+# avoid export races under parallelism.
 #
 # Usage examples:
 #   export SOLVER_PATH=/tmp/cvc5-install/bin/cvc5

@@ -173,8 +173,9 @@ Key error variants surfaced at API boundaries (see `KontorPoRError`):
 
 - **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
 - **[Library Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design
-- **[Formal Determinism Spec](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/determinism-spec.md)** - Uniqueness/determinism target statement for circuit analysis
-- **[Picus Runbook](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/picus-runbook.md)** - How to export fixtures and run Picus analysis
+- **[Formal Verification (Picus)](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/README.md)** - Purpose/scope/success criteria + how to run
+- **[Determinism Statement](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/determinism.md)** - What Picus is checking (and what it is not)
+- **[Picus Runbook](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/picus.md)** - Operational details for running Picus here
 
 ## Formal Verification (Picus)
 
@@ -187,7 +188,7 @@ cargo run --bin picus_export -- --all
 # Run Picus wrapper across all fixtures
 cargo run --bin picus_verify -- --all
 
-# Incremental bounded run with explicit solver/logging
+# Incremental bounded run with explicit solver/logging (may be inconclusive)
 cargo run --bin picus_verify -- --all \
   --solver cvc5 \
   --picus-log-level INFO \
@@ -204,7 +205,7 @@ Finite-field solver note (required for `--solver cvc5`):
 - `cvc5` must be built with CoCoA support to solve `QF_FF` problems.
 - Check with: `cvc5 --show-config | rg 'cocoa'` (expect `yes`).
 - If you have a custom `cvc5`, point Picus at it via `SOLVER_PATH=/path/to/cvc5`.
-- See `docs/formal/picus-runbook.md` and `tools/picus/build-cvc5-cocoa.sh`.
+- See `docs/formal/picus.md`.
 
 Dockerized Picus option (recommended on Apple Silicon):
 
@@ -212,15 +213,15 @@ Dockerized Picus option (recommended on Apple Silicon):
 # sanity-check Dockerized run-picus
 tools/picus/check-docker.sh
 
-# run wrapper against Dockerized Picus
-tools/picus/run-docker.sh --all --timeout-secs 600 --allow-inconclusive
+# run wrapper against Dockerized Picus (default in tools/picus/run.sh)
+tools/picus/run.sh --all --timeout-secs 600 --allow-inconclusive
 ```
 
 If `run-picus` is not on image `PATH`, mount your Picus checkout (the wrapper auto-uses `/Picus/run-picus`):
 
 ```bash
 PICUS_SOURCE_DIR=/path/to/Picus \
-tools/picus/run-docker.sh --all --timeout-secs 600 --allow-inconclusive
+tools/picus/run.sh --all --timeout-secs 600 --allow-inconclusive
 ```
 
 If Dockerized Picus fails with `petite` / `invalid memory reference`, move execution to a native amd64 Linux host/VM or adjust Docker Desktop x86 emulation settings.
@@ -231,4 +232,4 @@ Converter fallback (legacy/custom setups):
 cargo run --bin picus_verify -- --all --converter-bin /path/to/nova-to-r1cs
 ```
 
-Current verification progress is tracked in `docs/formal/determinism-report.md`.
+Current verification results are tracked in `docs/formal/results.md`.
