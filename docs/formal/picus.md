@@ -37,24 +37,6 @@ PICUS_SOURCE_DIR=/path/to/Picus tools/picus/run.sh --all ...
 ```
 When set, the wrapper runs `/Picus/run-picus` inside the pinned container image.
 
-## Using Multiple Cores (Local)
-Picus itself often drives the SMT solver in a way that looks single-core. The easiest way to utilize many cores is to run multiple *independent* proofs concurrently:
-```bash
-tools/picus/run-matrix-safe.sh \
-  --picus-bin tools/picus/run-picus-docker.sh \
-  --all \
-  --prefix-lens 1,2 \
-  --stages leafpath \
-  --timeout-leafpath-secs 1200 \
-  --jobs 8
-```
-
-Status helpers:
-```bash
-tools/picus/status.sh --watch --interval-secs 30
-tools/picus/proc-status.sh --watch --interval-secs 5
-```
-
 ## Troubleshooting
 - If you accidentally installed the unrelated PyPI package `picus==0.0.5`, `picus_verify` will classify it as an error. You need Veridise Picus `run-picus` from the Picus repo.
 - `petite` / `invalid memory reference`: typical of running the Racket runtime under emulation. Prefer Docker `linux/amd64` on a native amd64 host/VM, or mount and run a pinned amd64 build.
