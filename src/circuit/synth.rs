@@ -115,6 +115,7 @@ pub fn synthesize_por_circuit_carry_forward_mutant<
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSystem<F>>(
     cs: &mut CS,
     z: &[AllocatedNum<F>],

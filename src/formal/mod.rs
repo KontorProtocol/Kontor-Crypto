@@ -897,23 +897,21 @@ fn export_fixture_impl(
                         .map_err(circuit_err)?;
                     }
                     por_trace = Some(trace);
+                } else if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
+                    let _ = synthesize_por_circuit_carry_forward_mutant(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        circuit.witness.as_ref(),
+                        None,
+                    )
+                    .map_err(circuit_err)?;
                 } else {
-                    if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        let _ = synthesize_por_circuit_carry_forward_mutant(
-                            &mut sat_cs,
-                            &z_sat,
-                            plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            None,
-                        )
+                    let _ = circuit
+                        .synthesize(&mut sat_cs, &z_sat)
                         .map_err(circuit_err)?;
-                    } else {
-                        let _ = circuit
-                            .synthesize(&mut sat_cs, &z_sat)
-                            .map_err(circuit_err)?;
-                    }
                 }
             }
             CircuitKind::ComponentChallengeDerivation
@@ -1128,23 +1126,21 @@ fn export_fixture_impl(
                         .map_err(circuit_err)?;
                     }
                     por_trace = Some(trace);
+                } else if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
+                    let _ = synthesize_por_circuit_carry_forward_mutant(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        circuit.witness.as_ref(),
+                        None,
+                    )
+                    .map_err(circuit_err)?;
                 } else {
-                    if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        let _ = synthesize_por_circuit_carry_forward_mutant(
-                            &mut sat_cs,
-                            &z_sat,
-                            plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            None,
-                        )
+                    let _ = circuit
+                        .synthesize(&mut sat_cs, &z_sat)
                         .map_err(circuit_err)?;
-                    } else {
-                        let _ = circuit
-                            .synthesize(&mut sat_cs, &z_sat)
-                            .map_err(circuit_err)?;
-                    }
                 }
             }
             CircuitKind::ComponentChallengeDerivation
