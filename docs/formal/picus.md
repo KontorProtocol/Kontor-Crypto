@@ -1,56 +1,39 @@
-# Picus Runbook (Docker-First)
+# Picus Runbook (Component-First)
 
-This repo exports deterministic Picus `.r1cs` inputs directly from Nova `ShapeCS` synthesis and runs Veridise Picus to check uniqueness/determinism for selected outputs.
-
-## Components
+## Files
 - Exporter: `src/bin/picus_export.rs`
-- Verifier wrapper: `src/bin/picus_verify.rs`
-- Fixture schema + R1CS encoder + preconditions: `src/formal/mod.rs`
-- Fixture matrix: `tools/picus/manifest.json`
-- Fixtures: `tools/picus/fixtures/*.json`
-- Docker wrapper for Picus: `tools/picus/run-picus-docker.sh`
+- Verifier: `src/bin/picus_verify.rs`
+- Core export logic: `src/formal/mod.rs`
+- Contracts: `tools/picus/components/contracts.json`
+- Fixture manifest: `tools/picus/components/manifest.json`
+- Fixtures: `tools/picus/components/fixtures/*.json`
 
-## Quick Start
-Sanity-check Docker Picus:
+## Export
 ```bash
-tools/picus/check-docker.sh
+cargo run --release --bin picus_export -- \
+  --all \
+  --scope leafpath \
+  --simplify safe
 ```
 
-Run the full fixture matrix using the intended determinism scope:
+## Verify
 ```bash
-tools/picus/run.sh --all \
-  --output-prefix-len 2 \
-  --picus-leafpath-precondition \
-  --timeout-secs 1200 \
-  --hard-timeout-grace-secs 120 \
+cargo run --release --bin picus_verify -- \
+  --all \
+  --scope leafpath \
+  --simplify safe \
+  --solver cvc5 \
   --picus-log-level PROGRESS
 ```
 
-Artifacts land in:
-- `artifacts/picus/<fixture-id>/...` (exports, Picus JSON, preconditions)
-- `artifacts/picus/summary.json` and `artifacts/picus/summary.md` (run summary)
-
-## Pinned Picus (Recommended For CI / Repro)
-`tools/picus/run-picus-docker.sh` can mount a specific Picus checkout into the container:
+## Dockerized Picus
 ```bash
-PICUS_SOURCE_DIR=/path/to/Picus tools/picus/run.sh --all ...
-```
-When set, the wrapper runs `/Picus/run-picus` inside the pinned container image.
+tools/picus/check-docker.sh
 
-## Troubleshooting
-- If you accidentally installed the unrelated PyPI package `picus==0.0.5`, `picus_verify` will classify it as an error. You need Veridise Picus `run-picus` from the Picus repo.
-- `petite` / `invalid memory reference`: typical of running the Racket runtime under emulation. Prefer Docker `linux/amd64` on a native amd64 host/VM, or mount and run a pinned amd64 build.
-
-## Dev-Only Circuits
-Some toy/lite circuits exist for convergence experiments. They are gated behind the Cargo feature `formal-dev`:
-```bash
-cargo run --features formal-dev --release --bin picus_export -- --fixture <dev-fixture>
+PICUS_SOURCE_DIR=/path/to/Picus \
+tools/picus/run.sh --all --scope leafpath --simplify safe
 ```
 
-Dev fixtures live under `tools/picus/fixtures/dev/` and can be used by overriding the fixture dir:
-```bash
-cargo run --features formal-dev --release --bin picus_verify -- \
-  --fixtures-dir tools/picus/fixtures/dev \
-  --fixture <dev-fixture> \
-  --picus-bin tools/picus/run-picus-docker.sh
-```
+## Notes
+- Use Veridise Picus `run-picus` (not PyPI `picus==0.0.5`).
+- For cvc5, CoCoA-enabled builds are recommended (`cvc5 --show-config | rg cocoa`).

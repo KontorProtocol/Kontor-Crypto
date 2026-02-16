@@ -1,4 +1,4 @@
-name: Formal Picus (Determinism)
+name: Formal Picus (Components)
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  full_matrix:
+  component_matrix:
     runs-on: ubuntu-x86-8cpu
     timeout-minutes: 60
     env:
@@ -62,7 +62,7 @@ jobs:
       - name: Pull Picus Image
         run: docker pull "${PICUS_DOCKER_IMAGE}"
 
-      - name: Run Picus Full Fixture Matrix (Leaf+Path Scope)
+      - name: Run Picus Component Fixture Matrix (Leaf+Path Scope)
         env:
           # Ensure the container runs the pinned Picus checkout.
           PICUS_SOURCE_DIR: ${{ github.workspace }}/Picus
@@ -74,20 +74,19 @@ jobs:
             --picus-log-level PROGRESS \
             --timeout-secs 1200 \
             --hard-timeout-grace-secs 120 \
-            --output-prefix-len 2 \
-            --picus-leafpath-precondition
+            --scope leafpath \
+            --simplify safe
 
       - name: Upload Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: formal-picus-artifacts
+          name: formal-picus-components-artifacts
           path: |
-            artifacts/picus/summary.json
-            artifacts/picus/summary.md
-            artifacts/picus/*/picus-result.json
-            artifacts/picus/*/export-metadata.json
-            artifacts/picus/*/circuit*.r1cs
-            artifacts/picus/*/circuit*.sym
-            artifacts/picus/*/picus-precondition.json
-
+            artifacts/picus-components/summary.json
+            artifacts/picus-components/summary.md
+            artifacts/picus-components/*/picus-result.json
+            artifacts/picus-components/*/export-metadata.json
+            artifacts/picus-components/*/circuit*.r1cs
+            artifacts/picus-components/*/circuit*.sym
+            artifacts/picus-components/*/picus-precondition.json

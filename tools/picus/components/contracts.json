@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "contracts": [
+    {
+      "component": "component_challenge_derivation",
+      "required_input_roles": ["public_input"],
+      "produced_output_roles": ["public_output", "path_bit"],
+      "notes": "Derives per-file challenge values from public state and seeds."
+    },
+    {
+      "component": "component_file_merkle",
+      "required_input_roles": ["public_input", "witness_leaf", "witness_file_sibling", "path_bit", "gate_bit"],
+      "produced_output_roles": ["public_output"],
+      "notes": "Computes file Merkle roots using production verify_merkle_path_gated gadget."
+    },
+    {
+      "component": "component_aggregation_merkle",
+      "required_input_roles": ["public_input", "witness_agg_sibling", "path_bit", "gate_bit"],
+      "produced_output_roles": ["public_output"],
+      "notes": "Computes aggregation roots using production verify_aggregation_path_gated gadget."
+    },
+    {
+      "component": "component_state_update",
+      "required_input_roles": ["public_input", "witness_leaf", "gate_bit"],
+      "produced_output_roles": ["public_output"],
+      "notes": "Per-slot gated state transition and public leaf exposure."
+    },
+    {
+      "component": "component_carry_forward",
+      "required_input_roles": ["public_input"],
+      "produced_output_roles": ["public_output"],
+      "notes": "Enforces explicit carry-forward equalities across public outputs."
+    }
+  ]
+}

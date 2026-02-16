@@ -3,7 +3,14 @@
 //! This module provides deterministic fixture handling and export of Nova R1CS
 //! artifacts for external analyzers such as Picus.
 
+pub mod components;
+pub mod roles;
+
 use crate::api::{prepare_file, tree_depth_from_metadata, Challenge, FieldElement, PreparedFile};
+use crate::circuit::formal_components::{
+    AggregationMerkleComponentCircuit, CarryForwardComponentCircuit,
+    ChallengeDerivationComponentCircuit, FileMerkleComponentCircuit, StateUpdateComponentCircuit,
+};
 #[cfg(feature = "formal-dev")]
 use crate::circuit::lite::{
     PorCircuitLiteLinear, PorCircuitLiteMerklePoseidonChallengeBits,
@@ -58,17 +65,35 @@ pub enum ScenarioKind {
 ///
 /// `full` is the production `PorCircuit`. Other kinds are stripped-down variants used to get
 /// conclusive Picus results and to isolate solver bottlenecks.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CircuitKind {
     #[default]
     Full,
+    ComponentChallengeDerivation,
+    ComponentFileMerkle,
+    ComponentAggregationMerkle,
+    ComponentStateUpdate,
+    ComponentCarryForward,
     LiteLinear,
     LiteMul,
     LitePoseidonStateOnly,
     LiteMerklePoseidonDet,
     LitePoseidonBits,
     LiteMerklePoseidonChallengeBits,
+}
+
+impl CircuitKind {
+    pub fn is_component(&self) -> bool {
+        matches!(
+            self,
+            Self::ComponentChallengeDerivation
+                | Self::ComponentFileMerkle
+                | Self::ComponentAggregationMerkle
+                | Self::ComponentStateUpdate
+                | Self::ComponentCarryForward
+        )
+    }
 }
 
 /// Expected circuit shape metadata.
@@ -414,6 +439,56 @@ fn export_fixture_impl(
                         .synthesize(&mut shape_cs, &z_shape)
                         .map_err(circuit_err)?
                 }
+                CircuitKind::ComponentChallengeDerivation => {
+                    let circuit = ChallengeDerivationComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentFileMerkle => {
+                    let circuit = FileMerkleComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentAggregationMerkle => {
+                    let circuit = AggregationMerkleComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentStateUpdate => {
+                    let circuit = StateUpdateComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentCarryForward => {
+                    let circuit =
+                        CarryForwardComponentCircuit::<FieldElement>::new(plan.files_per_step);
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
                 CircuitKind::LiteLinear => {
                     let circuit = PorCircuitLiteLinear::<FieldElement>::new(
                         plan.files_per_step,
@@ -490,6 +565,56 @@ fn export_fixture_impl(
                         .synthesize(&mut shape_cs, &z_shape)
                         .map_err(circuit_err)?
                 }
+                CircuitKind::ComponentChallengeDerivation => {
+                    let circuit = ChallengeDerivationComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentFileMerkle => {
+                    let circuit = FileMerkleComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentAggregationMerkle => {
+                    let circuit = AggregationMerkleComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentStateUpdate => {
+                    let circuit = StateUpdateComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentCarryForward => {
+                    let circuit =
+                        CarryForwardComponentCircuit::<FieldElement>::new(plan.files_per_step);
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
                 other => {
                     return Err(KontorPoRError::InvalidInput(format!(
                         "Circuit kind {:?} requires cargo feature `formal-dev`",
@@ -537,6 +662,56 @@ fn export_fixture_impl(
                         .synthesize(&mut sat_cs, &z_sat)
                         .map_err(circuit_err)?;
                 }
+            }
+            CircuitKind::ComponentChallengeDerivation => {
+                let circuit = ChallengeDerivationComponentCircuit::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::ComponentFileMerkle => {
+                let circuit = FileMerkleComponentCircuit::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                    Some(circuit_witness.clone()),
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::ComponentAggregationMerkle => {
+                let circuit = AggregationMerkleComponentCircuit::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                    Some(circuit_witness.clone()),
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::ComponentStateUpdate => {
+                let circuit = StateUpdateComponentCircuit::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                    Some(circuit_witness.clone()),
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::ComponentCarryForward => {
+                let circuit =
+                    CarryForwardComponentCircuit::<FieldElement>::new(plan.files_per_step);
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
             }
             CircuitKind::LiteLinear => {
                 let circuit = PorCircuitLiteLinear::<FieldElement>::new(
@@ -628,6 +803,56 @@ fn export_fixture_impl(
                         .map_err(circuit_err)?;
                 }
             }
+            CircuitKind::ComponentChallengeDerivation => {
+                let circuit = ChallengeDerivationComponentCircuit::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::ComponentFileMerkle => {
+                let circuit = FileMerkleComponentCircuit::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                    Some(circuit_witness.clone()),
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::ComponentAggregationMerkle => {
+                let circuit = AggregationMerkleComponentCircuit::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                    Some(circuit_witness.clone()),
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::ComponentStateUpdate => {
+                let circuit = StateUpdateComponentCircuit::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                    Some(circuit_witness.clone()),
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::ComponentCarryForward => {
+                let circuit =
+                    CarryForwardComponentCircuit::<FieldElement>::new(plan.files_per_step);
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
             other => {
                 return Err(KontorPoRError::InvalidInput(format!(
                     "Circuit kind {:?} requires cargo feature `formal-dev`",
@@ -695,14 +920,15 @@ fn export_fixture_impl(
                         write_picus_precondition_fix_inputs_only(&sat_cs, wiring, &path)?
                     }
                     PicusPreconditionKind::InputsPlusLeafPathOnly => {
-                        let trace = por_trace.as_ref().ok_or_else(|| {
-                            KontorPoRError::InvalidInput(
-                                "InputsPlusLeafPathOnly requires PorCircuit trace".to_string(),
-                            )
-                        })?;
-                        write_picus_precondition_fix_inputs_plus_leafpath_only(
-                            &sat_cs, wiring, trace, &path,
-                        )?
+                        if let Some(trace) = por_trace.as_ref() {
+                            write_picus_precondition_fix_inputs_plus_leafpath_only(
+                                &sat_cs, wiring, trace, &path,
+                            )?
+                        } else {
+                            // Component circuits do not currently emit PorWitnessTrace; fall back
+                            // to input-fixed scope to keep modular runs tractable and deterministic.
+                            write_picus_precondition_fix_inputs_only(&sat_cs, wiring, &path)?
+                        }
                     }
                     PicusPreconditionKind::None => {}
                 }
@@ -813,11 +1039,63 @@ fn write_picus_r1cs_file(
     outputs: &[AllocatedNum<FieldElement>],
     path: &Path,
 ) -> Result<PicusWiring> {
-    let (layout, wiring) = build_picus_layout(shape_cs, outputs)?;
+    let (layout_raw, wiring) = build_picus_layout(shape_cs, outputs)?;
+    let layout = if should_simplify_layout() {
+        simplify_layout_safe(layout_raw)
+    } else {
+        layout_raw
+    };
     let bytes = encode_picus_r1cs(&layout)?;
     fs::write(path, bytes).map_err(|e| io_err(format!("Failed to write {}", path.display()), e))?;
     write_picus_sym_file(path, wiring.n_wires)?;
     Ok(wiring)
+}
+
+fn should_simplify_layout() -> bool {
+    match std::env::var("KONTOR_PICUS_SIMPLIFY") {
+        Ok(v) => {
+            let t = v.trim().to_ascii_lowercase();
+            !(t == "off" || t == "0" || t == "false")
+        }
+        Err(_) => true,
+    }
+}
+
+fn simplify_layout_safe(mut layout: PicusLayout) -> PicusLayout {
+    fn normalize_terms(terms: &[PicusTerm]) -> Vec<PicusTerm> {
+        let mut by_wire = BTreeMap::<u32, FieldElement>::new();
+        for t in terms {
+            by_wire
+                .entry(t.wire)
+                .and_modify(|c| *c += t.coeff)
+                .or_insert(t.coeff);
+        }
+        by_wire
+            .into_iter()
+            .filter_map(|(wire, coeff)| {
+                if coeff == FieldElement::ZERO {
+                    None
+                } else {
+                    Some(PicusTerm { wire, coeff })
+                }
+            })
+            .collect()
+    }
+
+    for c in &mut layout.constraints {
+        c.a = normalize_terms(&c.a);
+        c.b = normalize_terms(&c.b);
+        c.c = normalize_terms(&c.c);
+    }
+
+    // Remove trivial tautologies where both sides are guaranteed zero:
+    // (0 * X = 0) or (X * 0 = 0).
+    layout.constraints.retain(|c| {
+        let lhs_is_zero = c.a.is_empty() || c.b.is_empty();
+        !(lhs_is_zero && c.c.is_empty())
+    });
+
+    layout
 }
 
 fn write_picus_sym_file(r1cs_path: &Path, n_wires: u32) -> Result<()> {

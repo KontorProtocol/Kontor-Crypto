@@ -175,26 +175,23 @@ Key error variants surfaced at API boundaries (see `KontorPoRError`):
 - **[Library Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design
 - **[Formal Verification (Picus)](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/README.md)** - Purpose/scope/success criteria + how to run
 - **[Determinism Statement](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/determinism.md)** - What Picus is checking (and what it is not)
+- **[Component Contracts](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/components.md)** - Component boundaries and interface contract checks
 - **[Picus Runbook](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/picus.md)** - Operational details for running Picus here
 
 ## Formal Verification (Picus)
 
-Deterministic fixture exports and Picus wrapper commands are provided for incremental formal determinism checks:
+Component-first formal verification is provided for deterministic underconstraint checks on production-gadget sub-circuits.
 
 ```bash
-# Export deterministic Nova artifacts + Picus-ready circuit.r1cs for all fixtures
-cargo run --bin picus_export -- --all
+# Export component fixtures to Picus-ready R1CS
+cargo run --release --bin picus_export -- --all --scope leafpath --simplify safe
 
-# Run Picus wrapper across all fixtures
-cargo run --bin picus_verify -- --all
-
-# Incremental bounded run with explicit solver/logging (may be inconclusive)
-cargo run --bin picus_verify -- --all \
+# Verify all component fixtures
+cargo run --release --bin picus_verify -- --all \
+  --scope leafpath \
+  --simplify safe \
   --solver cvc5 \
-  --picus-log-level INFO \
-  --timeout-secs 120 \
-  --hard-timeout-grace-secs 30 \
-  --allow-inconclusive
+  --picus-log-level PROGRESS
 ```
 
 Picus binary note:
@@ -214,22 +211,16 @@ Dockerized Picus option (recommended on Apple Silicon):
 tools/picus/check-docker.sh
 
 # run wrapper against Dockerized Picus (default in tools/picus/run.sh)
-tools/picus/run.sh --all --timeout-secs 600 --allow-inconclusive
+tools/picus/run.sh --all --scope leafpath --simplify safe
 ```
 
 If `run-picus` is not on image `PATH`, mount your Picus checkout (the wrapper auto-uses `/Picus/run-picus`):
 
 ```bash
 PICUS_SOURCE_DIR=/path/to/Picus \
-tools/picus/run.sh --all --timeout-secs 600 --allow-inconclusive
+tools/picus/run.sh --all --scope leafpath --simplify safe
 ```
 
 If Dockerized Picus fails with `petite` / `invalid memory reference`, move execution to a native amd64 Linux host/VM or adjust Docker Desktop x86 emulation settings.
-
-Converter fallback (legacy/custom setups):
-
-```bash
-cargo run --bin picus_verify -- --all --converter-bin /path/to/nova-to-r1cs
-```
 
 Current verification results are tracked in `docs/formal/results.md`.
