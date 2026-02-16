@@ -1,9 +1,11 @@
-# Determinism Model (Component-First)
+# Determinism Model (Comprehensive)
 
 ## Why Components
 `PorCircuit` as a whole is a relation and can be difficult for SMT-based tools when exported monolithically.
 
-This branch verifies determinism on smaller component circuits built from production gadgets, then enforces composition expectations through contracts.
+This branch verifies determinism in both:
+- component circuits built from production gadgets, and
+- monolithic `PorCircuit` production fixtures.
 
 ## Picus outcomes
 - `8`: safe (no counterexample)
@@ -15,9 +17,10 @@ Fixture `expected_result` is enforced:
 - mutant fixtures are expected `unsafe`
 
 ## Required Statement
-For each component fixture and full component output scope:
+For each blocking fixture:
 - under the selected scope (`leafpath` by default),
 - there does not exist a pair of satisfying assignments that agree on fixed wires and differ on target outputs.
+- if Picus is inconclusive (`0`) after configured solver policy, the fixture fails (fail-closed).
 
 ## Scope options
 - `leafpath` (default): exported as `InputsPlusLeafPathOnly` with strict trace enforcement.
@@ -26,3 +29,13 @@ For each component fixture and full component output scope:
 
 ## Composition boundary
 Component interface expectations are specified in `tools/picus/components/contracts.json` and validated before verification runs.
+
+## Fixture-level Policy
+Fixtures may declare `verification` policy fields:
+- `scope`
+- `output_prefix_len`
+- `solver_policy` (`primary`, `fallbacks`)
+- `timeout_secs`
+- `hard_timeout_grace_secs`
+
+If a field is omitted, CLI defaults are used.

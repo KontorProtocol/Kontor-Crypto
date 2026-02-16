@@ -1,4 +1,4 @@
-name: Formal Picus (Components)
+name: Formal Picus (Comprehensive)
 
 on:
   workflow_dispatch:
@@ -90,8 +90,86 @@ jobs:
           path: |
             artifacts/picus-components/summary.json
             artifacts/picus-components/summary.md
-            artifacts/picus-components/*/picus-result.json
+            artifacts/picus-components/*/picus-result*.json
             artifacts/picus-components/*/export-metadata.json
             artifacts/picus-components/*/circuit*.r1cs
             artifacts/picus-components/*/circuit*.sym
             artifacts/picus-components/*/picus-precondition.json
+
+  monolithic_matrix:
+    runs-on: ubuntu-x86-8cpu
+    timeout-minutes: 120
+    env:
+      PICUS_DOCKER_IMAGE: >-
+        veridise/picus:base@sha256:fc396dbabd92cb0026a52dd3f2f72893374a1fc29367409cb49f251923089162
+      PICUS_DOCKER_PLATFORM: linux/amd64
+      PICUS_DOCKER_MEMORY: 6g
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout Picus (Pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Veridise/Picus
+          ref: 138b151d3a388e5b6c040c163e0a1db04f2ceda6
+          path: Picus
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: >-
+            ${{ runner.os }}-cargo-formal-picus-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-formal-picus-
+
+      - name: Install z3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y z3
+
+      - name: Docker Info
+        run: |
+          docker version
+          docker info
+
+      - name: Pull Picus Image
+        run: docker pull "${PICUS_DOCKER_IMAGE}"
+
+      - name: Run Picus Monolithic Broad Matrix (Fail Closed)
+        env:
+          PICUS_SOURCE_DIR: ${{ github.workspace }}/Picus
+        run: |
+          cargo run --release --bin picus_verify -- \
+            --all \
+            --manifest tools/picus/manifest-broad.json \
+            --fixtures-dir tools/picus/fixtures \
+            --artifacts-dir artifacts/picus-monolithic \
+            --picus-bin tools/picus/run-picus-docker.sh \
+            --solver cvc5 \
+            --picus-log-level PROGRESS \
+            --scope leafpath \
+            --simplify safe
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: formal-picus-monolithic-artifacts
+          path: |
+            artifacts/picus-monolithic/summary.json
+            artifacts/picus-monolithic/summary.md
+            artifacts/picus-monolithic/*/picus-result*.json
+            artifacts/picus-monolithic/*/export-metadata.json
+            artifacts/picus-monolithic/*/circuit*.r1cs
+            artifacts/picus-monolithic/*/circuit*.sym
+            artifacts/picus-monolithic/*/picus-precondition.json

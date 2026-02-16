@@ -180,18 +180,38 @@ Key error variants surfaced at API boundaries (see `KontorPoRError`):
 
 ## Formal Verification (Picus)
 
-Component-first formal verification is provided for deterministic underconstraint checks on production-gadget sub-circuits.
+Comprehensive formal verification is provided for deterministic underconstraint checks in:
+- component sub-circuits built from production gadgets,
+- monolithic `PorCircuit` broad production fixtures.
 
 ```bash
 # Export component fixtures to Picus-ready R1CS
-cargo run --release --bin picus_export -- --all --scope leafpath --simplify safe
+cargo run --release --bin picus_export -- \
+  --all \
+  --manifest tools/picus/components/manifest.json \
+  --fixtures-dir tools/picus/components/fixtures \
+  --scope leafpath \
+  --simplify safe
 
-# Verify all component fixtures
+# Verify component blocking profile
 cargo run --release --bin picus_verify -- --all \
+  --manifest tools/picus/components/manifest.json \
+  --fixtures-dir tools/picus/components/fixtures \
   --scope leafpath \
   --simplify safe \
   --solver cvc5 \
-  --picus-log-level PROGRESS
+  --picus-log-level PROGRESS \
+  --artifacts-dir artifacts/picus-components
+
+# Verify monolithic broad blocking profile
+cargo run --release --bin picus_verify -- --all \
+  --manifest tools/picus/manifest-broad.json \
+  --fixtures-dir tools/picus/fixtures \
+  --scope leafpath \
+  --simplify safe \
+  --solver cvc5 \
+  --picus-log-level PROGRESS \
+  --artifacts-dir artifacts/picus-monolithic
 ```
 
 Picus binary note:
@@ -210,7 +230,7 @@ Dockerized Picus option (recommended on Apple Silicon):
 # sanity-check Dockerized run-picus
 tools/picus/check-docker.sh
 
-# run wrapper against Dockerized Picus (default in tools/picus/run.sh)
+# run wrapper against Dockerized Picus (component defaults)
 tools/picus/run.sh --all --scope leafpath --simplify safe
 ```
 

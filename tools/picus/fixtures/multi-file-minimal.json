@@ -6,6 +6,17 @@
   "seed": 32345,
   "block_height": 1000,
   "prover_id": "formal_node",
+  "expected_result": "safe",
+  "verification": {
+    "scope": "leafpath",
+    "output_prefix_len": 2,
+    "solver_policy": {
+      "primary": "cvc5",
+      "fallbacks": ["z3"]
+    },
+    "timeout_secs": 1200,
+    "hard_timeout_grace_secs": 120
+  },
   "distinct_seeds": true,
   "file_specs": [
     {

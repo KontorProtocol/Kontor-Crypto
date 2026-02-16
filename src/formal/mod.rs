@@ -131,6 +131,49 @@ pub enum ExpectedPicusResult {
     Unsafe,
 }
 
+/// Verification scope used by fixture-level policy overrides.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationScope {
+    #[default]
+    Leafpath,
+    PublicZ,
+}
+
+/// Solver selection policy for one fixture.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SolverPolicy {
+    pub primary: String,
+    #[serde(default)]
+    pub fallbacks: Vec<String>,
+}
+
+impl Default for SolverPolicy {
+    fn default() -> Self {
+        Self {
+            primary: "cvc5".to_string(),
+            fallbacks: Vec::new(),
+        }
+    }
+}
+
+/// Optional fixture-level verification policy.
+///
+/// Any field left as `None` inherits the corresponding CLI/default value.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct FormalVerificationPolicy {
+    #[serde(default)]
+    pub scope: Option<VerificationScope>,
+    #[serde(default)]
+    pub output_prefix_len: Option<usize>,
+    #[serde(default)]
+    pub solver_policy: Option<SolverPolicy>,
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub hard_timeout_grace_secs: Option<u64>,
+}
+
 /// Expected circuit shape metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExpectedShape {
@@ -170,6 +213,8 @@ pub struct FormalFixture {
     pub tags: Vec<String>,
     #[serde(default)]
     pub expected_result: ExpectedPicusResult,
+    #[serde(default)]
+    pub verification: FormalVerificationPolicy,
 }
 
 /// Serializable metadata describing one export run.
@@ -2392,6 +2437,7 @@ mod tests {
             expected_shape: None,
             tags: vec![],
             expected_result: ExpectedPicusResult::Safe,
+            verification: FormalVerificationPolicy::default(),
         }
     }
 

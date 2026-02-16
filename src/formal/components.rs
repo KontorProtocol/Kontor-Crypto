@@ -156,7 +156,7 @@ pub fn validate_component_contracts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::formal::{FormalFileSpec, ScenarioKind};
+    use crate::formal::{FormalFileSpec, FormalVerificationPolicy, ScenarioKind};
 
     fn component_kinds() -> Vec<CircuitKind> {
         vec![
@@ -215,6 +215,7 @@ mod tests {
             expected_shape: None,
             tags: vec![],
             expected_result,
+            verification: FormalVerificationPolicy::default(),
         }
     }
 

@@ -24,7 +24,7 @@ enum SimplifyMode {
 
 #[derive(Debug, Parser)]
 #[command(name = "picus_verify")]
-#[command(about = "Run component-first Picus determinism verification")]
+#[command(about = "Run Picus determinism verification over formal fixtures")]
 struct Args {
     /// Run all fixtures listed in manifest
     #[arg(long)]
@@ -34,15 +34,15 @@ struct Args {
     #[arg(long = "fixture")]
     fixtures: Vec<String>,
 
-    /// Path to component fixture manifest
+    /// Path to fixture manifest
     #[arg(long, default_value = "tools/picus/components/manifest.json")]
     manifest: PathBuf,
 
-    /// Directory containing component fixture json files
+    /// Directory containing fixture json files
     #[arg(long, default_value = "tools/picus/components/fixtures")]
     fixtures_dir: PathBuf,
 
-    /// Path to component contracts file
+    /// Path to component contracts file (used when selected fixtures include component circuits)
     #[arg(long, default_value = "tools/picus/components/contracts.json")]
     contracts: PathBuf,
 
@@ -98,17 +98,21 @@ struct Args {
     #[arg(long, default_value_t = true, action = ArgAction::Set)]
     strict_scope: bool,
 
+    /// Ignore fixture-level verification policy and use CLI values only
+    #[arg(long)]
+    ignore_fixture_policy: bool,
+
     /// Allow inconclusive fixtures without failing process exit code
     #[arg(long)]
     allow_inconclusive: bool,
 
     /// Output summary json path
-    #[arg(long, default_value = "artifacts/picus-components/summary.json")]
-    summary_json: PathBuf,
+    #[arg(long)]
+    summary_json: Option<PathBuf>,
 
     /// Output summary markdown path
-    #[arg(long, default_value = "artifacts/picus-components/summary.md")]
-    summary_md: PathBuf,
+    #[arg(long)]
+    summary_md: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -127,6 +131,7 @@ struct FixtureSummary {
     expected_result: formal::ExpectedPicusResult,
     status: FixtureStatus,
     runtime_ms: u128,
+    solver_trace: Vec<String>,
     artifact_dir: String,
     picus_input: Option<String>,
     picus_json: Option<String>,
@@ -160,6 +165,14 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
             "No fixtures selected. Use --all or --fixture <id>".to_string(),
         ));
     }
+    let summary_json = args
+        .summary_json
+        .clone()
+        .unwrap_or_else(|| args.artifacts_dir.join("summary.json"));
+    let summary_md = args
+        .summary_md
+        .clone()
+        .unwrap_or_else(|| args.artifacts_dir.join("summary.md"));
 
     std::env::set_var(
         "KONTOR_PICUS_SIMPLIFY",
@@ -178,10 +191,17 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
         fixtures.push(formal::load_fixture(&args.fixtures_dir, &fixture_id)?);
     }
 
-    let contracts = formal::components::load_component_contracts(&args.contracts)?;
-    formal::components::validate_component_contracts(&fixtures, &contracts)?;
+    let component_fixtures = fixtures
+        .iter()
+        .filter(|f| f.circuit_kind.is_component())
+        .cloned()
+        .collect::<Vec<_>>();
+    if !component_fixtures.is_empty() {
+        let contracts = formal::components::load_component_contracts(&args.contracts)?;
+        formal::components::validate_component_contracts(&component_fixtures, &contracts)?;
+    }
 
-    if let Some(parent) = args.summary_json.parent() {
+    if let Some(parent) = summary_json.parent() {
         fs::create_dir_all(parent).map_err(|e| {
             kontor_crypto::KontorPoRError::IO(format!(
                 "Failed to create summary dir {}: {}",
@@ -190,7 +210,7 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
             ))
         })?;
     }
-    if let Some(parent) = args.summary_md.parent() {
+    if let Some(parent) = summary_md.parent() {
         fs::create_dir_all(parent).map_err(|e| {
             kontor_crypto::KontorPoRError::IO(format!(
                 "Failed to create summary dir {}: {}",
@@ -211,6 +231,7 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
                 expected_result: fixture.expected_result.clone(),
                 status: FixtureStatus::Error,
                 runtime_ms: start.elapsed().as_millis(),
+                solver_trace: Vec::new(),
                 artifact_dir: String::new(),
                 picus_input: None,
                 picus_json: None,
@@ -227,11 +248,11 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
     }
 
     let report = build_report(results);
-    write_json(&args.summary_json, &report)?;
-    write_markdown(&args.summary_md, &report)?;
+    write_json(&summary_json, &report)?;
+    write_markdown(&summary_md, &report)?;
 
-    println!("Summary json: {}", args.summary_json.display());
-    println!("Summary md: {}", args.summary_md.display());
+    println!("Summary json: {}", summary_json.display());
+    println!("Summary md: {}", summary_md.display());
 
     if report.error > 0 || (report.inconclusive > 0 && !args.allow_inconclusive) {
         return Err(kontor_crypto::KontorPoRError::InvalidInput(
@@ -242,12 +263,93 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+struct ResolvedFixturePolicy {
+    scope: Scope,
+    output_prefix_len: usize,
+    timeout_secs: u64,
+    hard_timeout_grace_secs: u64,
+    solver_chain: Vec<String>,
+}
+
+fn resolve_fixture_policy(args: &Args, fixture: &formal::FormalFixture) -> ResolvedFixturePolicy {
+    let scope = if args.ignore_fixture_policy {
+        args.scope
+    } else {
+        match fixture.verification.scope {
+            Some(formal::VerificationScope::Leafpath) => Scope::Leafpath,
+            Some(formal::VerificationScope::PublicZ) => Scope::PublicZ,
+            None => args.scope,
+        }
+    };
+
+    let output_prefix_len = if args.ignore_fixture_policy {
+        args.output_prefix_len
+    } else {
+        fixture
+            .verification
+            .output_prefix_len
+            .unwrap_or(args.output_prefix_len)
+    };
+
+    let timeout_secs = if args.ignore_fixture_policy {
+        args.timeout_secs
+    } else {
+        fixture
+            .verification
+            .timeout_secs
+            .unwrap_or(args.timeout_secs)
+    };
+    let hard_timeout_grace_secs = if args.ignore_fixture_policy {
+        args.hard_timeout_grace_secs
+    } else {
+        fixture
+            .verification
+            .hard_timeout_grace_secs
+            .unwrap_or(args.hard_timeout_grace_secs)
+    };
+
+    let mut solver_chain = Vec::<String>::new();
+    if args.ignore_fixture_policy {
+        solver_chain.push(args.solver.clone());
+    } else if let Some(policy) = fixture.verification.solver_policy.as_ref() {
+        solver_chain.push(policy.primary.clone());
+        solver_chain.extend(policy.fallbacks.iter().cloned());
+    } else {
+        solver_chain.push(args.solver.clone());
+    }
+    if fixture.expected_result == formal::ExpectedPicusResult::Unsafe
+        && !solver_chain.iter().any(|s| s.eq_ignore_ascii_case("z3"))
+    {
+        solver_chain.push("z3".to_string());
+    }
+    let mut unique_chain = Vec::<String>::new();
+    for solver in solver_chain {
+        if !unique_chain
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&solver))
+        {
+            unique_chain.push(solver);
+        }
+    }
+
+    ResolvedFixturePolicy {
+        scope,
+        output_prefix_len,
+        timeout_secs,
+        hard_timeout_grace_secs,
+        solver_chain: unique_chain,
+    }
+}
+
 fn run_fixture(
     args: &Args,
     fixture: &formal::FormalFixture,
     start: Instant,
 ) -> kontor_crypto::Result<FixtureSummary> {
-    let pre = match args.scope {
+    let policy = resolve_fixture_policy(args, fixture);
+
+    let pre = match policy.scope {
         Scope::Leafpath => formal::PicusPreconditionKind::InputsPlusLeafPathOnly,
         Scope::PublicZ => formal::PicusPreconditionKind::InputsOnly,
     };
@@ -255,10 +357,10 @@ fn run_fixture(
     let exported = formal::export_fixture_for_picus_verify(
         fixture,
         &args.artifacts_dir,
-        if args.output_prefix_len == 0 {
+        if policy.output_prefix_len == 0 {
             None
         } else {
-            Some(args.output_prefix_len)
+            Some(policy.output_prefix_len)
         },
         pre,
     )?;
@@ -272,6 +374,7 @@ fn run_fixture(
             expected_result: fixture.expected_result.clone(),
             status: FixtureStatus::Error,
             runtime_ms: start.elapsed().as_millis(),
+            solver_trace: policy.solver_chain,
             artifact_dir: exported.artifact_dir.display().to_string(),
             picus_input: None,
             picus_json: None,
@@ -281,38 +384,53 @@ fn run_fixture(
         });
     }
 
-    let mut run = run_picus_once(
-        args,
-        &exported,
-        &picus_input_path,
-        &picus_json_path,
-        &args.solver,
-    )?;
-
-    // cvc5 often struggles to produce concrete counterexamples for deliberately
-    // underconstrained mutants. Retry expected-unsafe fixtures with z3 for robust
-    // mutation checking without changing the default solver for normal fixtures.
-    if fixture.expected_result == formal::ExpectedPicusResult::Unsafe
-        && run.status != FixtureStatus::Violation
-        && !args.solver.eq_ignore_ascii_case("z3")
-    {
-        let z3_json_path = exported.artifact_dir.join("picus-result-z3.json");
-        let z3_run = run_picus_once(args, &exported, &picus_input_path, &z3_json_path, "z3")?;
-        if z3_run.status == FixtureStatus::Violation {
-            run = z3_run;
+    let mut runs = Vec::<PicusRunOutcome>::new();
+    for (idx, solver) in policy.solver_chain.iter().enumerate() {
+        let solver_json_path = if idx == 0 {
+            picus_json_path.clone()
         } else {
-            run.reason = format!("{}; z3 retry: {}", run.reason, z3_run.reason);
-            if !z3_run.stdout.is_empty() {
-                run.stdout = format!("{}\n\n[z3 retry]\n{}", run.stdout, z3_run.stdout);
+            exported
+                .artifact_dir
+                .join(format!("picus-result-{}.json", solver.to_ascii_lowercase()))
+        };
+        let run = run_picus_once(
+            args,
+            &exported,
+            &picus_input_path,
+            &solver_json_path,
+            solver,
+            policy.timeout_secs,
+            policy.hard_timeout_grace_secs,
+        )?;
+        let stop = match fixture.expected_result {
+            formal::ExpectedPicusResult::Safe => {
+                run.status == FixtureStatus::Pass || run.status == FixtureStatus::Violation
             }
-            if !z3_run.stderr.is_empty() {
-                run.stderr = format!("{}\n\n[z3 retry]\n{}", run.stderr, z3_run.stderr);
-            }
+            formal::ExpectedPicusResult::Unsafe => run.status == FixtureStatus::Violation,
+        };
+        runs.push(run);
+        if stop {
+            break;
         }
     }
+    let run = select_final_run(fixture, &runs).ok_or_else(|| {
+        kontor_crypto::KontorPoRError::InvalidInput(format!(
+            "No Picus runs recorded for fixture {}",
+            fixture.fixture_id
+        ))
+    })?;
 
     let runtime_ms = start.elapsed().as_millis();
-    let (status, reason) = enforce_expected_result(fixture, run.status, run.reason);
+    let solver_trace = runs
+        .iter()
+        .map(|r| format!("{}={:?}", r.solver, r.status))
+        .collect::<Vec<_>>();
+    let (status, reason) = enforce_expected_result(
+        fixture,
+        run.status.clone(),
+        run.reason.clone(),
+        args.allow_inconclusive,
+    );
 
     Ok(FixtureSummary {
         fixture_id: fixture.fixture_id.clone(),
@@ -320,6 +438,7 @@ fn run_fixture(
         expected_result: fixture.expected_result.clone(),
         status,
         runtime_ms,
+        solver_trace,
         artifact_dir: exported.artifact_dir.display().to_string(),
         picus_input: Some(picus_input_path.display().to_string()),
         picus_json: if run.json_path.exists() {
@@ -333,7 +452,9 @@ fn run_fixture(
     })
 }
 
+#[derive(Debug, Clone)]
 struct PicusRunOutcome {
+    solver: String,
     status: FixtureStatus,
     reason: String,
     stdout: String,
@@ -347,12 +468,14 @@ fn run_picus_once(
     picus_input_path: &Path,
     picus_json_path: &Path,
     solver: &str,
+    timeout_secs: u64,
+    hard_timeout_grace_secs: u64,
 ) -> kontor_crypto::Result<PicusRunOutcome> {
     let mut cmd = Command::new(&args.picus_bin);
     cmd.arg("--json")
         .arg(picus_json_path)
         .arg("--timeout")
-        .arg((args.timeout_secs.saturating_mul(1000)).to_string())
+        .arg((timeout_secs.saturating_mul(1000)).to_string())
         .arg("--solver")
         .arg(solver)
         .arg("--log-level")
@@ -372,10 +495,7 @@ fn run_picus_once(
     }
     cmd.arg(picus_input_path);
 
-    let hard_timeout = Duration::from_secs(
-        args.timeout_secs
-            .saturating_add(args.hard_timeout_grace_secs),
-    );
+    let hard_timeout = Duration::from_secs(timeout_secs.saturating_add(hard_timeout_grace_secs));
     let process_result = run_with_hard_timeout(cmd, hard_timeout)?;
     let (stdout, stderr, status, reason) = match process_result {
         ProcessRunResult::Completed(output) => {
@@ -391,18 +511,43 @@ fn run_picus_once(
             FixtureStatus::Inconclusive,
             format!(
                 "Picus hard timeout exceeded ({}s + {}s grace) using solver {}",
-                args.timeout_secs, args.hard_timeout_grace_secs, solver
+                timeout_secs, hard_timeout_grace_secs, solver
             ),
         ),
     };
 
     Ok(PicusRunOutcome {
+        solver: solver.to_string(),
         status,
         reason: format!("{reason} [solver={solver}]"),
         stdout,
         stderr,
         json_path: picus_json_path.to_path_buf(),
     })
+}
+
+fn select_final_run(
+    fixture: &formal::FormalFixture,
+    runs: &[PicusRunOutcome],
+) -> Option<PicusRunOutcome> {
+    if runs.is_empty() {
+        return None;
+    }
+
+    let expected = expected_fixture_status(&fixture.expected_result);
+    if let Some(r) = runs.iter().find(|r| r.status == expected) {
+        return Some(r.clone());
+    }
+    if let Some(r) = runs.iter().find(|r| r.status == FixtureStatus::Violation) {
+        return Some(r.clone());
+    }
+    if let Some(r) = runs.iter().find(|r| r.status == FixtureStatus::Pass) {
+        return Some(r.clone());
+    }
+    if let Some(r) = runs.iter().find(|r| r.status == FixtureStatus::Error) {
+        return Some(r.clone());
+    }
+    runs.last().cloned()
 }
 
 fn expected_fixture_status(expected: &formal::ExpectedPicusResult) -> FixtureStatus {
@@ -416,7 +561,11 @@ fn enforce_expected_result(
     fixture: &formal::FormalFixture,
     observed_status: FixtureStatus,
     observed_reason: String,
+    allow_inconclusive: bool,
 ) -> (FixtureStatus, String) {
+    if observed_status == FixtureStatus::Inconclusive && allow_inconclusive {
+        return (observed_status, observed_reason);
+    }
     let expected_status = expected_fixture_status(&fixture.expected_result);
     if observed_status == expected_status {
         return (observed_status, observed_reason);
@@ -663,23 +812,26 @@ fn write_json(path: &Path, report: &SummaryReport) -> kontor_crypto::Result<()> 
 
 fn write_markdown(path: &Path, report: &SummaryReport) -> kontor_crypto::Result<()> {
     let mut out = String::new();
-    out.push_str("# Picus Component Determinism Summary\n\n");
+    out.push_str("# Picus Determinism Summary\n\n");
     out.push_str(&format!("- Fixtures: {}\n", report.fixtures_total));
     out.push_str(&format!("- Pass: {}\n", report.pass));
     out.push_str(&format!("- Violation: {}\n", report.violation));
     out.push_str(&format!("- Inconclusive: {}\n", report.inconclusive));
     out.push_str(&format!("- Error: {}\n\n", report.error));
 
-    out.push_str("| Fixture | Circuit Kind | Expected | Status | Runtime (ms) | Reason |\n");
-    out.push_str("|---|---|---|---|---:|---|\n");
+    out.push_str(
+        "| Fixture | Circuit Kind | Expected | Status | Runtime (ms) | Solvers | Reason |\n",
+    );
+    out.push_str("|---|---|---|---|---:|---|---|\n");
     for result in &report.results {
         out.push_str(&format!(
-            "| {} | {:?} | {:?} | {:?} | {} | {} |\n",
+            "| {} | {:?} | {:?} | {:?} | {} | {} | {} |\n",
             result.fixture_id,
             result.circuit_kind,
             result.expected_result,
             result.status,
             result.runtime_ms,
+            result.solver_trace.join(", ").replace('|', "\\|"),
             result.reason.replace('|', "\\|")
         ));
     }
