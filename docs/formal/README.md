@@ -33,25 +33,9 @@ For each blocking fixture, under configured scope and output target, Picus is co
 ```bash
 tools/picus/check-docker.sh
 
-# Component blocking lane
-cargo run --release --bin picus_verify -- \
-  --all \
-  --manifest tools/picus/components/manifest.json \
-  --fixtures-dir tools/picus/components/fixtures \
-  --scope leafpath \
-  --simplify safe \
-  --picus-bin tools/picus/run-picus-docker.sh \
-  --artifacts-dir artifacts/picus-components
-
-# Monolithic blocking lane
-cargo run --release --bin picus_verify -- \
-  --all \
-  --manifest tools/picus/manifest-broad.json \
-  --fixtures-dir tools/picus/fixtures \
-  --scope leafpath \
-  --simplify safe \
-  --picus-bin tools/picus/run-picus-docker.sh \
-  --artifacts-dir artifacts/picus-monolithic
+# Component blocking lane (wrapper defaults)
+tools/picus/run.sh --all --scope leafpath --simplify safe
 ```
 
-More details: `docs/formal/picus.md`, `docs/formal/determinism.md`, `docs/formal/components.md`.
+For monolithic runs and full command variants, use the canonical runbook: `docs/formal/picus.md`.
+Determinism model and component interface checks are documented in `docs/formal/determinism.md` and `docs/formal/components.md`.

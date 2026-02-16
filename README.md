@@ -189,53 +189,13 @@ Blocking controls include:
 - a monolithic carry-forward mutant expected `unsafe`,
 - fixture-pinned `expected_num_constraints` regression checks during export.
 
-```bash
-# Export component fixtures to Picus-ready R1CS
-cargo run --release --bin picus_export -- \
-  --all \
-  --manifest tools/picus/components/manifest.json \
-  --fixtures-dir tools/picus/components/fixtures \
-  --scope leafpath \
-  --simplify safe
-
-# Verify component blocking profile
-cargo run --release --bin picus_verify -- --all \
-  --manifest tools/picus/components/manifest.json \
-  --fixtures-dir tools/picus/components/fixtures \
-  --scope leafpath \
-  --simplify safe \
-  --solver cvc5 \
-  --picus-log-level PROGRESS \
-  --artifacts-dir artifacts/picus-components
-
-# Verify monolithic broad blocking profile
-cargo run --release --bin picus_verify -- --all \
-  --manifest tools/picus/manifest-broad.json \
-  --fixtures-dir tools/picus/fixtures \
-  --scope leafpath \
-  --simplify safe \
-  --solver cvc5 \
-  --picus-log-level PROGRESS \
-  --artifacts-dir artifacts/picus-monolithic
-```
-
-Picus binary note:
-- This workflow expects Veridise Picus (`run-picus`) from `https://github.com/Veridise/Picus`.
-- The PyPI package `picus==0.0.5` is unrelated and will fail this flow.
-
-Finite-field solver note (required for `--solver cvc5`):
-- `cvc5` must be built with CoCoA support to solve `QF_FF` problems.
-- Check with: `cvc5 --show-config | rg 'cocoa'` (expect `yes`).
-- If you have a custom `cvc5`, point Picus at it via `SOLVER_PATH=/path/to/cvc5`.
-- See `docs/formal/picus.md`.
-
-Dockerized Picus option (recommended on Apple Silicon):
+Quick start (Dockerized Picus):
 
 ```bash
 # sanity-check Dockerized run-picus
 tools/picus/check-docker.sh
 
-# run wrapper against Dockerized Picus (component defaults)
+# run component blocking lane (defaults to component manifest/artifacts)
 tools/picus/run.sh --all --scope leafpath --simplify safe
 ```
 
@@ -246,6 +206,7 @@ PICUS_SOURCE_DIR=/path/to/Picus \
 tools/picus/run.sh --all --scope leafpath --simplify safe
 ```
 
-If Dockerized Picus fails with `petite` / `invalid memory reference`, move execution to a native amd64 Linux host/VM or adjust Docker Desktop x86 emulation settings.
+Canonical export/verify commands (component + monolithic), solver/toolchain notes, and CI profile details are maintained in `docs/formal/picus.md`.
+The PyPI package `picus==0.0.5` is unrelated to Veridise Picus and does not support this flow.
 
 Current verification results are tracked in `docs/formal/results.md`.
