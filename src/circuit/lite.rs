@@ -10,10 +10,10 @@ use nova_snark::{
     traits::circuit::StepCircuit,
 };
 
-use crate::config;
-use crate::poseidon::domain_tags;
 use super::gadgets::poseidon::poseidon_hash_tagged_gadget;
 use super::gadgets::{conditional_select, verify_merkle_path_gated};
+use crate::config;
+use crate::poseidon::domain_tags;
 use nova_snark::frontend::gadgets::boolean::{AllocatedBit, Boolean};
 
 /// A very small, deterministic, linear circuit with the same public I/O layout as `PorCircuit`.
@@ -33,7 +33,11 @@ pub struct PorCircuitLiteLinear<F: PrimeField> {
 }
 
 impl<F: PrimeField> PorCircuitLiteLinear<F> {
-    pub fn new(files_per_step: usize, file_tree_depth: usize, aggregated_tree_depth: usize) -> Self {
+    pub fn new(
+        files_per_step: usize,
+        file_tree_depth: usize,
+        aggregated_tree_depth: usize,
+    ) -> Self {
         Self {
             file_tree_depth,
             files_per_step,
@@ -45,7 +49,9 @@ impl<F: PrimeField> PorCircuitLiteLinear<F> {
     fn enforce_lc_zero<CS: ConstraintSystem<F>>(
         cs: &mut CS,
         name: &str,
-        a: impl FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
+        a: impl FnOnce(
+            nova_snark::frontend::LinearCombination<F>,
+        ) -> nova_snark::frontend::LinearCombination<F>,
     ) {
         // Workaround: nova-snark's SparseMatrix iterator panics on entirely-empty matrices.
         // Encoding `expr == 0` as `expr * 1 == 0` produces an all-zero C-matrix for circuits
@@ -84,7 +90,9 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteLinear<F> 
         let root_out = AllocatedNum::alloc(cs.namespace(|| "root_out"), || {
             Ok(root_in.get_value().unwrap_or(F::ZERO))
         })?;
-        Self::enforce_lc_zero(cs, "root_copy", |lc| lc + root_out.get_variable() - root_in.get_variable());
+        Self::enforce_lc_zero(cs, "root_copy", |lc| {
+            lc + root_out.get_variable() - root_in.get_variable()
+        });
         z_next[layout.idx_agg_root()] = root_out;
 
         // Copy-through fields must also be aux variables (Picus exporter expects outputs to be Aux).
@@ -176,7 +184,11 @@ pub struct PorCircuitLiteMul<F: PrimeField> {
 }
 
 impl<F: PrimeField> PorCircuitLiteMul<F> {
-    pub fn new(files_per_step: usize, file_tree_depth: usize, aggregated_tree_depth: usize) -> Self {
+    pub fn new(
+        files_per_step: usize,
+        file_tree_depth: usize,
+        aggregated_tree_depth: usize,
+    ) -> Self {
         Self {
             file_tree_depth,
             files_per_step,
@@ -188,7 +200,9 @@ impl<F: PrimeField> PorCircuitLiteMul<F> {
     fn enforce_lc_zero<CS: ConstraintSystem<F>>(
         cs: &mut CS,
         name: &str,
-        a: impl FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
+        a: impl FnOnce(
+            nova_snark::frontend::LinearCombination<F>,
+        ) -> nova_snark::frontend::LinearCombination<F>,
     ) {
         // Use the same non-empty-C workaround as the linear canary so this remains robust even if
         // future edits accidentally remove all multiplicative constraints.
@@ -270,11 +284,12 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMul<F> {
             let seed = &z[layout.idx_seed(i)];
             let depth = &z[layout.idx_depth(i)];
 
-            let t = AllocatedNum::alloc(cs.namespace(|| format!("t_seed_mul_depth_{}", i)), || {
-                let sv = seed.get_value().unwrap_or(F::ZERO);
-                let dv = depth.get_value().unwrap_or(F::ZERO);
-                Ok(sv * dv)
-            })?;
+            let t =
+                AllocatedNum::alloc(cs.namespace(|| format!("t_seed_mul_depth_{}", i)), || {
+                    let sv = seed.get_value().unwrap_or(F::ZERO);
+                    let dv = depth.get_value().unwrap_or(F::ZERO);
+                    Ok(sv * dv)
+                })?;
 
             cs.enforce(
                 || format!("mul_seed_depth_{}", i),
@@ -314,8 +329,8 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMul<F> {
         })?;
 
         Self::enforce_lc_zero(cs, "state_out_def", |lc| {
-            let mut lc = lc + state_out.get_variable() - state_in.get_variable()
-                - (F::ONE, CS::one());
+            let mut lc =
+                lc + state_out.get_variable() - state_in.get_variable() - (F::ONE, CS::one());
             for t in &t_vars {
                 lc = lc - t.get_variable();
             }
@@ -341,7 +356,11 @@ pub struct PorCircuitLitePoseidonStateOnly<F: PrimeField> {
 }
 
 impl<F: PrimeField> PorCircuitLitePoseidonStateOnly<F> {
-    pub fn new(files_per_step: usize, file_tree_depth: usize, aggregated_tree_depth: usize) -> Self {
+    pub fn new(
+        files_per_step: usize,
+        file_tree_depth: usize,
+        aggregated_tree_depth: usize,
+    ) -> Self {
         Self {
             file_tree_depth,
             files_per_step,
@@ -353,7 +372,9 @@ impl<F: PrimeField> PorCircuitLitePoseidonStateOnly<F> {
     fn enforce_lc_zero<CS: ConstraintSystem<F>>(
         cs: &mut CS,
         name: &str,
-        a: impl FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
+        a: impl FnOnce(
+            nova_snark::frontend::LinearCombination<F>,
+        ) -> nova_snark::frontend::LinearCombination<F>,
     ) {
         // Keep the non-empty-C workaround in case a caller reduces multiplicative constraints.
         cs.enforce(
@@ -502,7 +523,11 @@ pub struct PorCircuitLiteMerklePoseidonChallengeBits<F: PrimeField> {
 }
 
 impl<F: PrimeField> PorCircuitLiteMerklePoseidonChallengeBits<F> {
-    pub fn new(files_per_step: usize, file_tree_depth: usize, aggregated_tree_depth: usize) -> Self {
+    pub fn new(
+        files_per_step: usize,
+        file_tree_depth: usize,
+        aggregated_tree_depth: usize,
+    ) -> Self {
         Self {
             file_tree_depth,
             files_per_step,
@@ -514,7 +539,9 @@ impl<F: PrimeField> PorCircuitLiteMerklePoseidonChallengeBits<F> {
     fn enforce_lc_zero<CS: ConstraintSystem<F>>(
         cs: &mut CS,
         name: &str,
-        a: impl FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
+        a: impl FnOnce(
+            nova_snark::frontend::LinearCombination<F>,
+        ) -> nova_snark::frontend::LinearCombination<F>,
     ) {
         cs.enforce(
             || name,
@@ -525,7 +552,9 @@ impl<F: PrimeField> PorCircuitLiteMerklePoseidonChallengeBits<F> {
     }
 }
 
-impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMerklePoseidonChallengeBits<F> {
+impl<F: PrimeField + PrimeFieldBits> StepCircuit<F>
+    for PorCircuitLiteMerklePoseidonChallengeBits<F>
+{
     fn arity(&self) -> usize {
         config::PublicIOLayout::new(self.files_per_step).arity()
     }
@@ -594,9 +623,7 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMerklePose
                 Ok(seed0.get_value().unwrap_or(F::ZERO) + F::from((i as u64) + 7))
             })?;
             Self::enforce_lc_zero(cs, &format!("sibling_def_{}", i), |lc| {
-                lc + s.get_variable()
-                    - seed0.get_variable()
-                    - (F::from((i as u64) + 7), CS::one())
+                lc + s.get_variable() - seed0.get_variable() - (F::from((i as u64) + 7), CS::one())
             });
             siblings.push(s);
         }
@@ -617,8 +644,11 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMerklePose
             if let Some(b) = challenge_bits.get(i) {
                 path_bits.push(b.clone());
             } else {
-                let pad = AllocatedBit::alloc(cs.namespace(|| format!("pad_path_bit_{}", i)), Some(false))
-                    .map_err(|_| SynthesisError::AssignmentMissing)?;
+                let pad = AllocatedBit::alloc(
+                    cs.namespace(|| format!("pad_path_bit_{}", i)),
+                    Some(false),
+                )
+                .map_err(|_| SynthesisError::AssignmentMissing)?;
                 path_bits.push(Boolean::from(pad));
             }
         }
@@ -626,8 +656,9 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMerklePose
         // active_flags: allocated bits, constrained only by sum==depth_public (matches real circuit style).
         let mut active_flags = Vec::with_capacity(self.file_tree_depth);
         for i in 0..self.file_tree_depth {
-            let bit = AllocatedBit::alloc(cs.namespace(|| format!("active_flag_{}", i)), Some(true))
-                .map_err(|_| SynthesisError::AssignmentMissing)?;
+            let bit =
+                AllocatedBit::alloc(cs.namespace(|| format!("active_flag_{}", i)), Some(true))
+                    .map_err(|_| SynthesisError::AssignmentMissing)?;
             active_flags.push(Boolean::from(bit));
         }
 
@@ -668,7 +699,11 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMerklePose
 }
 
 impl<F: PrimeField> PorCircuitLitePoseidonBits<F> {
-    pub fn new(files_per_step: usize, file_tree_depth: usize, aggregated_tree_depth: usize) -> Self {
+    pub fn new(
+        files_per_step: usize,
+        file_tree_depth: usize,
+        aggregated_tree_depth: usize,
+    ) -> Self {
         Self {
             file_tree_depth,
             files_per_step,
@@ -680,7 +715,9 @@ impl<F: PrimeField> PorCircuitLitePoseidonBits<F> {
     fn enforce_lc_zero<CS: ConstraintSystem<F>>(
         cs: &mut CS,
         name: &str,
-        a: impl FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
+        a: impl FnOnce(
+            nova_snark::frontend::LinearCombination<F>,
+        ) -> nova_snark::frontend::LinearCombination<F>,
     ) {
         cs.enforce(
             || name,
@@ -791,7 +828,11 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLitePoseidonBi
 }
 
 impl<F: PrimeField> PorCircuitLiteMerklePoseidonDet<F> {
-    pub fn new(files_per_step: usize, file_tree_depth: usize, aggregated_tree_depth: usize) -> Self {
+    pub fn new(
+        files_per_step: usize,
+        file_tree_depth: usize,
+        aggregated_tree_depth: usize,
+    ) -> Self {
         Self {
             file_tree_depth,
             files_per_step,
@@ -803,7 +844,9 @@ impl<F: PrimeField> PorCircuitLiteMerklePoseidonDet<F> {
     fn enforce_lc_zero<CS: ConstraintSystem<F>>(
         cs: &mut CS,
         name: &str,
-        a: impl FnOnce(nova_snark::frontend::LinearCombination<F>) -> nova_snark::frontend::LinearCombination<F>,
+        a: impl FnOnce(
+            nova_snark::frontend::LinearCombination<F>,
+        ) -> nova_snark::frontend::LinearCombination<F>,
     ) {
         cs.enforce(
             || name,
@@ -885,9 +928,7 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMerklePose
                 Ok(seed0.get_value().unwrap_or(F::ZERO) + F::from((i as u64) + 7))
             })?;
             Self::enforce_lc_zero(cs, &format!("sibling_def_{}", i), |lc| {
-                lc + s.get_variable()
-                    - seed0.get_variable()
-                    - (F::from((i as u64) + 7), CS::one())
+                lc + s.get_variable() - seed0.get_variable() - (F::from((i as u64) + 7), CS::one())
             });
             siblings.push(s);
         }
@@ -902,8 +943,11 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMerklePose
             if let Some(b) = seed_bits.get(i) {
                 path_bits.push(b.clone());
             } else {
-                let pad = AllocatedBit::alloc(cs.namespace(|| format!("pad_path_bit_{}", i)), Some(false))
-                    .map_err(|_| SynthesisError::AssignmentMissing)?;
+                let pad = AllocatedBit::alloc(
+                    cs.namespace(|| format!("pad_path_bit_{}", i)),
+                    Some(false),
+                )
+                .map_err(|_| SynthesisError::AssignmentMissing)?;
                 path_bits.push(Boolean::from(pad));
             }
         }
@@ -911,8 +955,9 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLiteMerklePose
         // active_flags: allocated bits, constrained only by sum==depth_public (matches real circuit style).
         let mut active_flags = Vec::with_capacity(self.file_tree_depth);
         for i in 0..self.file_tree_depth {
-            let bit = AllocatedBit::alloc(cs.namespace(|| format!("active_flag_{}", i)), Some(true))
-                .map_err(|_| SynthesisError::AssignmentMissing)?;
+            let bit =
+                AllocatedBit::alloc(cs.namespace(|| format!("active_flag_{}", i)), Some(true))
+                    .map_err(|_| SynthesisError::AssignmentMissing)?;
             active_flags.push(Boolean::from(bit));
         }
 

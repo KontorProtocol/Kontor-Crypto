@@ -24,7 +24,8 @@ struct Args {
     picus_witness_precondition: bool,
 
     /// Emit a Picus precondition that fixes only the public inputs (z) to this fixture's instance.
-    /// This matches the "fixed public z" scope in determinism-spec and is typically much easier
+    /// This matches the "fixed public z" scope described in docs/formal/determinism.md and is
+    /// typically much easier
     /// than a fully symbolic no-precondition run.
     #[arg(long, conflicts_with = "picus_witness_precondition")]
     picus_input_precondition: bool,
@@ -91,20 +92,21 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
             formal::PicusPreconditionKind::None
         };
 
-        let output = if args.output_prefix_len == 0 && picus_pre == formal::PicusPreconditionKind::None {
-            formal::export_fixture(&fixture, &args.artifacts_dir)?
-        } else {
-            formal::export_fixture_for_picus_verify(
-                &fixture,
-                &args.artifacts_dir,
-                if args.output_prefix_len == 0 {
-                    None
-                } else {
-                    Some(args.output_prefix_len)
-                },
-                picus_pre,
-            )?
-        };
+        let output =
+            if args.output_prefix_len == 0 && picus_pre == formal::PicusPreconditionKind::None {
+                formal::export_fixture(&fixture, &args.artifacts_dir)?
+            } else {
+                formal::export_fixture_for_picus_verify(
+                    &fixture,
+                    &args.artifacts_dir,
+                    if args.output_prefix_len == 0 {
+                        None
+                    } else {
+                        Some(args.output_prefix_len)
+                    },
+                    picus_pre,
+                )?
+            };
 
         println!("- {}", output.fixture_id);
         println!("  artifact dir: {}", output.artifact_dir.display());

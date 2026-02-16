@@ -64,6 +64,9 @@ divan = { version = "4.1", package = "codspeed-divan-compat" }
 default = []
 memory-profiling = ["peak_alloc"]
 bench-smoke = []
+# Dev-only formal verification helpers (toy/lite circuits, convergence experiments).
+# Off by default to keep the production build surface minimal.
+formal-dev = []
 
 # Documentation configuration for docs.rs
 [package.metadata.docs.rs]

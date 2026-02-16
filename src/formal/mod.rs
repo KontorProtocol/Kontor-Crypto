@@ -4,13 +4,14 @@
 //! artifacts for external analyzers such as Picus.
 
 use crate::api::{prepare_file, tree_depth_from_metadata, Challenge, FieldElement, PreparedFile};
-use crate::circuit::PorCircuit;
+#[cfg(feature = "formal-dev")]
 use crate::circuit::lite::{
-    PorCircuitLiteLinear, PorCircuitLiteMerklePoseidonDet, PorCircuitLiteMul,
-    PorCircuitLiteMerklePoseidonChallengeBits, PorCircuitLitePoseidonBits,
+    PorCircuitLiteLinear, PorCircuitLiteMerklePoseidonChallengeBits,
+    PorCircuitLiteMerklePoseidonDet, PorCircuitLiteMul, PorCircuitLitePoseidonBits,
     PorCircuitLitePoseidonStateOnly,
 };
 use crate::circuit::synth::{synthesize_por_circuit_with_trace, PorWitnessTrace};
+use crate::circuit::PorCircuit;
 use crate::config::{self, PublicIOLayout};
 use crate::ledger::FileLedger;
 use crate::poseidon::calculate_root_commitment;
@@ -403,63 +404,104 @@ fn export_fixture_impl(
 
     let mut shape_cs: ShapeCS<E1> = ShapeCS::new();
     let z_shape = alloc_z_inputs(&mut shape_cs, &z0_primary).map_err(circuit_err)?;
-    let z_next_shape = match fixture.circuit_kind {
-        CircuitKind::Full => {
-            let circuit = PorCircuit::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-                Some(witnesses_vec.clone()),
-            );
-            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
+    let z_next_shape = {
+        #[cfg(feature = "formal-dev")]
+        {
+            match fixture.circuit_kind {
+                CircuitKind::Full => {
+                    let circuit = PorCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(witnesses_vec.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::LiteLinear => {
+                    let circuit = PorCircuitLiteLinear::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::LiteMul => {
+                    let circuit = PorCircuitLiteMul::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::LitePoseidonStateOnly => {
+                    let circuit = PorCircuitLitePoseidonStateOnly::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::LiteMerklePoseidonDet => {
+                    let circuit = PorCircuitLiteMerklePoseidonDet::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::LitePoseidonBits => {
+                    let circuit = PorCircuitLitePoseidonBits::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::LiteMerklePoseidonChallengeBits => {
+                    let circuit = PorCircuitLiteMerklePoseidonChallengeBits::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+            }
         }
-        CircuitKind::LiteLinear => {
-            let circuit = PorCircuitLiteLinear::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
-        }
-        CircuitKind::LiteMul => {
-            let circuit = PorCircuitLiteMul::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
-        }
-        CircuitKind::LitePoseidonStateOnly => {
-            let circuit = PorCircuitLitePoseidonStateOnly::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
-        }
-        CircuitKind::LiteMerklePoseidonDet => {
-            let circuit = PorCircuitLiteMerklePoseidonDet::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
-        }
-        CircuitKind::LitePoseidonBits => {
-            let circuit = PorCircuitLitePoseidonBits::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
-        }
-        CircuitKind::LiteMerklePoseidonChallengeBits => {
-            let circuit = PorCircuitLiteMerklePoseidonChallengeBits::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            circuit.synthesize(&mut shape_cs, &z_shape).map_err(circuit_err)?
+        #[cfg(not(feature = "formal-dev"))]
+        {
+            match &fixture.circuit_kind {
+                CircuitKind::Full => {
+                    let circuit = PorCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(witnesses_vec.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                other => {
+                    return Err(KontorPoRError::InvalidInput(format!(
+                        "Circuit kind {:?} requires cargo feature `formal-dev`",
+                        other
+                    )));
+                }
+            }
         }
     };
 
@@ -472,79 +514,132 @@ fn export_fixture_impl(
     let mut sat_cs = SatisfyingAssignment::<E1>::new();
     let z_sat = alloc_z_inputs(&mut sat_cs, &z0_primary).map_err(circuit_err)?;
     let mut por_trace: Option<PorWitnessTrace> = None;
-    match fixture.circuit_kind {
-        CircuitKind::Full => {
-            let circuit = PorCircuit::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-                Some(witnesses_vec),
-            );
-            if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
-                let mut trace = PorWitnessTrace::default();
-                let _ = synthesize_por_circuit_with_trace(
-                    &mut sat_cs,
-                    &z_sat,
+    {
+        #[cfg(feature = "formal-dev")]
+        match fixture.circuit_kind {
+            CircuitKind::Full => {
+                let circuit = PorCircuit::<FieldElement>::new(
                     plan.files_per_step,
                     plan.file_tree_depth,
                     plan.aggregated_tree_depth,
-                    circuit.witness.as_ref(),
-                    Some(&mut trace),
-                )
-                .map_err(circuit_err)?;
-                por_trace = Some(trace);
-            } else {
-                let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
+                    Some(witnesses_vec),
+                );
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    let mut trace = PorWitnessTrace::default();
+                    let _ = synthesize_por_circuit_with_trace(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        circuit.witness.as_ref(),
+                        Some(&mut trace),
+                    )
+                    .map_err(circuit_err)?;
+                    por_trace = Some(trace);
+                } else {
+                    let _ = circuit
+                        .synthesize(&mut sat_cs, &z_sat)
+                        .map_err(circuit_err)?;
+                }
             }
-        }
-        CircuitKind::LiteLinear => {
-            let circuit = PorCircuitLiteLinear::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
-        }
-        CircuitKind::LiteMul => {
-            let circuit = PorCircuitLiteMul::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
-        }
-        CircuitKind::LitePoseidonStateOnly => {
-            let circuit = PorCircuitLitePoseidonStateOnly::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
-        }
-        CircuitKind::LiteMerklePoseidonDet => {
-            let circuit = PorCircuitLiteMerklePoseidonDet::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
-        }
-        CircuitKind::LitePoseidonBits => {
-            let circuit = PorCircuitLitePoseidonBits::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
-        }
-        CircuitKind::LiteMerklePoseidonChallengeBits => {
-            let circuit = PorCircuitLiteMerklePoseidonChallengeBits::<FieldElement>::new(
-                plan.files_per_step,
-                plan.file_tree_depth,
-                plan.aggregated_tree_depth,
-            );
-            let _ = circuit.synthesize(&mut sat_cs, &z_sat).map_err(circuit_err)?;
-        }
+            CircuitKind::LiteLinear => {
+                let circuit = PorCircuitLiteLinear::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::LiteMul => {
+                let circuit = PorCircuitLiteMul::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::LitePoseidonStateOnly => {
+                let circuit = PorCircuitLitePoseidonStateOnly::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::LiteMerklePoseidonDet => {
+                let circuit = PorCircuitLiteMerklePoseidonDet::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::LitePoseidonBits => {
+                let circuit = PorCircuitLitePoseidonBits::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+            CircuitKind::LiteMerklePoseidonChallengeBits => {
+                let circuit = PorCircuitLiteMerklePoseidonChallengeBits::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                );
+                let _ = circuit
+                    .synthesize(&mut sat_cs, &z_sat)
+                    .map_err(circuit_err)?;
+            }
+        };
+
+        #[cfg(not(feature = "formal-dev"))]
+        match &fixture.circuit_kind {
+            CircuitKind::Full => {
+                let circuit = PorCircuit::<FieldElement>::new(
+                    plan.files_per_step,
+                    plan.file_tree_depth,
+                    plan.aggregated_tree_depth,
+                    Some(witnesses_vec),
+                );
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    let mut trace = PorWitnessTrace::default();
+                    let _ = synthesize_por_circuit_with_trace(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        circuit.witness.as_ref(),
+                        Some(&mut trace),
+                    )
+                    .map_err(circuit_err)?;
+                    por_trace = Some(trace);
+                } else {
+                    let _ = circuit
+                        .synthesize(&mut sat_cs, &z_sat)
+                        .map_err(circuit_err)?;
+                }
+            }
+            other => {
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "Circuit kind {:?} requires cargo feature `formal-dev`",
+                    other
+                )));
+            }
+        };
     }
     let (instance, witness) = sat_cs
         .r1cs_instance_and_witness(&shape, &ck)
@@ -849,6 +944,8 @@ fn build_picus_layout(
     Ok((layout, wiring))
 }
 
+// (tests live at end of file)
+
 fn field_to_dec(value: &FieldElement) -> String {
     use num_bigint::{BigInt, Sign};
     BigInt::from_bytes_le(Sign::Plus, value.to_repr().as_ref()).to_string()
@@ -1049,11 +1146,7 @@ fn write_picus_precondition_fix_inputs_plus_leafpath_only(
         let Some(val) = inputs.get(idx) else {
             continue;
         };
-        push_wire_assert(
-            &format!("wire_{wire}_input_{idx}"),
-            wire,
-            field_to_dec(val),
-        );
+        push_wire_assert(&format!("wire_{wire}_input_{idx}"), wire, field_to_dec(val));
     }
 
     // Additionally fix the witness material that should define the transition: leaf + siblings.
@@ -1076,18 +1169,17 @@ fn write_picus_precondition_fix_inputs_plus_leafpath_only(
     aux_indices.dedup();
 
     for aux_idx in aux_indices {
-        let Some(wire) = wiring
-            .aux_to_wire
-            .get(aux_idx)
-            .copied()
-            .flatten()
-        else {
+        let Some(wire) = wiring.aux_to_wire.get(aux_idx).copied().flatten() else {
             continue;
         };
         let Some(val) = aux.get(aux_idx) else {
             continue;
         };
-        push_wire_assert(&format!("wire_{wire}_aux_{aux_idx}"), wire, field_to_dec(val));
+        push_wire_assert(
+            &format!("wire_{wire}_aux_{aux_idx}"),
+            wire,
+            field_to_dec(val),
+        );
     }
 
     out.push(']');
@@ -1700,6 +1792,17 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    fn output_wire_is_referenced(layout: &PicusLayout, wire: u32) -> bool {
+        for c in &layout.constraints {
+            for t in c.a.iter().chain(c.b.iter()).chain(c.c.iter()) {
+                if t.wire == wire {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     fn sample_fixture() -> FormalFixture {
         FormalFixture {
             fixture_id: String::from("sample"),
@@ -1794,6 +1897,73 @@ mod tests {
         assert_eq!(
             u32::from_le_bytes(bytes[8..12].try_into().expect("sections")),
             3
+        );
+    }
+
+    #[test]
+    fn production_prefix_outputs_are_constrained() {
+        // Regression guard: if a step output is allocated as a fresh wire but never tied
+        // back to its intended value, it will not appear in any constraint and Picus
+        // can (correctly) report an underconstraint.
+        let fixtures_dir = Path::new("tools/picus/fixtures");
+        let fixture = load_fixture(fixtures_dir, "single-file-minimal").expect("fixture loads");
+
+        let scenario = build_fixture_scenario(&fixture).expect("scenario builds");
+        let plan = derive_plan(&scenario.challenges, &scenario.ledger).expect("plan derives");
+
+        let sorted_challenge_refs: Vec<&Challenge> = plan.sorted_challenges.iter().collect();
+        let file_refs: BTreeMap<String, &PreparedFile> =
+            scenario.files.iter().map(|(k, v)| (k.clone(), v)).collect();
+
+        let (circuit_witness, _) = crate::api::generate_circuit_witness(
+            &sorted_challenge_refs,
+            Some(&file_refs),
+            &scenario.ledger,
+            plan.file_tree_depth,
+            plan.file_tree_depth,
+            FieldElement::ZERO,
+            plan.aggregated_tree_depth,
+            0,
+            &plan.ledger_indices,
+        )
+        .expect("witness builds");
+
+        let witnesses_vec = circuit_witness.witnesses().to_vec();
+
+        let z0_primary = plan.public_io_layout.build_z0_primary(
+            plan.aggregated_root,
+            &plan.ledger_indices,
+            &plan.depths,
+            &plan.seeds,
+        );
+
+        let mut shape_cs: ShapeCS<E1> = ShapeCS::new();
+        let z_shape = alloc_z_inputs(&mut shape_cs, &z0_primary).expect("alloc z");
+
+        let circuit = PorCircuit::<FieldElement>::new(
+            plan.files_per_step,
+            plan.file_tree_depth,
+            plan.aggregated_tree_depth,
+            Some(witnesses_vec),
+        );
+
+        let z_next_shape = circuit
+            .synthesize(&mut shape_cs, &z_shape)
+            .expect("synthesize");
+
+        assert!(
+            !z_next_shape.is_empty(),
+            "PorCircuit produced no outputs; unexpected arity/layout change?"
+        );
+
+        // Root-only target: this was previously at risk of being an unconstrained carry-forward.
+        let (layout, wiring) =
+            build_picus_layout(&shape_cs, &z_next_shape[..1]).expect("picus layout");
+        let out_wire = wiring.output_wires[0];
+        assert!(
+            output_wire_is_referenced(&layout, out_wire),
+            "Picus output wire {} is not referenced by any constraint (likely unconstrained output regression)",
+            out_wire
         );
     }
 }

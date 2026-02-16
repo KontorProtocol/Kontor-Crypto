@@ -10,8 +10,7 @@ use nova_snark::frontend::{
         boolean::{AllocatedBit, Boolean},
         num::AllocatedNum,
     },
-    Index,
-    ConstraintSystem, SynthesisError,
+    ConstraintSystem, Index, SynthesisError,
 };
 #[cfg(debug_assertions)]
 use tracing::debug;
@@ -64,7 +63,10 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
 
 /// Synthesize the real `PorCircuit`, optionally recording the aux indices of specific witness
 /// allocations (leaf + siblings) for Picus precondition export.
-pub fn synthesize_por_circuit_with_trace<F: PrimeField + PrimeFieldBits, CS: ConstraintSystem<F>>(
+pub fn synthesize_por_circuit_with_trace<
+    F: PrimeField + PrimeFieldBits,
+    CS: ConstraintSystem<F>,
+>(
     cs: &mut CS,
     z: &[AllocatedNum<F>],
     files_per_step: usize,
@@ -254,8 +256,12 @@ pub fn synthesize_por_circuit_with_trace<F: PrimeField + PrimeFieldBits, CS: Con
 
         if let Some(t) = trace.as_deref_mut() {
             t.leaf_aux.push(aux_index(&leaf_alloc)?);
-            t.file_sibling_aux
-                .push(file_siblings_alloc.iter().map(aux_index).collect::<Result<_, _>>()?);
+            t.file_sibling_aux.push(
+                file_siblings_alloc
+                    .iter()
+                    .map(aux_index)
+                    .collect::<Result<_, _>>()?,
+            );
             // Fill agg siblings with an empty placeholder; updated below in multi-file branch.
             t.agg_sibling_aux.push(Vec::new());
             // Filled below after we build them.

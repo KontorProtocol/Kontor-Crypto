@@ -150,9 +150,6 @@ fn main() {
 }
 
 fn run(args: Args) -> kontor_crypto::Result<()> {
-    // Best-effort drain of stale solver workers from interrupted prior runs.
-    cleanup_picus_solver_processes();
-
     let fixture_ids = resolve_fixture_ids(&args)?;
     if fixture_ids.is_empty() {
         return Err(kontor_crypto::KontorPoRError::InvalidInput(
@@ -236,9 +233,6 @@ fn run_fixture(
     converter_bin: Option<&str>,
     start: std::time::Instant,
 ) -> kontor_crypto::Result<FixtureSummary> {
-    // Keep fixture runs isolated by clearing stale SMT workers between fixtures.
-    cleanup_picus_solver_processes();
-
     let fixture = formal::load_fixture(&args.fixtures_dir, fixture_id)?;
     let picus_pre = if args.picus_witness_precondition {
         formal::PicusPreconditionKind::WitnessExceptOutputs
@@ -321,10 +315,8 @@ fn run_fixture(
         cmd.arg("--log-level").arg(log_level);
     }
 
-    if args.picus_witness_precondition || args.picus_input_precondition {
-        if let Some(pre) = &exported.picus_precondition_path {
-            cmd.arg("--precondition").arg(pre);
-        }
+    if let Some(pre) = &exported.picus_precondition_path {
+        cmd.arg("--precondition").arg(pre);
     }
 
     // Picus expects options first and source path as the final positional argument.
@@ -354,8 +346,6 @@ fn run_fixture(
     };
 
     if matches!(process_result, ProcessRunResult::TimedOut) {
-        cleanup_picus_processes_for_fixture(&picus_input_path, &picus_json_path);
-        cleanup_picus_solver_processes();
         return Ok(FixtureSummary {
             fixture_id: fixture_id.to_string(),
             status: FixtureStatus::Inconclusive,
@@ -647,42 +637,6 @@ fn run_with_hard_timeout(
                 )));
             }
         }
-    }
-}
-
-fn cleanup_picus_processes_for_fixture(picus_input_path: &Path, picus_json_path: &Path) {
-    // Best-effort cleanup in case a wrapper script leaves solver descendants behind.
-    let patterns = [
-        picus_input_path.display().to_string(),
-        picus_json_path.display().to_string(),
-    ];
-
-    for pattern in patterns {
-        let _ = Command::new("pkill")
-            .arg("-f")
-            .arg(&pattern)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-}
-
-fn cleanup_picus_solver_processes() {
-    // Picus can leave solver subprocesses detached from wrapper process groups.
-    // Reap only temporary solver invocations that include Picus-generated .smt2 paths.
-    let patterns = [
-        "cvc5 .*picus.*\\.smt2",
-        "cvc4 .*picus.*\\.smt2",
-        "z3 .*picus.*\\.smt2",
-    ];
-
-    for pattern in patterns {
-        let _ = Command::new("pkill")
-            .arg("-f")
-            .arg(pattern)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
     }
 }
 
