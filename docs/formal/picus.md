@@ -8,7 +8,7 @@
 - Component manifest:
   - `tools/picus/components/manifest.json` (blocking profile)
 - Monolithic manifest:
-  - `tools/picus/manifest-broad.json` (blocking broad profile)
+  - `tools/picus/manifest-broad.json` (blocking broad profile, includes monolithic mutant control)
 
 ## Export
 ```bash

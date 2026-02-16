@@ -45,4 +45,5 @@ Fixtures can additionally pin `expected_num_constraints`; export fails if the sy
 constraint count drifts.
 
 For the monolithic broad manifest (`tools/picus/manifest-broad.json`), fixtures currently pin
-`output_prefix_len = 0`, i.e. determinism is checked over the full step output vector.
+`output_prefix_len = 0`, i.e. determinism is checked over the full step output vector, and include
+a monolithic carry-forward mutant expected `unsafe` as a positive control.

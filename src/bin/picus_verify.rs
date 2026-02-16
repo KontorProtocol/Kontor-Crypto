@@ -3,11 +3,12 @@ use kontor_crypto::formal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -603,15 +604,15 @@ fn classify_picus_result(
                 .unwrap_or_default()
                 .to_ascii_lowercase();
 
-            if res.contains("safe") {
-                return Ok((
-                    FixtureStatus::Pass,
-                    format!("Classified from {}", picus_json_path.display()),
-                ));
-            }
             if res.contains("unsafe") {
                 return Ok((
                     FixtureStatus::Violation,
+                    format!("Classified from {}", picus_json_path.display()),
+                ));
+            }
+            if res.contains("safe") {
+                return Ok((
+                    FixtureStatus::Pass,
                     format!("Classified from {}", picus_json_path.display()),
                 ));
             }
@@ -637,18 +638,18 @@ fn classify_picus_result(
             }
         }
         let msgs = merged_msgs.to_ascii_lowercase();
-        if msgs.contains("properly constrained") || msgs.contains("exiting picus with the code 8") {
-            return Ok((
-                FixtureStatus::Pass,
-                format!("Classified from NDJSON {}", picus_json_path.display()),
-            ));
-        }
         if msgs.contains("not properly constrained")
             || msgs.contains("underconstrained")
             || msgs.contains("exiting picus with the code 9")
         {
             return Ok((
                 FixtureStatus::Violation,
+                format!("Classified from NDJSON {}", picus_json_path.display()),
+            ));
+        }
+        if msgs.contains("properly constrained") || msgs.contains("exiting picus with the code 8") {
+            return Ok((
+                FixtureStatus::Pass,
                 format!("Classified from NDJSON {}", picus_json_path.display()),
             ));
         }
@@ -665,15 +666,15 @@ fn classify_picus_result(
     }
 
     let merged = format!("{stdout}\n{stderr}").to_ascii_lowercase();
-    if merged.contains("safe") {
-        return Ok((
-            FixtureStatus::Pass,
-            "Classified from process output".to_string(),
-        ));
-    }
     if merged.contains("unsafe") {
         return Ok((
             FixtureStatus::Violation,
+            "Classified from process output".to_string(),
+        ));
+    }
+    if merged.contains("safe") {
+        return Ok((
+            FixtureStatus::Pass,
             "Classified from process output".to_string(),
         ));
     }
@@ -714,6 +715,28 @@ enum ProcessRunResult {
     TimedOut,
 }
 
+fn spawn_pipe_drain_thread<R: Read + Send + 'static>(
+    mut reader: R,
+) -> JoinHandle<io::Result<Vec<u8>>> {
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        Ok(buf)
+    })
+}
+
+fn join_pipe_drain_thread(
+    handle: JoinHandle<io::Result<Vec<u8>>>,
+    stream_name: &str,
+) -> kontor_crypto::Result<Vec<u8>> {
+    let joined = handle.join().map_err(|_| {
+        kontor_crypto::KontorPoRError::IO(format!("Picus {stream_name} drain thread panicked"))
+    })?;
+    joined.map_err(|e| {
+        kontor_crypto::KontorPoRError::IO(format!("Failed to drain Picus {stream_name}: {e}"))
+    })
+}
+
 fn run_with_hard_timeout(
     mut cmd: Command,
     hard_timeout: Duration,
@@ -735,15 +758,36 @@ fn run_with_hard_timeout(
         .spawn()
         .map_err(|e| kontor_crypto::KontorPoRError::IO(format!("Failed to spawn Picus: {e}")))?;
 
+    let stdout_reader = child.stdout.take().ok_or_else(|| {
+        kontor_crypto::KontorPoRError::IO("Failed to capture Picus stdout".to_string())
+    })?;
+    let stderr_reader = child.stderr.take().ok_or_else(|| {
+        kontor_crypto::KontorPoRError::IO("Failed to capture Picus stderr".to_string())
+    })?;
+    let mut stdout_handle = Some(spawn_pipe_drain_thread(stdout_reader));
+    let mut stderr_handle = Some(spawn_pipe_drain_thread(stderr_reader));
+
     let started = Instant::now();
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = child.wait_with_output().map_err(|e| {
-                    kontor_crypto::KontorPoRError::IO(format!(
-                        "Failed to collect Picus output: {e}"
-                    ))
-                })?;
+            Ok(Some(status)) => {
+                let stdout = join_pipe_drain_thread(
+                    stdout_handle
+                        .take()
+                        .expect("stdout drain handle must be present"),
+                    "stdout",
+                )?;
+                let stderr = join_pipe_drain_thread(
+                    stderr_handle
+                        .take()
+                        .expect("stderr drain handle must be present"),
+                    "stderr",
+                )?;
+                let output = Output {
+                    status,
+                    stdout,
+                    stderr,
+                };
                 return Ok(ProcessRunResult::Completed(output));
             }
             Ok(None) => {
@@ -755,11 +799,25 @@ fn run_with_hard_timeout(
                     }
                     let _ = child.kill();
                     let _ = child.wait();
+                    if let Some(handle) = stdout_handle.take() {
+                        let _ = join_pipe_drain_thread(handle, "stdout");
+                    }
+                    if let Some(handle) = stderr_handle.take() {
+                        let _ = join_pipe_drain_thread(handle, "stderr");
+                    }
                     return Ok(ProcessRunResult::TimedOut);
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
             Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                if let Some(handle) = stdout_handle.take() {
+                    let _ = join_pipe_drain_thread(handle, "stdout");
+                }
+                if let Some(handle) = stderr_handle.take() {
+                    let _ = join_pipe_drain_thread(handle, "stderr");
+                }
                 return Err(kontor_crypto::KontorPoRError::IO(format!(
                     "Failed while waiting for Picus process: {e}"
                 )));
@@ -853,4 +911,42 @@ fn truncate_text(input: &str, max_len: usize) -> String {
         return "...".to_string();
     }
     format!("{}...", &input[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_picus_result, FixtureStatus};
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_json_path(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("picus-verify-{name}-{stamp}.json"))
+    }
+
+    #[test]
+    fn classify_json_unsafe_not_misread_as_safe() {
+        let path = temp_json_path("unsafe");
+        fs::write(&path, r#"{"result":"unsafe"}"#).expect("write test json");
+        let (status, _) = classify_picus_result(Some(9), &path, "", "").expect("classify");
+        let _ = fs::remove_file(&path);
+        assert_eq!(status, FixtureStatus::Violation);
+    }
+
+    #[test]
+    fn classify_ndjson_not_properly_constrained_as_violation() {
+        let path = temp_json_path("ndjson");
+        fs::write(
+            &path,
+            r#"{"msg":"The circuit is not properly constrained"}"#,
+        )
+        .expect("write test ndjson");
+        let (status, _) = classify_picus_result(Some(9), &path, "", "").expect("classify");
+        let _ = fs::remove_file(&path);
+        assert_eq!(status, FixtureStatus::Violation);
+    }
 }
