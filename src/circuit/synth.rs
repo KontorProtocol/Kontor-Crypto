@@ -82,7 +82,7 @@ pub fn synthesize_por_circuit_with_trace<
         }
     }
 
-    fn bool_aux_index<F: PrimeField>(b: &Boolean) -> Result<Option<usize>, SynthesisError> {
+    fn bool_aux_index(b: &Boolean) -> Result<Option<usize>, SynthesisError> {
         let var = match b {
             Boolean::Is(bit) | Boolean::Not(bit) => bit.get_variable(),
             Boolean::Constant(_) => return Ok(None),
@@ -341,7 +341,7 @@ pub fn synthesize_por_circuit_with_trace<
             if let Some(slot) = t.file_path_bit_aux.get_mut(file_idx) {
                 let mut v = Vec::with_capacity(file_path_indices.len());
                 for b in &file_path_indices {
-                    if let Some(idx) = bool_aux_index::<F>(b)? {
+                    if let Some(idx) = bool_aux_index(b)? {
                         v.push(idx);
                     }
                 }
@@ -368,7 +368,7 @@ pub fn synthesize_por_circuit_with_trace<
             if let Some(slot) = t.active_flag_aux.get_mut(file_idx) {
                 let mut v = Vec::with_capacity(active_flags.len());
                 for b in &active_flags {
-                    if let Some(idx) = bool_aux_index::<F>(b)? {
+                    if let Some(idx) = bool_aux_index(b)? {
                         v.push(idx);
                     }
                 }

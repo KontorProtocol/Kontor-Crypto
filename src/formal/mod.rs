@@ -58,9 +58,10 @@ pub enum ScenarioKind {
 ///
 /// `full` is the production `PorCircuit`. Other kinds are stripped-down variants used to get
 /// conclusive Picus results and to isolate solver bottlenecks.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CircuitKind {
+    #[default]
     Full,
     LiteLinear,
     LiteMul,
@@ -68,12 +69,6 @@ pub enum CircuitKind {
     LiteMerklePoseidonDet,
     LitePoseidonBits,
     LiteMerklePoseidonChallengeBits,
-}
-
-impl Default for CircuitKind {
-    fn default() -> Self {
-        Self::Full
-    }
 }
 
 /// Expected circuit shape metadata.

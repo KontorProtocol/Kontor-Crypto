@@ -806,7 +806,7 @@ impl<F: PrimeField + PrimeFieldBits> StepCircuit<F> for PorCircuitLitePoseidonBi
 
         let low8 = AllocatedNum::alloc(cs.namespace(|| "low8"), || {
             let hv = h.get_value().unwrap_or(F::ZERO);
-            let b0 = hv.to_repr().as_ref().get(0).copied().unwrap_or(0);
+            let b0 = hv.to_repr().as_ref().first().copied().unwrap_or(0);
             Ok(F::from(b0 as u64))
         })?;
         Self::enforce_lc_zero(cs, "low8_def", |lc| {
