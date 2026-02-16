@@ -102,7 +102,7 @@ recover the relevant aux indices:
   `synthesize_por_circuit_with_trace`)
 - Precondition writer: `src/formal/mod.rs`
 
-## What We Proved / What We Didn’t (As Of This Commit)
+## What We Proved / What We Didn’t
 
 ### What We Proved
 
@@ -122,20 +122,24 @@ recover the relevant aux indices:
 - We did **not** prove uniqueness for the entire output vector in all runs; we often use
   an output prefix for tractability.
 
-### Critical Known Gap: Output Threading Constraints
+### Output Threading: Now Explicitly Constrained
 
-While validating results, we found that some “carry-forward” outputs are allocated as fresh
-variables at the end of `PorCircuit` synthesis but are not currently tied back to their
-intended values via equality constraints. For example, `root_out` is allocated in
-`src/circuit/synth.rs` but (in the current code) does not appear in any constraint.
+While validating results, we found that some “carry-forward” outputs were allocated as fresh
+variables at the end of `PorCircuit` synthesis without tying them back to their intended
+values via equality constraints (e.g. `root_out` should equal the public root input).
 
-This is important because Picus “determinism” results are only meaningful if the targets
-are actually constrained by the circuit. A subsequent commit must add the missing equality
-constraints so the exported step outputs match the intended threaded state.
+This was fixed by adding explicit equality constraints for:
+
+- `root_out`
+- `ledger_index_out_*`
+- `depth_out_*`
+- `seed_out_*`
+
+After this fix, a root-only Picus run (`--output-prefix-len 1`) under the leaf+path scope is
+fast and conclusive across the fixture matrix.
 
 ## Where to Look Next
 
 - Intended spec: `docs/formal/determinism-spec.md`
 - How to run Picus here: `docs/formal/picus-runbook.md`
 - Current results and fixture coverage: `docs/formal/determinism-report.md`
-

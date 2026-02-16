@@ -583,6 +583,13 @@ pub fn synthesize_por_circuit_with_trace<F: PrimeField + PrimeFieldBits, CS: Con
     let root_out = AllocatedNum::alloc(cs.namespace(|| "root_out"), || {
         root.get_value().ok_or(SynthesisError::AssignmentMissing)
     })?;
+    // Enforce: root_out = root
+    cs.enforce(
+        || "root_out_equals_root",
+        |lc| lc + root_out.get_variable() - root.get_variable(),
+        |lc| lc + CS::one(),
+        |lc| lc,
+    );
 
     // Carry forward all ledger indices
     let mut ledger_indices_out = Vec::new();
@@ -591,6 +598,13 @@ pub fn synthesize_por_circuit_with_trace<F: PrimeField + PrimeFieldBits, CS: Con
             AllocatedNum::alloc(cs.namespace(|| format!("ledger_index_out_{}", i)), || {
                 idx.get_value().ok_or(SynthesisError::AssignmentMissing)
             })?;
+        // Enforce: idx_out = idx
+        cs.enforce(
+            || format!("ledger_index_out_equals_public_{}", i),
+            |lc| lc + idx_out.get_variable() - idx.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         ledger_indices_out.push(idx_out);
     }
@@ -601,6 +615,13 @@ pub fn synthesize_por_circuit_with_trace<F: PrimeField + PrimeFieldBits, CS: Con
         let depth_out = AllocatedNum::alloc(cs.namespace(|| format!("depth_out_{}", i)), || {
             depth.get_value().ok_or(SynthesisError::AssignmentMissing)
         })?;
+        // Enforce: depth_out = depth
+        cs.enforce(
+            || format!("depth_out_equals_public_{}", i),
+            |lc| lc + depth_out.get_variable() - depth.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         depths_out.push(depth_out);
     }
@@ -611,6 +632,13 @@ pub fn synthesize_por_circuit_with_trace<F: PrimeField + PrimeFieldBits, CS: Con
         let seed_out = AllocatedNum::alloc(cs.namespace(|| format!("seed_out_{}", i)), || {
             seed.get_value().ok_or(SynthesisError::AssignmentMissing)
         })?;
+        // Enforce: seed_out = seed
+        cs.enforce(
+            || format!("seed_out_equals_public_{}", i),
+            |lc| lc + seed_out.get_variable() - seed.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         seeds_out.push(seed_out);
     }

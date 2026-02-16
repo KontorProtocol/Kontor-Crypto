@@ -51,19 +51,28 @@ Current conclusion:
 - Picus reaches conclusive `safe` (`exit=8`) on the full fixture matrix in `tools/picus/manifest.json` under the leaf+path precondition.
 - "No precondition" determinism on public `z` alone is not an expected property of the production circuit (it is a relation).
 
-## Critical Known Gap (Must Fix)
-During validation we found that some “carry-forward” outputs are currently allocated as fresh
-aux variables at the end of `PorCircuit` synthesis without enforcing equality constraints back
-to their intended values (e.g. `root_out` should equal the public root input).
+## Output Threading Fix (February 16, 2026)
+We added explicit equality constraints for the “carry-forward” outputs in `PorCircuit`
+so that the exported step outputs are actually bound to their intended public inputs:
+- `root_out = root`
+- `ledger_index_out_* = ledger_index_public_*`
+- `depth_out_* = depth_public_*`
+- `seed_out_* = seed_public_*`
 
-This means that a Picus run targeting those outputs can be misleading: if a target signal is
-not actually constrained by the R1CS, then a “safe” result is not establishing the intended
-semantic statement (“outputs are uniquely determined”), because the circuit is not yet
-binding those outputs to the computation.
+This closes the previously identified gap where some outputs could be unconstrained in the
+exported R1CS.
 
-Next action: add explicit equality constraints for the carry-forward outputs in
-`src/circuit/synth.rs`, re-export the fixtures, and re-run the Picus matrix. See
-`docs/formal/determinism-big-picture.md`.
+## Post-Fix Sanity Run (Root-Only Target)
+Run: `artifacts/picus-runs/20260216-prefix1-leafpath-after-output-threading-fix/`
+
+Scope: `--output-prefix-len 1` (root only), leaf+path precondition, 5 minute budgets.
+All fixtures in `tools/picus/manifest.json` were `safe` (`exit=8`) and concluded quickly via
+Picus propagation:
+- `single-file-minimal`: `exit=8` (60s)
+- `single-file-depth10`: `exit=8` (60s)
+- `multi-file-minimal`: `exit=8` (60s)
+- `multi-file-mixed-depth`: `exit=8` (60s)
+- `multi-file-padding`: `exit=8` (120s)
 
 ## Coverage
 Fixture matrix currently defined:
@@ -90,8 +99,8 @@ This covers:
 5. Remaining work: decide whether to formalize additional properties (e.g., strict uniqueness of gating selectors from public depth) and/or add a negative-control mutant circuit to validate detection power.
 
 ## Residual Risk
-1. Until the carry-forward output equality constraints are fixed, `safe` results involving those
-   outputs do not establish the intended determinism claim.
+1. Root-only conclusive results are a necessary sanity check but do not by themselves establish
+   determinism for `state_out` or deeper output prefixes.
 2. Fixture matrix is finite and may not cover all pathological witness patterns.
 3. Picus one-step analysis does not prove full Nova recursion system correctness.
 
