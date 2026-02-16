@@ -11,6 +11,7 @@ Maximize formal assurance against underconstraints by verifying determinism in t
   - Exhaustive: `tools/picus/components/manifest-full.json`
 - Monolithic broad fixtures:
   - `tools/picus/manifest-broad.json`
+  - policy target: full output vector (`output_prefix_len = 0`)
 - Contracts: `tools/picus/components/contracts.json`.
 
 ## Required Claim (Determinism++)

@@ -65,6 +65,9 @@ cargo run --release --bin picus_verify -- \
   --solver cvc5 \
   --picus-log-level PROGRESS \
   --artifacts-dir artifacts/picus-monolithic
+
+# Note: monolithic broad fixtures set `verification.output_prefix_len = 0`
+# (full output vector) in fixture policy.
 ```
 
 ## Dockerized Picus

@@ -39,3 +39,6 @@ Fixtures may declare `verification` policy fields:
 - `hard_timeout_grace_secs`
 
 If a field is omitted, CLI defaults are used.
+
+For the monolithic broad manifest (`tools/picus/manifest-broad.json`), fixtures currently pin
+`output_prefix_len = 0`, i.e. determinism is checked over the full step output vector.
