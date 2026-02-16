@@ -418,49 +418,6 @@ pub fn export_fixture_for_picus_verify(
     )
 }
 
-/// Export a tiny Picus-ready .r1cs that is intentionally underconstrained.
-///
-/// Purpose: smoke-test Picus + solver wiring with a circuit that should return a conclusive
-/// `unsafe` quickly (one output is never constrained).
-///
-/// This is not part of the PorCircuit determinism proof; it is a debugging aid to ensure the
-/// verification stack works before attempting large fixtures.
-pub fn export_picus_smoke_underconstrained(artifacts_root: &Path) -> Result<PathBuf> {
-    let artifact_dir = artifacts_root.join("smoke-underconstrained");
-    fs::create_dir_all(&artifact_dir).map_err(|e| {
-        io_err(
-            format!("Failed to create artifact dir {}", artifact_dir.display()),
-            e,
-        )
-    })?;
-
-    let r1cs_path = artifact_dir.join("circuit.r1cs");
-
-    let mut cs: ShapeCS<E1> = ShapeCS::new();
-
-    // One public input to ensure the R1CS header is non-degenerate.
-    let x = AllocatedNum::alloc_input(cs.namespace(|| "x"), || Ok(FieldElement::ONE))
-        .map_err(circuit_err)?;
-
-    // Add at least one constraint, but do not mention the output.
-    // Enforce x * 1 = 1  ==> x = 1
-    cs.enforce(
-        || "x_is_one",
-        |lc| lc + x.get_variable(),
-        |lc| lc + ShapeCS::<E1>::one(),
-        |lc| lc + ShapeCS::<E1>::one(),
-    );
-
-    // Unconstrained output (aux variable) that is treated as the only public output.
-    let y = AllocatedNum::alloc(cs.namespace(|| "y_unconstrained"), || {
-        Ok(FieldElement::ZERO)
-    })
-    .map_err(circuit_err)?;
-
-    let _wiring = write_picus_r1cs_file(&cs, &[y], &r1cs_path)?;
-    Ok(r1cs_path)
-}
-
 fn export_fixture_impl(
     fixture: &FormalFixture,
     artifacts_root: &Path,
