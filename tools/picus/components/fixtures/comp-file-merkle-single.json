@@ -8,7 +8,21 @@
   "block_height": 1000,
   "prover_id": "formal_node",
   "distinct_seeds": false,
-  "file_specs": [{"size":64,"seed":101}],
-  "expected_shape": {"files_per_step":1,"file_tree_depth":8,"aggregated_tree_depth":0},
-  "tags": ["component","file_merkle","single"]
+  "file_specs": [
+    {
+      "size": 64,
+      "seed": 101
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 8,
+    "aggregated_tree_depth": 0
+  },
+  "tags": [
+    "component",
+    "file_merkle",
+    "single"
+  ],
+  "expected_num_constraints": 4579
 }

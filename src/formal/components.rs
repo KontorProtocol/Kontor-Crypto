@@ -125,6 +125,34 @@ pub fn validate_component_contracts(
         }
     }
 
+    // Validate composition boundaries: every declared dependency edge must share at least one
+    // semantic role between producer outputs and consumer required inputs.
+    for consumer in &contracts.contracts {
+        for producer_kind in &consumer.consumes_from {
+            let Some(producer) = by_kind.get(producer_kind) else {
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "Contract for {:?} depends on missing producer {:?}",
+                    consumer.component, producer_kind
+                )));
+            };
+            let shared_roles = consumer
+                .required_input_roles
+                .iter()
+                .copied()
+                .filter(|role| producer.produced_output_roles.contains(role))
+                .collect::<Vec<_>>();
+            if shared_roles.is_empty() {
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "Contract role mismatch: consumer {:?} depends on {:?} but has no shared roles (consumer required: {:?}, producer outputs: {:?})",
+                    consumer.component,
+                    producer_kind,
+                    consumer.required_input_roles,
+                    producer.produced_output_roles
+                )));
+            }
+        }
+    }
+
     for fixture in fixtures {
         if !fixture.circuit_kind.is_component() {
             return Err(KontorPoRError::InvalidInput(format!(
@@ -213,6 +241,7 @@ mod tests {
                 toy_padded_len: None,
             }],
             expected_shape: None,
+            expected_num_constraints: None,
             tags: vec![],
             expected_result,
             verification: FormalVerificationPolicy::default(),
@@ -263,5 +292,21 @@ mod tests {
         let err = validate_component_contracts(&fixtures, &contracts)
             .expect_err("contract should fail when produced and forbidden overlap");
         assert!(err.to_string().contains("both produces and forbids"));
+    }
+
+    #[test]
+    fn validate_rejects_consumes_from_without_role_overlap() {
+        let mut contracts = full_contracts();
+        contracts.contracts[1].consumes_from = vec![contracts.contracts[0].component.clone()];
+        contracts.contracts[1].required_input_roles = vec![WireRole::WitnessLeaf];
+
+        let fixtures = vec![fixture_for(
+            "fixture",
+            CircuitKind::ComponentChallengeDerivationMutant,
+            ExpectedPicusResult::Unsafe,
+        )];
+        let err = validate_component_contracts(&fixtures, &contracts)
+            .expect_err("contract should fail when dependency roles do not overlap");
+        assert!(err.to_string().contains("no shared roles"));
     }
 }

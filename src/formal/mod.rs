@@ -23,7 +23,9 @@ use crate::circuit::lite::{
     PorCircuitLiteMerklePoseidonDet, PorCircuitLiteMul, PorCircuitLitePoseidonBits,
     PorCircuitLitePoseidonStateOnly,
 };
-use crate::circuit::synth::{synthesize_por_circuit_with_trace, PorWitnessTrace};
+use crate::circuit::synth::{
+    synthesize_por_circuit_carry_forward_mutant, synthesize_por_circuit_with_trace, PorWitnessTrace,
+};
 use crate::circuit::PorCircuit;
 use crate::config::{self, PublicIOLayout};
 use crate::ledger::FileLedger;
@@ -76,6 +78,7 @@ pub enum ScenarioKind {
 pub enum CircuitKind {
     #[default]
     Full,
+    FullCarryForwardMutant,
     ComponentChallengeDerivation,
     ComponentChallengeDerivationMutant,
     ComponentFileMerkle,
@@ -114,7 +117,8 @@ impl CircuitKind {
     pub fn is_mutant(&self) -> bool {
         matches!(
             self,
-            Self::ComponentChallengeDerivationMutant
+            Self::FullCarryForwardMutant
+                | Self::ComponentChallengeDerivationMutant
                 | Self::ComponentFileMerkleMutant
                 | Self::ComponentAggregationMerkleMutant
                 | Self::ComponentStateUpdateMutant
@@ -210,6 +214,8 @@ pub struct FormalFixture {
     #[serde(default)]
     pub expected_shape: Option<ExpectedShape>,
     #[serde(default)]
+    pub expected_num_constraints: Option<usize>,
+    #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
     pub expected_result: ExpectedPicusResult,
@@ -227,6 +233,8 @@ pub struct ExportMetadata {
     pub challenge_count: usize,
     pub derived_shape: ExpectedShape,
     pub expected_shape: Option<ExpectedShape>,
+    #[serde(default)]
+    pub expected_num_constraints: Option<usize>,
     pub shape_match: bool,
     pub sorted_file_ids: Vec<String>,
     pub z0_primary_hex: Vec<String>,
@@ -510,16 +518,29 @@ fn export_fixture_impl(
         #[cfg(feature = "formal-dev")]
         {
             match fixture.circuit_kind {
-                CircuitKind::Full => {
+                CircuitKind::Full | CircuitKind::FullCarryForwardMutant => {
                     let circuit = PorCircuit::<FieldElement>::new(
                         plan.files_per_step,
                         plan.file_tree_depth,
                         plan.aggregated_tree_depth,
                         Some(witnesses_vec.clone()),
                     );
-                    circuit
-                        .synthesize(&mut shape_cs, &z_shape)
+                    if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
+                        synthesize_por_circuit_carry_forward_mutant(
+                            &mut shape_cs,
+                            &z_shape,
+                            plan.files_per_step,
+                            plan.file_tree_depth,
+                            plan.aggregated_tree_depth,
+                            circuit.witness.as_ref(),
+                            None,
+                        )
                         .map_err(circuit_err)?
+                    } else {
+                        circuit
+                            .synthesize(&mut shape_cs, &z_shape)
+                            .map_err(circuit_err)?
+                    }
                 }
                 CircuitKind::ComponentChallengeDerivation => {
                     let circuit = ChallengeDerivationComponentCircuit::<FieldElement>::new(
@@ -687,16 +708,29 @@ fn export_fixture_impl(
         #[cfg(not(feature = "formal-dev"))]
         {
             match &fixture.circuit_kind {
-                CircuitKind::Full => {
+                CircuitKind::Full | CircuitKind::FullCarryForwardMutant => {
                     let circuit = PorCircuit::<FieldElement>::new(
                         plan.files_per_step,
                         plan.file_tree_depth,
                         plan.aggregated_tree_depth,
                         Some(witnesses_vec.clone()),
                     );
-                    circuit
-                        .synthesize(&mut shape_cs, &z_shape)
+                    if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
+                        synthesize_por_circuit_carry_forward_mutant(
+                            &mut shape_cs,
+                            &z_shape,
+                            plan.files_per_step,
+                            plan.file_tree_depth,
+                            plan.aggregated_tree_depth,
+                            circuit.witness.as_ref(),
+                            None,
+                        )
                         .map_err(circuit_err)?
+                    } else {
+                        circuit
+                            .synthesize(&mut shape_cs, &z_shape)
+                            .map_err(circuit_err)?
+                    }
                 }
                 CircuitKind::ComponentChallengeDerivation => {
                     let circuit = ChallengeDerivationComponentCircuit::<FieldElement>::new(
@@ -812,6 +846,14 @@ fn export_fixture_impl(
     let num_constraints = shape_cs.num_constraints();
     let num_inputs = shape_cs.num_inputs();
     let num_aux = shape_cs.num_aux();
+    if let Some(expected_num_constraints) = fixture.expected_num_constraints {
+        if num_constraints != expected_num_constraints {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "Fixture {} expected {} constraints, got {}",
+                fixture.fixture_id, expected_num_constraints, num_constraints
+            )));
+        }
+    }
 
     let (shape, ck) = shape_cs.r1cs_shape(&*default_ck_hint());
 
@@ -822,7 +864,7 @@ fn export_fixture_impl(
     {
         #[cfg(feature = "formal-dev")]
         match fixture.circuit_kind {
-            CircuitKind::Full => {
+            CircuitKind::Full | CircuitKind::FullCarryForwardMutant => {
                 let circuit = PorCircuit::<FieldElement>::new(
                     plan.files_per_step,
                     plan.file_tree_depth,
@@ -831,21 +873,47 @@ fn export_fixture_impl(
                 );
                 if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
                     let mut trace = PorWitnessTrace::default();
-                    let _ = synthesize_por_circuit_with_trace(
-                        &mut sat_cs,
-                        &z_sat,
-                        plan.files_per_step,
-                        plan.file_tree_depth,
-                        plan.aggregated_tree_depth,
-                        circuit.witness.as_ref(),
-                        Some(&mut trace),
-                    )
-                    .map_err(circuit_err)?;
+                    if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
+                        let _ = synthesize_por_circuit_carry_forward_mutant(
+                            &mut sat_cs,
+                            &z_sat,
+                            plan.files_per_step,
+                            plan.file_tree_depth,
+                            plan.aggregated_tree_depth,
+                            circuit.witness.as_ref(),
+                            Some(&mut trace),
+                        )
+                        .map_err(circuit_err)?;
+                    } else {
+                        let _ = synthesize_por_circuit_with_trace(
+                            &mut sat_cs,
+                            &z_sat,
+                            plan.files_per_step,
+                            plan.file_tree_depth,
+                            plan.aggregated_tree_depth,
+                            circuit.witness.as_ref(),
+                            Some(&mut trace),
+                        )
+                        .map_err(circuit_err)?;
+                    }
                     por_trace = Some(trace);
                 } else {
-                    let _ = circuit
-                        .synthesize(&mut sat_cs, &z_sat)
+                    if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
+                        let _ = synthesize_por_circuit_carry_forward_mutant(
+                            &mut sat_cs,
+                            &z_sat,
+                            plan.files_per_step,
+                            plan.file_tree_depth,
+                            plan.aggregated_tree_depth,
+                            circuit.witness.as_ref(),
+                            None,
+                        )
                         .map_err(circuit_err)?;
+                    } else {
+                        let _ = circuit
+                            .synthesize(&mut sat_cs, &z_sat)
+                            .map_err(circuit_err)?;
+                    }
                 }
             }
             CircuitKind::ComponentChallengeDerivation
@@ -1027,7 +1095,7 @@ fn export_fixture_impl(
 
         #[cfg(not(feature = "formal-dev"))]
         match &fixture.circuit_kind {
-            CircuitKind::Full => {
+            CircuitKind::Full | CircuitKind::FullCarryForwardMutant => {
                 let circuit = PorCircuit::<FieldElement>::new(
                     plan.files_per_step,
                     plan.file_tree_depth,
@@ -1036,21 +1104,47 @@ fn export_fixture_impl(
                 );
                 if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
                     let mut trace = PorWitnessTrace::default();
-                    let _ = synthesize_por_circuit_with_trace(
-                        &mut sat_cs,
-                        &z_sat,
-                        plan.files_per_step,
-                        plan.file_tree_depth,
-                        plan.aggregated_tree_depth,
-                        circuit.witness.as_ref(),
-                        Some(&mut trace),
-                    )
-                    .map_err(circuit_err)?;
+                    if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
+                        let _ = synthesize_por_circuit_carry_forward_mutant(
+                            &mut sat_cs,
+                            &z_sat,
+                            plan.files_per_step,
+                            plan.file_tree_depth,
+                            plan.aggregated_tree_depth,
+                            circuit.witness.as_ref(),
+                            Some(&mut trace),
+                        )
+                        .map_err(circuit_err)?;
+                    } else {
+                        let _ = synthesize_por_circuit_with_trace(
+                            &mut sat_cs,
+                            &z_sat,
+                            plan.files_per_step,
+                            plan.file_tree_depth,
+                            plan.aggregated_tree_depth,
+                            circuit.witness.as_ref(),
+                            Some(&mut trace),
+                        )
+                        .map_err(circuit_err)?;
+                    }
                     por_trace = Some(trace);
                 } else {
-                    let _ = circuit
-                        .synthesize(&mut sat_cs, &z_sat)
+                    if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
+                        let _ = synthesize_por_circuit_carry_forward_mutant(
+                            &mut sat_cs,
+                            &z_sat,
+                            plan.files_per_step,
+                            plan.file_tree_depth,
+                            plan.aggregated_tree_depth,
+                            circuit.witness.as_ref(),
+                            None,
+                        )
                         .map_err(circuit_err)?;
+                    } else {
+                        let _ = circuit
+                            .synthesize(&mut sat_cs, &z_sat)
+                            .map_err(circuit_err)?;
+                    }
                 }
             }
             CircuitKind::ComponentChallengeDerivation
@@ -1296,6 +1390,7 @@ fn export_fixture_impl(
         challenge_count: fixture.challenge_count,
         derived_shape,
         expected_shape: fixture.expected_shape.clone(),
+        expected_num_constraints: fixture.expected_num_constraints,
         shape_match,
         sorted_file_ids: plan
             .sorted_challenges
@@ -2435,6 +2530,7 @@ mod tests {
                 toy_padded_len: None,
             }],
             expected_shape: None,
+            expected_num_constraints: None,
             tags: vec![],
             expected_result: ExpectedPicusResult::Safe,
             verification: FormalVerificationPolicy::default(),

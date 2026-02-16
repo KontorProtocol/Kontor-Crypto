@@ -8,8 +8,25 @@
   "block_height": 1000,
   "prover_id": "formal_node",
   "distinct_seeds": false,
-  "file_specs": [{"size":31,"seed":101,"toy_padded_len":1}],
-  "expected_shape": {"files_per_step":1,"file_tree_depth":1,"aggregated_tree_depth":0},
+  "file_specs": [
+    {
+      "size": 31,
+      "seed": 101,
+      "toy_padded_len": 1
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 1,
+    "aggregated_tree_depth": 0
+  },
   "expected_result": "unsafe",
-  "tags": ["component","file_merkle","single","mutant","tiny"]
+  "tags": [
+    "component",
+    "file_merkle",
+    "single",
+    "mutant",
+    "tiny"
+  ],
+  "expected_num_constraints": 1214
 }

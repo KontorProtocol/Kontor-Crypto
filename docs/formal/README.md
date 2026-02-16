@@ -6,13 +6,12 @@ Maximize formal assurance against underconstraints by verifying determinism in t
 - monolithic `PorCircuit` broad production fixtures.
 
 ## Scope
-- Component fixtures:
-  - CI-fast: `tools/picus/components/manifest.json`
-  - Exhaustive: `tools/picus/components/manifest-full.json`
+- Component fixtures: `tools/picus/components/manifest.json`
 - Monolithic broad fixtures:
   - `tools/picus/manifest-broad.json`
   - policy target: full output vector (`output_prefix_len = 0`)
 - Contracts: `tools/picus/components/contracts.json`.
+- Constraint-count regression guard: fixtures pin `expected_num_constraints` and export fails on drift.
 
 ## Required Claim (Determinism++)
 For each blocking fixture, under configured scope and output target, Picus is conclusive and matches expected result:
@@ -27,6 +26,7 @@ For each blocking fixture, under configured scope and output target, Picus is co
 - Component CI manifest: all expected outcomes met and no inconclusive/error.
 - Monolithic broad manifest: all expected outcomes met and no inconclusive/error.
 - Contract validation succeeds for component fixtures.
+- Contract dependency edges (`consumes_from`) have role-compatible boundaries.
 - `leafpath` strict mode is default (no silent fallback to input-only scope).
 
 ## Quick Start

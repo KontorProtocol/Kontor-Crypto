@@ -17,7 +17,7 @@ concurrency:
 jobs:
   component_matrix:
     runs-on: ubuntu-x86-8cpu
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       # Pin Picus Docker image digest for determinism.
       PICUS_DOCKER_IMAGE: >-

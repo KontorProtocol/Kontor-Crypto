@@ -21,12 +21,12 @@
 - composition dependencies (`consumes_from`)
 
 Fixture sets:
-- `tools/picus/components/manifest.json`: CI-fast component matrix.
-- `tools/picus/components/manifest-full.json`: exhaustive matrix including heavier mutants.
+- `tools/picus/components/manifest.json`: blocking component matrix (all 5 production components + 5 mutant families).
 
 Verifier preflight validates:
 - each fixture is component-backed,
 - each fixture has a matching contract,
 - each contract declares non-empty input/output roles and determinism targets,
 - no contract both produces and forbids the same role,
+- each `consumes_from` dependency has at least one shared role between producer outputs and consumer required inputs,
 - mutant fixtures are marked `expected_result = unsafe`.

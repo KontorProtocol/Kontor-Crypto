@@ -1,19 +1,20 @@
 {
-  "fixture_id": "single-file-minimal",
-  "description": "Single-file minimal-depth fixture for determinism baseline",
+  "fixture_id": "single-file-minimal-carry-forward-mutant",
+  "description": "Monolithic positive-control mutant: drops carry-forward equalities and must be unsafe",
   "scenario_kind": "single_file",
+  "circuit_kind": "full_carry_forward_mutant",
   "challenge_count": 2,
   "seed": 12345,
   "block_height": 1000,
   "prover_id": "formal_node",
-  "expected_result": "safe",
+  "expected_result": "unsafe",
   "verification": {
     "scope": "leafpath",
     "output_prefix_len": 0,
     "solver_policy": {
-      "primary": "cvc5",
+      "primary": "z3",
       "fallbacks": [
-        "z3"
+        "cvc5"
       ]
     },
     "timeout_secs": 1200,
@@ -33,7 +34,9 @@
   },
   "tags": [
     "smoke",
-    "single"
+    "single",
+    "mutant",
+    "monolithic"
   ],
-  "expected_num_constraints": 6042
+  "expected_num_constraints": 6039
 }

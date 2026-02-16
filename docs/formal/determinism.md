@@ -29,6 +29,7 @@ For each blocking fixture:
 
 ## Composition boundary
 Component interface expectations are specified in `tools/picus/components/contracts.json` and validated before verification runs.
+Each declared `consumes_from` edge must have role overlap between producer outputs and consumer required inputs.
 
 ## Fixture-level Policy
 Fixtures may declare `verification` policy fields:
@@ -40,5 +41,9 @@ Fixtures may declare `verification` policy fields:
 
 If a field is omitted, CLI defaults are used.
 
+Fixtures can additionally pin `expected_num_constraints`; export fails if the synthesized
+constraint count drifts.
+
 For the monolithic broad manifest (`tools/picus/manifest-broad.json`), fixtures currently pin
-`output_prefix_len = 0`, i.e. determinism is checked over the full step output vector.
+`output_prefix_len = 0`, i.e. determinism is checked over the full step output vector, and include
+a monolithic carry-forward mutant expected `unsafe` as a positive control.

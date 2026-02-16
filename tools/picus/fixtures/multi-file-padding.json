@@ -12,7 +12,9 @@
     "output_prefix_len": 0,
     "solver_policy": {
       "primary": "cvc5",
-      "fallbacks": ["z3"]
+      "fallbacks": [
+        "z3"
+      ]
     },
     "timeout_secs": 1200,
     "hard_timeout_grace_secs": 120
@@ -40,5 +42,6 @@
   "tags": [
     "multi",
     "padding"
-  ]
+  ],
+  "expected_num_constraints": 30925
 }

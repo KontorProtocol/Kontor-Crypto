@@ -30,7 +30,7 @@
     },
     {
       "component": "component_file_merkle_mutant",
-      "required_input_roles": ["public_input", "witness_leaf", "witness_file_sibling", "path_bit", "gate_bit"],
+      "required_input_roles": ["public_input", "public_output", "witness_leaf", "witness_file_sibling", "path_bit", "gate_bit"],
       "produced_output_roles": ["public_output"],
       "forbidden_output_roles": ["witness_agg_sibling"],
       "determinism_targets": ["leaf_outputs"],
@@ -48,7 +48,7 @@
     },
     {
       "component": "component_aggregation_merkle_mutant",
-      "required_input_roles": ["public_input", "witness_agg_sibling", "path_bit", "gate_bit"],
+      "required_input_roles": ["public_input", "public_output", "witness_agg_sibling", "path_bit", "gate_bit"],
       "produced_output_roles": ["public_output"],
       "forbidden_output_roles": ["witness_leaf", "witness_file_sibling"],
       "determinism_targets": ["leaf_outputs"],
@@ -57,7 +57,7 @@
     },
     {
       "component": "component_state_update",
-      "required_input_roles": ["public_input", "witness_leaf", "gate_bit"],
+      "required_input_roles": ["public_input", "public_output", "witness_leaf", "gate_bit"],
       "produced_output_roles": ["public_output"],
       "forbidden_output_roles": ["witness_file_sibling", "witness_agg_sibling"],
       "determinism_targets": ["state_out", "leaf_outputs"],
@@ -66,7 +66,7 @@
     },
     {
       "component": "component_state_update_mutant",
-      "required_input_roles": ["public_input", "witness_leaf", "gate_bit"],
+      "required_input_roles": ["public_input", "public_output", "witness_leaf", "gate_bit"],
       "produced_output_roles": ["public_output"],
       "forbidden_output_roles": ["witness_file_sibling", "witness_agg_sibling"],
       "determinism_targets": ["state_out", "leaf_outputs"],
@@ -75,7 +75,7 @@
     },
     {
       "component": "component_carry_forward",
-      "required_input_roles": ["public_input"],
+      "required_input_roles": ["public_input", "public_output"],
       "produced_output_roles": ["public_output"],
       "forbidden_output_roles": ["witness_leaf", "witness_file_sibling", "witness_agg_sibling"],
       "determinism_targets": ["carry_forward_outputs"],
@@ -84,7 +84,7 @@
     },
     {
       "component": "component_carry_forward_mutant",
-      "required_input_roles": ["public_input"],
+      "required_input_roles": ["public_input", "public_output"],
       "produced_output_roles": ["public_output"],
       "forbidden_output_roles": ["witness_leaf", "witness_file_sibling", "witness_agg_sibling"],
       "determinism_targets": ["carry_forward_outputs"],

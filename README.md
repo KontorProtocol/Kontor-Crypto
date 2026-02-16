@@ -184,6 +184,11 @@ Comprehensive formal verification is provided for deterministic underconstraint 
 - component sub-circuits built from production gadgets,
 - monolithic `PorCircuit` broad production fixtures.
 
+Blocking controls include:
+- mutation fixtures expected `unsafe` across all 5 component families,
+- a monolithic carry-forward mutant expected `unsafe`,
+- fixture-pinned `expected_num_constraints` regression checks during export.
+
 ```bash
 # Export component fixtures to Picus-ready R1CS
 cargo run --release --bin picus_export -- \

@@ -5,11 +5,10 @@
 - Verifier: `src/bin/picus_verify.rs`
 - Core export logic: `src/formal/mod.rs`
 - Contracts: `tools/picus/components/contracts.json`
-- Component manifests:
-  - `tools/picus/components/manifest.json` (blocking fast profile)
-  - `tools/picus/components/manifest-full.json` (exhaustive profile)
+- Component manifest:
+  - `tools/picus/components/manifest.json` (blocking profile)
 - Monolithic manifest:
-  - `tools/picus/manifest-broad.json` (blocking broad profile)
+  - `tools/picus/manifest-broad.json` (blocking broad profile, includes monolithic mutant control)
 
 ## Export
 ```bash
@@ -43,18 +42,6 @@ cargo run --release --bin picus_verify -- \
   --picus-log-level PROGRESS \
   --artifacts-dir artifacts/picus-components
 
-# Component exhaustive profile (includes heavier mutants)
-cargo run --release --bin picus_verify -- \
-  --all \
-  --manifest tools/picus/components/manifest-full.json \
-  --fixtures-dir tools/picus/components/fixtures \
-  --scope leafpath \
-  --simplify safe \
-  --solver cvc5 \
-  --picus-log-level PROGRESS \
-  --artifacts-dir artifacts/picus-components-full \
-  --allow-inconclusive
-
 # Monolithic broad blocking profile
 cargo run --release --bin picus_verify -- \
   --all \
@@ -84,4 +71,6 @@ tools/picus/run.sh --all --scope leafpath --simplify safe
 - `z3` should be available on PATH for fallback solver policy.
 - `leafpath` is strict by default. To allow fallback to input-only scope for debugging, set `KONTOR_PICUS_STRICT_SCOPE=0`.
 - Fixture `expected_result` is enforced for all profiles.
+- Fixture `expected_num_constraints` is enforced during export for regression detection.
 - Per-fixture `verification` policy overrides CLI defaults unless `--ignore-fixture-policy` is set.
+- Component contracts are validated for role compatibility across all `consumes_from` edges.
