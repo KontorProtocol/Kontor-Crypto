@@ -12,9 +12,9 @@
     "scope": "leafpath",
     "output_prefix_len": 0,
     "solver_policy": {
-      "primary": "z3",
+      "primary": "cvc5",
       "fallbacks": [
-        "cvc5"
+        "z3"
       ]
     },
     "timeout_secs": 1200,

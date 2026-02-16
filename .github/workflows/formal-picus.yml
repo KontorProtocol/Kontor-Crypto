@@ -23,8 +23,8 @@ jobs:
       PICUS_DOCKER_IMAGE: >-
         veridise/picus:base@sha256:fc396dbabd92cb0026a52dd3f2f72893374a1fc29367409cb49f251923089162
       PICUS_DOCKER_PLATFORM: linux/amd64
-      # Keep within GitHub hosted runner memory constraints.
-      PICUS_DOCKER_MEMORY: 6g
+      # Keep within GitHub hosted runner memory constraints while avoiding solver OOM.
+      PICUS_DOCKER_MEMORY: 10g
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -103,7 +103,7 @@ jobs:
       PICUS_DOCKER_IMAGE: >-
         veridise/picus:base@sha256:fc396dbabd92cb0026a52dd3f2f72893374a1fc29367409cb49f251923089162
       PICUS_DOCKER_PLATFORM: linux/amd64
-      PICUS_DOCKER_MEMORY: 6g
+      PICUS_DOCKER_MEMORY: 10g
     steps:
       - name: Checkout
         uses: actions/checkout@v4
