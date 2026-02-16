@@ -1,35 +1,95 @@
 {
-  "version": 1,
+  "version": 2,
   "contracts": [
     {
       "component": "component_challenge_derivation",
       "required_input_roles": ["public_input"],
       "produced_output_roles": ["public_output", "path_bit"],
+      "forbidden_output_roles": ["witness_leaf", "witness_file_sibling", "witness_agg_sibling"],
+      "determinism_targets": ["leaf_outputs"],
+      "consumes_from": [],
       "notes": "Derives per-file challenge values from public state and seeds."
+    },
+    {
+      "component": "component_challenge_derivation_mutant",
+      "required_input_roles": ["public_input"],
+      "produced_output_roles": ["public_output"],
+      "forbidden_output_roles": ["path_bit"],
+      "determinism_targets": ["leaf_outputs"],
+      "consumes_from": [],
+      "notes": "Mutation test: intentionally omits deterministic challenge constraints."
     },
     {
       "component": "component_file_merkle",
       "required_input_roles": ["public_input", "witness_leaf", "witness_file_sibling", "path_bit", "gate_bit"],
       "produced_output_roles": ["public_output"],
+      "forbidden_output_roles": ["witness_agg_sibling"],
+      "determinism_targets": ["leaf_outputs"],
+      "consumes_from": ["component_challenge_derivation"],
       "notes": "Computes file Merkle roots using production verify_merkle_path_gated gadget."
+    },
+    {
+      "component": "component_file_merkle_mutant",
+      "required_input_roles": ["public_input", "witness_leaf", "witness_file_sibling", "path_bit", "gate_bit"],
+      "produced_output_roles": ["public_output"],
+      "forbidden_output_roles": ["witness_agg_sibling"],
+      "determinism_targets": ["leaf_outputs"],
+      "consumes_from": ["component_challenge_derivation_mutant"],
+      "notes": "Mutation test: intentionally leaves file-root outputs unconstrained."
     },
     {
       "component": "component_aggregation_merkle",
       "required_input_roles": ["public_input", "witness_agg_sibling", "path_bit", "gate_bit"],
       "produced_output_roles": ["public_output"],
+      "forbidden_output_roles": ["witness_leaf", "witness_file_sibling"],
+      "determinism_targets": ["leaf_outputs"],
+      "consumes_from": ["component_challenge_derivation"],
       "notes": "Computes aggregation roots using production verify_aggregation_path_gated gadget."
+    },
+    {
+      "component": "component_aggregation_merkle_mutant",
+      "required_input_roles": ["public_input", "witness_agg_sibling", "path_bit", "gate_bit"],
+      "produced_output_roles": ["public_output"],
+      "forbidden_output_roles": ["witness_leaf", "witness_file_sibling"],
+      "determinism_targets": ["leaf_outputs"],
+      "consumes_from": ["component_challenge_derivation_mutant"],
+      "notes": "Mutation test: intentionally leaves aggregation-root outputs unconstrained."
     },
     {
       "component": "component_state_update",
       "required_input_roles": ["public_input", "witness_leaf", "gate_bit"],
       "produced_output_roles": ["public_output"],
+      "forbidden_output_roles": ["witness_file_sibling", "witness_agg_sibling"],
+      "determinism_targets": ["state_out", "leaf_outputs"],
+      "consumes_from": ["component_challenge_derivation"],
       "notes": "Per-slot gated state transition and public leaf exposure."
+    },
+    {
+      "component": "component_state_update_mutant",
+      "required_input_roles": ["public_input", "witness_leaf", "gate_bit"],
+      "produced_output_roles": ["public_output"],
+      "forbidden_output_roles": ["witness_file_sibling", "witness_agg_sibling"],
+      "determinism_targets": ["state_out", "leaf_outputs"],
+      "consumes_from": ["component_challenge_derivation_mutant"],
+      "notes": "Mutation test: intentionally leaves state/leaf outputs unconstrained."
     },
     {
       "component": "component_carry_forward",
       "required_input_roles": ["public_input"],
       "produced_output_roles": ["public_output"],
+      "forbidden_output_roles": ["witness_leaf", "witness_file_sibling", "witness_agg_sibling"],
+      "determinism_targets": ["carry_forward_outputs"],
+      "consumes_from": ["component_state_update", "component_file_merkle", "component_aggregation_merkle"],
       "notes": "Enforces explicit carry-forward equalities across public outputs."
+    },
+    {
+      "component": "component_carry_forward_mutant",
+      "required_input_roles": ["public_input"],
+      "produced_output_roles": ["public_output"],
+      "forbidden_output_roles": ["witness_leaf", "witness_file_sibling", "witness_agg_sibling"],
+      "determinism_targets": ["carry_forward_outputs"],
+      "consumes_from": ["component_state_update_mutant", "component_file_merkle_mutant", "component_aggregation_merkle_mutant"],
+      "notes": "Mutation test: intentionally drops carry-forward equalities."
     }
   ]
 }

@@ -1,4 +1,4 @@
-use clap::{Parser, ValueEnum};
+use clap::{ArgAction, Parser, ValueEnum};
 use kontor_crypto::formal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -94,6 +94,10 @@ struct Args {
     #[arg(long, value_enum, default_value_t = SimplifyMode::Safe)]
     simplify: SimplifyMode,
 
+    /// Enforce strict leafpath scope (fail instead of silently falling back to input-only)
+    #[arg(long, default_value_t = true, action = ArgAction::Set)]
+    strict_scope: bool,
+
     /// Allow inconclusive fixtures without failing process exit code
     #[arg(long)]
     allow_inconclusive: bool,
@@ -120,6 +124,7 @@ enum FixtureStatus {
 struct FixtureSummary {
     fixture_id: String,
     circuit_kind: formal::CircuitKind,
+    expected_result: formal::ExpectedPicusResult,
     status: FixtureStatus,
     runtime_ms: u128,
     artifact_dir: String,
@@ -163,6 +168,10 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
             SimplifyMode::Off => "off",
         },
     );
+    std::env::set_var(
+        "KONTOR_PICUS_STRICT_SCOPE",
+        if args.strict_scope { "true" } else { "false" },
+    );
 
     let mut fixtures = Vec::with_capacity(fixture_ids.len());
     for fixture_id in fixture_ids {
@@ -199,6 +208,7 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
             Err(err) => FixtureSummary {
                 fixture_id: fixture.fixture_id.clone(),
                 circuit_kind: fixture.circuit_kind.clone(),
+                expected_result: fixture.expected_result.clone(),
                 status: FixtureStatus::Error,
                 runtime_ms: start.elapsed().as_millis(),
                 artifact_dir: String::new(),
@@ -223,10 +233,7 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
     println!("Summary json: {}", args.summary_json.display());
     println!("Summary md: {}", args.summary_md.display());
 
-    if report.violation > 0
-        || report.error > 0
-        || (report.inconclusive > 0 && !args.allow_inconclusive)
-    {
+    if report.error > 0 || (report.inconclusive > 0 && !args.allow_inconclusive) {
         return Err(kontor_crypto::KontorPoRError::InvalidInput(
             "Formal verification did not pass for all fixtures".to_string(),
         ));
@@ -262,6 +269,7 @@ fn run_fixture(
         return Ok(FixtureSummary {
             fixture_id: fixture.fixture_id.clone(),
             circuit_kind: fixture.circuit_kind.clone(),
+            expected_result: fixture.expected_result.clone(),
             status: FixtureStatus::Error,
             runtime_ms: start.elapsed().as_millis(),
             artifact_dir: exported.artifact_dir.display().to_string(),
@@ -273,13 +281,80 @@ fn run_fixture(
         });
     }
 
+    let mut run = run_picus_once(
+        args,
+        &exported,
+        &picus_input_path,
+        &picus_json_path,
+        &args.solver,
+    )?;
+
+    // cvc5 often struggles to produce concrete counterexamples for deliberately
+    // underconstrained mutants. Retry expected-unsafe fixtures with z3 for robust
+    // mutation checking without changing the default solver for normal fixtures.
+    if fixture.expected_result == formal::ExpectedPicusResult::Unsafe
+        && run.status != FixtureStatus::Violation
+        && !args.solver.eq_ignore_ascii_case("z3")
+    {
+        let z3_json_path = exported.artifact_dir.join("picus-result-z3.json");
+        let z3_run = run_picus_once(args, &exported, &picus_input_path, &z3_json_path, "z3")?;
+        if z3_run.status == FixtureStatus::Violation {
+            run = z3_run;
+        } else {
+            run.reason = format!("{}; z3 retry: {}", run.reason, z3_run.reason);
+            if !z3_run.stdout.is_empty() {
+                run.stdout = format!("{}\n\n[z3 retry]\n{}", run.stdout, z3_run.stdout);
+            }
+            if !z3_run.stderr.is_empty() {
+                run.stderr = format!("{}\n\n[z3 retry]\n{}", run.stderr, z3_run.stderr);
+            }
+        }
+    }
+
+    let runtime_ms = start.elapsed().as_millis();
+    let (status, reason) = enforce_expected_result(fixture, run.status, run.reason);
+
+    Ok(FixtureSummary {
+        fixture_id: fixture.fixture_id.clone(),
+        circuit_kind: fixture.circuit_kind.clone(),
+        expected_result: fixture.expected_result.clone(),
+        status,
+        runtime_ms,
+        artifact_dir: exported.artifact_dir.display().to_string(),
+        picus_input: Some(picus_input_path.display().to_string()),
+        picus_json: if run.json_path.exists() {
+            Some(run.json_path.display().to_string())
+        } else {
+            None
+        },
+        reason,
+        stdout: truncate_text(&run.stdout, 6000),
+        stderr: truncate_text(&run.stderr, 6000),
+    })
+}
+
+struct PicusRunOutcome {
+    status: FixtureStatus,
+    reason: String,
+    stdout: String,
+    stderr: String,
+    json_path: PathBuf,
+}
+
+fn run_picus_once(
+    args: &Args,
+    exported: &formal::ExportOutput,
+    picus_input_path: &Path,
+    picus_json_path: &Path,
+    solver: &str,
+) -> kontor_crypto::Result<PicusRunOutcome> {
     let mut cmd = Command::new(&args.picus_bin);
     cmd.arg("--json")
-        .arg(&picus_json_path)
+        .arg(picus_json_path)
         .arg("--timeout")
         .arg((args.timeout_secs.saturating_mul(1000)).to_string())
         .arg("--solver")
-        .arg(&args.solver)
+        .arg(solver)
         .arg("--log-level")
         .arg(&args.picus_log_level);
 
@@ -295,7 +370,7 @@ fn run_fixture(
     if let Some(pre_path) = &exported.picus_precondition_path {
         cmd.arg("--precondition").arg(pre_path);
     }
-    cmd.arg(&picus_input_path);
+    cmd.arg(picus_input_path);
 
     let hard_timeout = Duration::from_secs(
         args.timeout_secs
@@ -307,7 +382,7 @@ fn run_fixture(
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             let (status, reason) =
-                classify_picus_result(output.status.success(), &picus_json_path, &stdout, &stderr)?;
+                classify_picus_result(output.status.code(), picus_json_path, &stdout, &stderr)?;
             (stdout, stderr, status, reason)
         }
         ProcessRunResult::TimedOut => (
@@ -315,33 +390,49 @@ fn run_fixture(
             String::new(),
             FixtureStatus::Inconclusive,
             format!(
-                "Picus hard timeout exceeded ({}s + {}s grace)",
-                args.timeout_secs, args.hard_timeout_grace_secs
+                "Picus hard timeout exceeded ({}s + {}s grace) using solver {}",
+                args.timeout_secs, args.hard_timeout_grace_secs, solver
             ),
         ),
     };
-    let runtime_ms = start.elapsed().as_millis();
 
-    Ok(FixtureSummary {
-        fixture_id: fixture.fixture_id.clone(),
-        circuit_kind: fixture.circuit_kind.clone(),
+    Ok(PicusRunOutcome {
         status,
-        runtime_ms,
-        artifact_dir: exported.artifact_dir.display().to_string(),
-        picus_input: Some(picus_input_path.display().to_string()),
-        picus_json: if picus_json_path.exists() {
-            Some(picus_json_path.display().to_string())
-        } else {
-            None
-        },
-        reason,
-        stdout: truncate_text(&stdout, 6000),
-        stderr: truncate_text(&stderr, 6000),
+        reason: format!("{reason} [solver={solver}]"),
+        stdout,
+        stderr,
+        json_path: picus_json_path.to_path_buf(),
     })
 }
 
+fn expected_fixture_status(expected: &formal::ExpectedPicusResult) -> FixtureStatus {
+    match expected {
+        formal::ExpectedPicusResult::Safe => FixtureStatus::Pass,
+        formal::ExpectedPicusResult::Unsafe => FixtureStatus::Violation,
+    }
+}
+
+fn enforce_expected_result(
+    fixture: &formal::FormalFixture,
+    observed_status: FixtureStatus,
+    observed_reason: String,
+) -> (FixtureStatus, String) {
+    let expected_status = expected_fixture_status(&fixture.expected_result);
+    if observed_status == expected_status {
+        return (observed_status, observed_reason);
+    }
+
+    (
+        FixtureStatus::Error,
+        format!(
+            "Expected {:?} for fixture {}, got {:?} ({})",
+            expected_status, fixture.fixture_id, observed_status, observed_reason
+        ),
+    )
+}
+
 fn classify_picus_result(
-    exit_ok: bool,
+    exit_code: Option<i32>,
     picus_json_path: &Path,
     stdout: &str,
     stderr: &str,
@@ -382,6 +473,46 @@ fn classify_picus_result(
                 ));
             }
         }
+
+        // Picus often emits NDJSON logs where result is encoded in `msg`.
+        let mut merged_msgs = String::new();
+        for line in raw.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<Value>(line) {
+                if let Some(msg) = v.get("msg").and_then(|m| m.as_str()) {
+                    merged_msgs.push_str(msg);
+                    merged_msgs.push('\n');
+                }
+            }
+        }
+        let msgs = merged_msgs.to_ascii_lowercase();
+        if msgs.contains("properly constrained") || msgs.contains("exiting picus with the code 8") {
+            return Ok((
+                FixtureStatus::Pass,
+                format!("Classified from NDJSON {}", picus_json_path.display()),
+            ));
+        }
+        if msgs.contains("not properly constrained")
+            || msgs.contains("underconstrained")
+            || msgs.contains("exiting picus with the code 9")
+        {
+            return Ok((
+                FixtureStatus::Violation,
+                format!("Classified from NDJSON {}", picus_json_path.display()),
+            ));
+        }
+        if msgs.contains("cannot determine")
+            || msgs.contains("unknown")
+            || msgs.contains("timeout")
+            || msgs.contains("exiting picus with the code 0")
+        {
+            return Ok((
+                FixtureStatus::Inconclusive,
+                format!("Classified from NDJSON {}", picus_json_path.display()),
+            ));
+        }
     }
 
     let merged = format!("{stdout}\n{stderr}").to_ascii_lowercase();
@@ -404,16 +535,27 @@ fn classify_picus_result(
         ));
     }
 
-    if exit_ok {
-        Ok((
+    match exit_code {
+        Some(8) => Ok((
+            FixtureStatus::Pass,
+            "Classified from Picus exit code 8".to_string(),
+        )),
+        Some(9) => Ok((
+            FixtureStatus::Violation,
+            "Classified from Picus exit code 9".to_string(),
+        )),
+        Some(0) => Ok((
             FixtureStatus::Inconclusive,
-            "Picus exited successfully but result could not be classified".to_string(),
-        ))
-    } else {
-        Ok((
+            "Classified from Picus exit code 0".to_string(),
+        )),
+        Some(code) => Ok((
             FixtureStatus::Error,
-            "Picus exited with non-zero status".to_string(),
-        ))
+            format!("Picus exited with unexpected status {code}"),
+        )),
+        None => Ok((
+            FixtureStatus::Error,
+            "Picus terminated without a status code".to_string(),
+        )),
     }
 }
 
@@ -528,13 +670,14 @@ fn write_markdown(path: &Path, report: &SummaryReport) -> kontor_crypto::Result<
     out.push_str(&format!("- Inconclusive: {}\n", report.inconclusive));
     out.push_str(&format!("- Error: {}\n\n", report.error));
 
-    out.push_str("| Fixture | Circuit Kind | Status | Runtime (ms) | Reason |\n");
-    out.push_str("|---|---|---|---:|---|\n");
+    out.push_str("| Fixture | Circuit Kind | Expected | Status | Runtime (ms) | Reason |\n");
+    out.push_str("|---|---|---|---|---:|---|\n");
     for result in &report.results {
         out.push_str(&format!(
-            "| {} | {:?} | {:?} | {} | {} |\n",
+            "| {} | {:?} | {:?} | {:?} | {} | {} |\n",
             result.fixture_id,
             result.circuit_kind,
+            result.expected_result,
             result.status,
             result.runtime_ms,
             result.reason.replace('|', "\\|")

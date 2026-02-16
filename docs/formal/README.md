@@ -5,7 +5,8 @@ Maximize formal assurance against underconstraints by verifying determinism on m
 
 ## Scope
 - Primary target: component circuits (`challenge_derivation`, `file_merkle`, `aggregation_merkle`, `state_update`, `carry_forward`).
-- Fixture matrix: `tools/picus/components/manifest.json`.
+- CI fixture matrix: `tools/picus/components/manifest.json` (fast profile).
+- Exhaustive fixture matrix: `tools/picus/components/manifest-full.json` (includes heavier mutants).
 - Contracts: `tools/picus/components/contracts.json`.
 
 ## Required Claim (Determinism++)
@@ -17,9 +18,10 @@ For each component fixture, under the selected scope (default: `leafpath`), all 
 - Full recursive Nova system proof.
 
 ## Success Criteria
-- All component fixtures in `tools/picus/components/manifest.json` are `safe`.
+- All non-mutant component fixtures in `tools/picus/components/manifest.json` are `safe`.
+- All mutant fixtures in `tools/picus/components/manifest.json` are `unsafe`.
 - Contract validation succeeds for all component fixtures.
-- Mutant/negative fixtures can produce `unsafe` (when added).
+- Leafpath scope runs are strict by default (no silent fallback to input-only scope).
 
 ## Quick Start
 ```bash

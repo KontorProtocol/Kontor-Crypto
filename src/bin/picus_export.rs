@@ -1,4 +1,4 @@
-use clap::{Parser, ValueEnum};
+use clap::{ArgAction, Parser, ValueEnum};
 use kontor_crypto::formal;
 use std::path::PathBuf;
 
@@ -53,6 +53,10 @@ struct Args {
     /// R1CS simplification mode
     #[arg(long, value_enum, default_value_t = SimplifyMode::Safe)]
     simplify: SimplifyMode,
+
+    /// Enforce strict leafpath scope (fail instead of silently falling back to input-only)
+    #[arg(long, default_value_t = true, action = ArgAction::Set)]
+    strict_scope: bool,
 }
 
 fn main() {
@@ -79,6 +83,10 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
             SimplifyMode::Off => "off",
         },
     );
+    std::env::set_var(
+        "KONTOR_PICUS_STRICT_SCOPE",
+        if args.strict_scope { "true" } else { "false" },
+    );
 
     let mut fixtures = Vec::with_capacity(fixture_ids.len());
     for fixture_id in fixture_ids {
@@ -96,6 +104,7 @@ fn run(args: Args) -> kontor_crypto::Result<()> {
     println!("Exporting {} component fixture(s)", fixtures.len());
     println!("- Scope: {:?}", args.scope);
     println!("- Simplify: {:?}", args.simplify);
+    println!("- Strict scope: {}", args.strict_scope);
     if args.output_prefix_len > 0 {
         println!("- Output prefix len: {}", args.output_prefix_len);
     } else {

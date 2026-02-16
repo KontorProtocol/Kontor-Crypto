@@ -1,0 +1,15 @@
+{
+  "fixture_id": "comp-carry-forward-mutant-single",
+  "description": "Carry-forward mutant should be underconstrained",
+  "scenario_kind": "single_file",
+  "circuit_kind": "component_carry_forward_mutant",
+  "challenge_count": 2,
+  "seed": 12345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": false,
+  "file_specs": [{"size":64,"seed":101}],
+  "expected_shape": {"files_per_step":1,"file_tree_depth":8,"aggregated_tree_depth":0},
+  "expected_result": "unsafe",
+  "tags": ["component","carry_forward","single","mutant"]
+}

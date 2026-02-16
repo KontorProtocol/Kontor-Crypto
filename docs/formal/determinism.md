@@ -10,13 +10,18 @@ This branch verifies determinism on smaller component circuits built from produc
 - `9`: unsafe (counterexample found)
 - `0`: unknown/inconclusive
 
+Fixture `expected_result` is enforced:
+- non-mutant fixtures are expected `safe`
+- mutant fixtures are expected `unsafe`
+
 ## Required Statement
 For each component fixture and full component output scope:
 - under the selected scope (`leafpath` by default),
 - there does not exist a pair of satisfying assignments that agree on fixed wires and differ on target outputs.
 
 ## Scope options
-- `leafpath` (default): exported as `InputsPlusLeafPathOnly`, with component fallback to input-fixed when trace-only data is unavailable.
+- `leafpath` (default): exported as `InputsPlusLeafPathOnly` with strict trace enforcement.
+  If trace capture fails, export fails by default (`KONTOR_PICUS_STRICT_SCOPE=0` allows fallback).
 - `public-z`: exported as input-fixed (`InputsOnly`).
 
 ## Composition boundary

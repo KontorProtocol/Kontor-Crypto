@@ -8,8 +8,14 @@ pub mod roles;
 
 use crate::api::{prepare_file, tree_depth_from_metadata, Challenge, FieldElement, PreparedFile};
 use crate::circuit::formal_components::{
-    AggregationMerkleComponentCircuit, CarryForwardComponentCircuit,
-    ChallengeDerivationComponentCircuit, FileMerkleComponentCircuit, StateUpdateComponentCircuit,
+    synthesize_aggregation_merkle_component, synthesize_carry_forward_component,
+    synthesize_challenge_component, synthesize_file_merkle_component,
+    synthesize_state_update_component, AggregationMerkleComponentCircuit,
+    AggregationMerkleMutantComponentCircuit, CarryForwardComponentCircuit,
+    CarryForwardMutantComponentCircuit, ChallengeDerivationComponentCircuit,
+    ChallengeDerivationMutantComponentCircuit, ComponentWitnessTrace, FileMerkleComponentCircuit,
+    FileMerkleMutantComponentCircuit, StateUpdateComponentCircuit,
+    StateUpdateMutantComponentCircuit,
 };
 #[cfg(feature = "formal-dev")]
 use crate::circuit::lite::{
@@ -71,10 +77,15 @@ pub enum CircuitKind {
     #[default]
     Full,
     ComponentChallengeDerivation,
+    ComponentChallengeDerivationMutant,
     ComponentFileMerkle,
+    ComponentFileMerkleMutant,
     ComponentAggregationMerkle,
+    ComponentAggregationMerkleMutant,
     ComponentStateUpdate,
+    ComponentStateUpdateMutant,
     ComponentCarryForward,
+    ComponentCarryForwardMutant,
     LiteLinear,
     LiteMul,
     LitePoseidonStateOnly,
@@ -88,12 +99,36 @@ impl CircuitKind {
         matches!(
             self,
             Self::ComponentChallengeDerivation
+                | Self::ComponentChallengeDerivationMutant
                 | Self::ComponentFileMerkle
+                | Self::ComponentFileMerkleMutant
                 | Self::ComponentAggregationMerkle
+                | Self::ComponentAggregationMerkleMutant
                 | Self::ComponentStateUpdate
+                | Self::ComponentStateUpdateMutant
                 | Self::ComponentCarryForward
+                | Self::ComponentCarryForwardMutant
         )
     }
+
+    pub fn is_mutant(&self) -> bool {
+        matches!(
+            self,
+            Self::ComponentChallengeDerivationMutant
+                | Self::ComponentFileMerkleMutant
+                | Self::ComponentAggregationMerkleMutant
+                | Self::ComponentStateUpdateMutant
+                | Self::ComponentCarryForwardMutant
+        )
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpectedPicusResult {
+    #[default]
+    Safe,
+    Unsafe,
 }
 
 /// Expected circuit shape metadata.
@@ -133,6 +168,8 @@ pub struct FormalFixture {
     pub expected_shape: Option<ExpectedShape>,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub expected_result: ExpectedPicusResult,
 }
 
 /// Serializable metadata describing one export run.
@@ -449,8 +486,29 @@ fn export_fixture_impl(
                         .synthesize(&mut shape_cs, &z_shape)
                         .map_err(circuit_err)?
                 }
+                CircuitKind::ComponentChallengeDerivationMutant => {
+                    let circuit = ChallengeDerivationMutantComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
                 CircuitKind::ComponentFileMerkle => {
                     let circuit = FileMerkleComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentFileMerkleMutant => {
+                    let circuit = FileMerkleMutantComponentCircuit::<FieldElement>::new(
                         plan.files_per_step,
                         plan.file_tree_depth,
                         plan.aggregated_tree_depth,
@@ -471,8 +529,30 @@ fn export_fixture_impl(
                         .synthesize(&mut shape_cs, &z_shape)
                         .map_err(circuit_err)?
                 }
+                CircuitKind::ComponentAggregationMerkleMutant => {
+                    let circuit = AggregationMerkleMutantComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
                 CircuitKind::ComponentStateUpdate => {
                     let circuit = StateUpdateComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentStateUpdateMutant => {
+                    let circuit = StateUpdateMutantComponentCircuit::<FieldElement>::new(
                         plan.files_per_step,
                         plan.file_tree_depth,
                         plan.aggregated_tree_depth,
@@ -485,6 +565,14 @@ fn export_fixture_impl(
                 CircuitKind::ComponentCarryForward => {
                     let circuit =
                         CarryForwardComponentCircuit::<FieldElement>::new(plan.files_per_step);
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentCarryForwardMutant => {
+                    let circuit = CarryForwardMutantComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                    );
                     circuit
                         .synthesize(&mut shape_cs, &z_shape)
                         .map_err(circuit_err)?
@@ -575,8 +663,29 @@ fn export_fixture_impl(
                         .synthesize(&mut shape_cs, &z_shape)
                         .map_err(circuit_err)?
                 }
+                CircuitKind::ComponentChallengeDerivationMutant => {
+                    let circuit = ChallengeDerivationMutantComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
                 CircuitKind::ComponentFileMerkle => {
                     let circuit = FileMerkleComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentFileMerkleMutant => {
+                    let circuit = FileMerkleMutantComponentCircuit::<FieldElement>::new(
                         plan.files_per_step,
                         plan.file_tree_depth,
                         plan.aggregated_tree_depth,
@@ -597,8 +706,30 @@ fn export_fixture_impl(
                         .synthesize(&mut shape_cs, &z_shape)
                         .map_err(circuit_err)?
                 }
+                CircuitKind::ComponentAggregationMerkleMutant => {
+                    let circuit = AggregationMerkleMutantComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
                 CircuitKind::ComponentStateUpdate => {
                     let circuit = StateUpdateComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(circuit_witness.clone()),
+                    );
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentStateUpdateMutant => {
+                    let circuit = StateUpdateMutantComponentCircuit::<FieldElement>::new(
                         plan.files_per_step,
                         plan.file_tree_depth,
                         plan.aggregated_tree_depth,
@@ -611,6 +742,14 @@ fn export_fixture_impl(
                 CircuitKind::ComponentCarryForward => {
                     let circuit =
                         CarryForwardComponentCircuit::<FieldElement>::new(plan.files_per_step);
+                    circuit
+                        .synthesize(&mut shape_cs, &z_shape)
+                        .map_err(circuit_err)?
+                }
+                CircuitKind::ComponentCarryForwardMutant => {
+                    let circuit = CarryForwardMutantComponentCircuit::<FieldElement>::new(
+                        plan.files_per_step,
+                    );
                     circuit
                         .synthesize(&mut shape_cs, &z_shape)
                         .map_err(circuit_err)?
@@ -634,6 +773,7 @@ fn export_fixture_impl(
     let mut sat_cs = SatisfyingAssignment::<E1>::new();
     let z_sat = alloc_z_inputs(&mut sat_cs, &z0_primary).map_err(circuit_err)?;
     let mut por_trace: Option<PorWitnessTrace> = None;
+    let mut component_trace: Option<ComponentWitnessTrace> = None;
     {
         #[cfg(feature = "formal-dev")]
         match fixture.circuit_kind {
@@ -663,54 +803,119 @@ fn export_fixture_impl(
                         .map_err(circuit_err)?;
                 }
             }
-            CircuitKind::ComponentChallengeDerivation => {
-                let circuit = ChallengeDerivationComponentCircuit::<FieldElement>::new(
+            CircuitKind::ComponentChallengeDerivation
+            | CircuitKind::ComponentChallengeDerivationMutant => {
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    component_trace = Some(ComponentWitnessTrace::default());
+                }
+                let mutant =
+                    fixture.circuit_kind == CircuitKind::ComponentChallengeDerivationMutant;
+                let _ = synthesize_challenge_component(
+                    &mut sat_cs,
+                    &z_sat,
                     plan.files_per_step,
-                    plan.file_tree_depth,
                     plan.aggregated_tree_depth,
-                );
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
-                    .map_err(circuit_err)?;
+                    mutant,
+                )
+                .map_err(circuit_err)?;
             }
-            CircuitKind::ComponentFileMerkle => {
-                let circuit = FileMerkleComponentCircuit::<FieldElement>::new(
-                    plan.files_per_step,
-                    plan.file_tree_depth,
-                    plan.aggregated_tree_depth,
-                    Some(circuit_witness.clone()),
-                );
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
+            CircuitKind::ComponentFileMerkle | CircuitKind::ComponentFileMerkleMutant => {
+                let mutant = fixture.circuit_kind == CircuitKind::ComponentFileMerkleMutant;
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    let mut trace = ComponentWitnessTrace::default();
+                    let _ = synthesize_file_merkle_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        Some(&mut trace),
+                        mutant,
+                    )
                     .map_err(circuit_err)?;
-            }
-            CircuitKind::ComponentAggregationMerkle => {
-                let circuit = AggregationMerkleComponentCircuit::<FieldElement>::new(
-                    plan.files_per_step,
-                    plan.file_tree_depth,
-                    plan.aggregated_tree_depth,
-                    Some(circuit_witness.clone()),
-                );
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
+                    component_trace = Some(trace);
+                } else {
+                    let _ = synthesize_file_merkle_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        None,
+                        mutant,
+                    )
                     .map_err(circuit_err)?;
+                }
             }
-            CircuitKind::ComponentStateUpdate => {
-                let circuit = StateUpdateComponentCircuit::<FieldElement>::new(
-                    plan.files_per_step,
-                    plan.file_tree_depth,
-                    plan.aggregated_tree_depth,
-                    Some(circuit_witness.clone()),
-                );
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
+            CircuitKind::ComponentAggregationMerkle
+            | CircuitKind::ComponentAggregationMerkleMutant => {
+                let mutant = fixture.circuit_kind == CircuitKind::ComponentAggregationMerkleMutant;
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    let mut trace = ComponentWitnessTrace::default();
+                    let _ = synthesize_aggregation_merkle_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        Some(&mut trace),
+                        mutant,
+                    )
                     .map_err(circuit_err)?;
+                    component_trace = Some(trace);
+                } else {
+                    let _ = synthesize_aggregation_merkle_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        None,
+                        mutant,
+                    )
+                    .map_err(circuit_err)?;
+                }
             }
-            CircuitKind::ComponentCarryForward => {
-                let circuit =
-                    CarryForwardComponentCircuit::<FieldElement>::new(plan.files_per_step);
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
+            CircuitKind::ComponentStateUpdate | CircuitKind::ComponentStateUpdateMutant => {
+                let mutant = fixture.circuit_kind == CircuitKind::ComponentStateUpdateMutant;
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    let mut trace = ComponentWitnessTrace::default();
+                    let _ = synthesize_state_update_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        Some(&mut trace),
+                        mutant,
+                    )
+                    .map_err(circuit_err)?;
+                    component_trace = Some(trace);
+                } else {
+                    let _ = synthesize_state_update_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        None,
+                        mutant,
+                    )
+                    .map_err(circuit_err)?;
+                }
+            }
+            CircuitKind::ComponentCarryForward | CircuitKind::ComponentCarryForwardMutant => {
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    component_trace = Some(ComponentWitnessTrace::default());
+                }
+                let mutant = fixture.circuit_kind == CircuitKind::ComponentCarryForwardMutant;
+                let _ = synthesize_carry_forward_component(&mut sat_cs, &z_sat, mutant)
                     .map_err(circuit_err)?;
             }
             CircuitKind::LiteLinear => {
@@ -803,54 +1008,119 @@ fn export_fixture_impl(
                         .map_err(circuit_err)?;
                 }
             }
-            CircuitKind::ComponentChallengeDerivation => {
-                let circuit = ChallengeDerivationComponentCircuit::<FieldElement>::new(
+            CircuitKind::ComponentChallengeDerivation
+            | CircuitKind::ComponentChallengeDerivationMutant => {
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    component_trace = Some(ComponentWitnessTrace::default());
+                }
+                let mutant =
+                    fixture.circuit_kind == CircuitKind::ComponentChallengeDerivationMutant;
+                let _ = synthesize_challenge_component(
+                    &mut sat_cs,
+                    &z_sat,
                     plan.files_per_step,
-                    plan.file_tree_depth,
                     plan.aggregated_tree_depth,
-                );
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
-                    .map_err(circuit_err)?;
+                    mutant,
+                )
+                .map_err(circuit_err)?;
             }
-            CircuitKind::ComponentFileMerkle => {
-                let circuit = FileMerkleComponentCircuit::<FieldElement>::new(
-                    plan.files_per_step,
-                    plan.file_tree_depth,
-                    plan.aggregated_tree_depth,
-                    Some(circuit_witness.clone()),
-                );
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
+            CircuitKind::ComponentFileMerkle | CircuitKind::ComponentFileMerkleMutant => {
+                let mutant = fixture.circuit_kind == CircuitKind::ComponentFileMerkleMutant;
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    let mut trace = ComponentWitnessTrace::default();
+                    let _ = synthesize_file_merkle_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        Some(&mut trace),
+                        mutant,
+                    )
                     .map_err(circuit_err)?;
-            }
-            CircuitKind::ComponentAggregationMerkle => {
-                let circuit = AggregationMerkleComponentCircuit::<FieldElement>::new(
-                    plan.files_per_step,
-                    plan.file_tree_depth,
-                    plan.aggregated_tree_depth,
-                    Some(circuit_witness.clone()),
-                );
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
+                    component_trace = Some(trace);
+                } else {
+                    let _ = synthesize_file_merkle_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        None,
+                        mutant,
+                    )
                     .map_err(circuit_err)?;
+                }
             }
-            CircuitKind::ComponentStateUpdate => {
-                let circuit = StateUpdateComponentCircuit::<FieldElement>::new(
-                    plan.files_per_step,
-                    plan.file_tree_depth,
-                    plan.aggregated_tree_depth,
-                    Some(circuit_witness.clone()),
-                );
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
+            CircuitKind::ComponentAggregationMerkle
+            | CircuitKind::ComponentAggregationMerkleMutant => {
+                let mutant = fixture.circuit_kind == CircuitKind::ComponentAggregationMerkleMutant;
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    let mut trace = ComponentWitnessTrace::default();
+                    let _ = synthesize_aggregation_merkle_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        Some(&mut trace),
+                        mutant,
+                    )
                     .map_err(circuit_err)?;
+                    component_trace = Some(trace);
+                } else {
+                    let _ = synthesize_aggregation_merkle_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        None,
+                        mutant,
+                    )
+                    .map_err(circuit_err)?;
+                }
             }
-            CircuitKind::ComponentCarryForward => {
-                let circuit =
-                    CarryForwardComponentCircuit::<FieldElement>::new(plan.files_per_step);
-                let _ = circuit
-                    .synthesize(&mut sat_cs, &z_sat)
+            CircuitKind::ComponentStateUpdate | CircuitKind::ComponentStateUpdateMutant => {
+                let mutant = fixture.circuit_kind == CircuitKind::ComponentStateUpdateMutant;
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    let mut trace = ComponentWitnessTrace::default();
+                    let _ = synthesize_state_update_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        Some(&mut trace),
+                        mutant,
+                    )
+                    .map_err(circuit_err)?;
+                    component_trace = Some(trace);
+                } else {
+                    let _ = synthesize_state_update_component(
+                        &mut sat_cs,
+                        &z_sat,
+                        plan.files_per_step,
+                        plan.file_tree_depth,
+                        plan.aggregated_tree_depth,
+                        Some(&circuit_witness),
+                        None,
+                        mutant,
+                    )
+                    .map_err(circuit_err)?;
+                }
+            }
+            CircuitKind::ComponentCarryForward | CircuitKind::ComponentCarryForwardMutant => {
+                if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
+                    component_trace = Some(ComponentWitnessTrace::default());
+                }
+                let mutant = fixture.circuit_kind == CircuitKind::ComponentCarryForwardMutant;
+                let _ = synthesize_carry_forward_component(&mut sat_cs, &z_sat, mutant)
                     .map_err(circuit_err)?;
             }
             other => {
@@ -920,13 +1190,28 @@ fn export_fixture_impl(
                         write_picus_precondition_fix_inputs_only(&sat_cs, wiring, &path)?
                     }
                     PicusPreconditionKind::InputsPlusLeafPathOnly => {
-                        if let Some(trace) = por_trace.as_ref() {
+                        let leafpath_aux_indices = por_trace
+                            .as_ref()
+                            .map(collect_por_leafpath_aux_indices)
+                            .or_else(|| {
+                                component_trace
+                                    .as_ref()
+                                    .map(ComponentWitnessTrace::leafpath_aux_indices)
+                            });
+
+                        if let Some(aux_indices) = leafpath_aux_indices {
                             write_picus_precondition_fix_inputs_plus_leafpath_only(
-                                &sat_cs, wiring, trace, &path,
+                                &sat_cs,
+                                wiring,
+                                &aux_indices,
+                                &path,
                             )?
+                        } else if leafpath_scope_strict() {
+                            return Err(KontorPoRError::InvalidInput(format!(
+                                "Leafpath scope requested but no witness trace was captured for fixture {} (set KONTOR_PICUS_STRICT_SCOPE=0 to allow fallback)",
+                                fixture.fixture_id
+                            )));
                         } else {
-                            // Component circuits do not currently emit PorWitnessTrace; fall back
-                            // to input-fixed scope to keep modular runs tractable and deterministic.
                             write_picus_precondition_fix_inputs_only(&sat_cs, wiring, &path)?
                         }
                     }
@@ -1059,6 +1344,36 @@ fn should_simplify_layout() -> bool {
         }
         Err(_) => true,
     }
+}
+
+fn leafpath_scope_strict() -> bool {
+    match std::env::var("KONTOR_PICUS_STRICT_SCOPE") {
+        Ok(v) => {
+            let t = v.trim().to_ascii_lowercase();
+            !(t == "off" || t == "0" || t == "false")
+        }
+        Err(_) => true,
+    }
+}
+
+fn collect_por_leafpath_aux_indices(trace: &PorWitnessTrace) -> Vec<usize> {
+    let mut aux_indices = Vec::<usize>::new();
+    aux_indices.extend(trace.leaf_aux.iter().copied());
+    for v in &trace.file_sibling_aux {
+        aux_indices.extend(v.iter().copied());
+    }
+    for v in &trace.agg_sibling_aux {
+        aux_indices.extend(v.iter().copied());
+    }
+    for v in &trace.file_path_bit_aux {
+        aux_indices.extend(v.iter().copied());
+    }
+    for v in &trace.active_flag_aux {
+        aux_indices.extend(v.iter().copied());
+    }
+    aux_indices.sort_unstable();
+    aux_indices.dedup();
+    aux_indices
 }
 
 fn simplify_layout_safe(mut layout: PicusLayout) -> PicusLayout {
@@ -1367,7 +1682,7 @@ fn write_picus_precondition_fix_inputs_only(
 fn write_picus_precondition_fix_inputs_plus_leafpath_only(
     sat_cs: &SatisfyingAssignment<E1>,
     wiring: &PicusWiring,
-    trace: &PorWitnessTrace,
+    aux_indices: &[usize],
     path: &Path,
 ) -> Result<()> {
     use std::fmt::Write as _;
@@ -1422,30 +1737,12 @@ fn write_picus_precondition_fix_inputs_plus_leafpath_only(
         push_wire_assert(&format!("wire_{wire}_input_{idx}"), wire, field_to_dec(val));
     }
 
-    // Additionally fix the witness material that should define the transition: leaf + siblings.
-    let mut aux_indices = Vec::<usize>::new();
-    aux_indices.extend(trace.leaf_aux.iter().copied());
-    for v in &trace.file_sibling_aux {
-        aux_indices.extend(v.iter().copied());
-    }
-    for v in &trace.agg_sibling_aux {
-        aux_indices.extend(v.iter().copied());
-    }
-    for v in &trace.file_path_bit_aux {
-        aux_indices.extend(v.iter().copied());
-    }
-    for v in &trace.active_flag_aux {
-        aux_indices.extend(v.iter().copied());
-    }
-
-    aux_indices.sort_unstable();
-    aux_indices.dedup();
-
+    // Additionally fix the witness material that should define the transition.
     for aux_idx in aux_indices {
-        let Some(wire) = wiring.aux_to_wire.get(aux_idx).copied().flatten() else {
+        let Some(wire) = wiring.aux_to_wire.get(*aux_idx).copied().flatten() else {
             continue;
         };
-        let Some(val) = aux.get(aux_idx) else {
+        let Some(val) = aux.get(*aux_idx) else {
             continue;
         };
         push_wire_assert(
@@ -2094,6 +2391,7 @@ mod tests {
             }],
             expected_shape: None,
             tags: vec![],
+            expected_result: ExpectedPicusResult::Safe,
         }
     }
 

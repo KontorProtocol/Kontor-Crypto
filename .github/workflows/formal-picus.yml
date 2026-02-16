@@ -54,6 +54,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-formal-picus-
 
+      - name: Install z3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y z3
+
       - name: Docker Info
         run: |
           docker version
