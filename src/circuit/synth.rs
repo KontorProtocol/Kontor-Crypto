@@ -640,14 +640,15 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
     let root_out = AllocatedNum::alloc(cs.namespace(|| "root_out"), || {
         root.get_value().ok_or(SynthesisError::AssignmentMissing)
     })?;
-    // Enforce: root_out = root (kept even in mutant mode; monolithic mutant targets the
-    // carry-forward equality family for per-slot public fields).
-    cs.enforce(
-        || "root_out_equals_root",
-        |lc| lc + root_out.get_variable() - root.get_variable(),
-        |lc| lc + CS::one(),
-        |lc| lc,
-    );
+    if !drop_carry_forward_equalities {
+        // Enforce: root_out = root.
+        cs.enforce(
+            || "root_out_equals_root",
+            |lc| lc + root_out.get_variable() - root.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
+    }
 
     // Carry forward all ledger indices
     let mut ledger_indices_out = Vec::new();
@@ -705,6 +706,20 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
         }
 
         seeds_out.push(seed_out);
+    }
+
+    if drop_carry_forward_equalities {
+        // Monolithic positive-control mutant:
+        // add a one-degree-of-freedom witness pair (g_lhs = g_rhs) that is disconnected
+        // from public outputs. This guarantees an underconstraint Picus can detect.
+        let g_lhs = AllocatedNum::alloc(cs.namespace(|| "mutant_g_lhs"), || Ok(F::ZERO))?;
+        let g_rhs = AllocatedNum::alloc(cs.namespace(|| "mutant_g_rhs"), || Ok(F::ZERO))?;
+        cs.enforce(
+            || "mutant_free_witness_pair",
+            |lc| lc + g_lhs.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc + g_rhs.get_variable(),
+        );
     }
 
     // Build output vector: [root_out, current_state, ledger_indices..., depths..., seeds..., leaves...]

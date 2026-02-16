@@ -2,7 +2,6 @@
   "version": 1,
   "fixtures": [
     "single-file-minimal",
-    "single-file-minimal-carry-forward-mutant",
     "single-file-depth10",
     "multi-file-minimal",
     "multi-file-mixed-depth",

@@ -1,6 +1,6 @@
 {
   "fixture_id": "single-file-minimal-carry-forward-mutant",
-  "description": "Monolithic positive-control mutant: drops carry-forward equalities and must be unsafe",
+  "description": "Monolithic positive-control mutant: drops root/carry-forward equalities and injects free witness dof (must be unsafe)",
   "scenario_kind": "single_file",
   "circuit_kind": "full_carry_forward_mutant",
   "challenge_count": 2,
