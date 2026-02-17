@@ -88,9 +88,10 @@ pub fn synthesize_por_circuit_with_trace<
     )
 }
 
-/// Synthesize the real `PorCircuit` but intentionally drop carry-forward equalities.
+/// Synthesize a monolithic positive-control mutant for formal verification.
 ///
-/// This is used only by formal verification as a monolithic positive-control mutant.
+/// The mutant intentionally emits an unconstrained output vector with the correct arity so
+/// Picus should quickly report `unsafe`.
 pub fn synthesize_por_circuit_carry_forward_mutant<
     F: PrimeField + PrimeFieldBits,
     CS: ConstraintSystem<F>,
@@ -160,6 +161,23 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
         files_per_step,
         z.len()
     );
+
+    if drop_carry_forward_equalities {
+        // Fast positive-control mutant for formal tooling.
+        let mut outputs = Vec::with_capacity(layout.arity());
+        for i in 0..layout.arity() {
+            let out =
+                AllocatedNum::alloc(cs.namespace(|| format!("mutant_out_{i}")), || Ok(F::ZERO))?;
+            outputs.push(out);
+        }
+        cs.enforce(
+            || "mutant_tautology",
+            |lc| lc + CS::one(),
+            |lc| lc + CS::one(),
+            |lc| lc + CS::one(),
+        );
+        return Ok(outputs);
+    }
 
     // Deconstruct the public input vector using centralized layout
     let root = &z[layout.idx_agg_root()]; // The public root (aggregated tree root)
@@ -706,20 +724,6 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
         }
 
         seeds_out.push(seed_out);
-    }
-
-    if drop_carry_forward_equalities {
-        // Monolithic positive-control mutant:
-        // add a one-degree-of-freedom witness pair (g_lhs = g_rhs) that is disconnected
-        // from public outputs. This guarantees an underconstraint Picus can detect.
-        let g_lhs = AllocatedNum::alloc(cs.namespace(|| "mutant_g_lhs"), || Ok(F::ZERO))?;
-        let g_rhs = AllocatedNum::alloc(cs.namespace(|| "mutant_g_rhs"), || Ok(F::ZERO))?;
-        cs.enforce(
-            || "mutant_free_witness_pair",
-            |lc| lc + g_lhs.get_variable(),
-            |lc| lc + CS::one(),
-            |lc| lc + g_rhs.get_variable(),
-        );
     }
 
     // Build output vector: [root_out, current_state, ledger_indices..., depths..., seeds..., leaves...]

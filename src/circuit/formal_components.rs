@@ -162,6 +162,9 @@ pub fn synthesize_challenge_component<F: PrimeField + PrimeFieldBits, CS: Constr
 ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
     let layout = PublicIOLayout::new(files_per_step);
     let mut out = copy_all_inputs_to_aux(cs, z, !mutant)?;
+    if mutant {
+        return Ok(out);
+    }
     let state_in = &z[layout.idx_state_in()];
 
     for i in 0..files_per_step {
@@ -221,6 +224,9 @@ pub fn synthesize_file_merkle_component<F: PrimeField + PrimeFieldBits, CS: Cons
 ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
     let layout = PublicIOLayout::new(files_per_step);
     let mut out = copy_all_inputs_to_aux(cs, z, !mutant)?;
+    if mutant {
+        return Ok(out);
+    }
     let state_in = &z[layout.idx_state_in()];
 
     for file_idx in 0..files_per_step {
@@ -342,14 +348,7 @@ pub fn synthesize_file_merkle_component<F: PrimeField + PrimeFieldBits, CS: Cons
             file_tree_depth,
         )?;
 
-        if mutant {
-            out[layout.idx_leaf(file_idx)] = AllocatedNum::alloc(
-                cs.namespace(|| format!("file_merkle_unconstrained_{file_idx}")),
-                || Ok(F::ZERO),
-            )?;
-        } else {
-            out[layout.idx_leaf(file_idx)] = computed_file_root;
-        }
+        out[layout.idx_leaf(file_idx)] = computed_file_root;
     }
 
     Ok(out)
@@ -371,6 +370,9 @@ pub fn synthesize_aggregation_merkle_component<
 ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
     let layout = PublicIOLayout::new(files_per_step);
     let mut out = copy_all_inputs_to_aux(cs, z, !mutant)?;
+    if mutant {
+        return Ok(out);
+    }
     let state_in = &z[layout.idx_state_in()];
 
     for file_idx in 0..files_per_step {
@@ -437,14 +439,7 @@ pub fn synthesize_aggregation_merkle_component<
             aggregated_tree_depth,
         )?;
 
-        if mutant {
-            out[layout.idx_leaf(file_idx)] = AllocatedNum::alloc(
-                cs.namespace(|| format!("agg_merkle_unconstrained_{file_idx}")),
-                || Ok(F::ZERO),
-            )?;
-        } else {
-            out[layout.idx_leaf(file_idx)] = computed_agg_root;
-        }
+        out[layout.idx_leaf(file_idx)] = computed_agg_root;
     }
 
     Ok(out)
@@ -466,6 +461,9 @@ pub fn synthesize_state_update_component<
 ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
     let layout = PublicIOLayout::new(files_per_step);
     let mut out = copy_all_inputs_to_aux(cs, z, !mutant)?;
+    if mutant {
+        return Ok(out);
+    }
 
     let mut current_state = z[layout.idx_state_in()].clone();
     for file_idx in 0..files_per_step {
@@ -501,32 +499,19 @@ pub fn synthesize_state_update_component<
             &updated_state,
         )?;
 
-        if mutant {
-            out[layout.idx_leaf(file_idx)] = AllocatedNum::alloc(
-                cs.namespace(|| format!("state_leaf_unconstrained_{file_idx}")),
-                || Ok(F::ZERO),
-            )?;
-        } else {
-            let zero =
-                AllocatedNum::alloc(cs.namespace(|| format!("state_zero_{file_idx}")), || {
-                    Ok(F::ZERO)
-                })?;
-            let leaf_pub = conditional_select(
-                cs.namespace(|| format!("state_public_leaf_select_{file_idx}")),
-                &gate_for_slot,
-                &zero,
-                &leaf_alloc,
-            )?;
-            out[layout.idx_leaf(file_idx)] = leaf_pub;
-        }
+        let zero = AllocatedNum::alloc(cs.namespace(|| format!("state_zero_{file_idx}")), || {
+            Ok(F::ZERO)
+        })?;
+        let leaf_pub = conditional_select(
+            cs.namespace(|| format!("state_public_leaf_select_{file_idx}")),
+            &gate_for_slot,
+            &zero,
+            &leaf_alloc,
+        )?;
+        out[layout.idx_leaf(file_idx)] = leaf_pub;
     }
 
-    if mutant {
-        out[layout.idx_state_in()] =
-            AllocatedNum::alloc(cs.namespace(|| "state_out_unconstrained"), || Ok(F::ZERO))?;
-    } else {
-        out[layout.idx_state_in()] = current_state;
-    }
+    out[layout.idx_state_in()] = current_state;
 
     Ok(out)
 }

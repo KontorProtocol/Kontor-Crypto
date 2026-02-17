@@ -647,12 +647,6 @@ fn classify_picus_result(
                 format!("Classified from NDJSON {}", picus_json_path.display()),
             ));
         }
-        if msgs.contains("properly constrained") || msgs.contains("exiting picus with the code 8") {
-            return Ok((
-                FixtureStatus::Pass,
-                format!("Classified from NDJSON {}", picus_json_path.display()),
-            ));
-        }
         if msgs.contains("cannot determine")
             || msgs.contains("unknown")
             || msgs.contains("timeout")
@@ -660,6 +654,14 @@ fn classify_picus_result(
         {
             return Ok((
                 FixtureStatus::Inconclusive,
+                format!("Classified from NDJSON {}", picus_json_path.display()),
+            ));
+        }
+        if msgs.contains("the circuit is properly constrained")
+            || msgs.contains("exiting picus with the code 8")
+        {
+            return Ok((
+                FixtureStatus::Pass,
                 format!("Classified from NDJSON {}", picus_json_path.display()),
             ));
         }
@@ -948,5 +950,18 @@ mod tests {
         let (status, _) = classify_picus_result(Some(9), &path, "", "").expect("classify");
         let _ = fs::remove_file(&path);
         assert_eq!(status, FixtureStatus::Violation);
+    }
+
+    #[test]
+    fn classify_ndjson_cannot_determine_is_inconclusive() {
+        let path = temp_json_path("ndjson-unknown");
+        fs::write(
+            &path,
+            r#"{"msg":"Cannot determine whether the circuit is properly constrained"}"#,
+        )
+        .expect("write test ndjson");
+        let (status, _) = classify_picus_result(Some(0), &path, "", "").expect("classify");
+        let _ = fs::remove_file(&path);
+        assert_eq!(status, FixtureStatus::Inconclusive);
     }
 }
