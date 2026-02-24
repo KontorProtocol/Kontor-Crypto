@@ -40,12 +40,25 @@ async function main() {
     throw new Error('preparedFile.treeLeavesHex must be a non-empty array');
   }
 
+  // Descriptor for filestorage.create_agreement
+  const { descriptor } = obj;
+  if (!descriptor) throw new Error('missing descriptor');
+  if (descriptor.fileId !== metadata.fileId) throw new Error('descriptor.fileId must match metadata.fileId');
+  if (descriptor.objectId !== metadata.objectId) throw new Error('descriptor.objectId must match metadata.objectId');
+  if (descriptor.filename !== metadata.filename) throw new Error('descriptor.filename must match metadata.filename');
+  if (descriptor.originalSize !== metadata.originalSize) throw new Error('descriptor.originalSize must match metadata.originalSize');
+  if (descriptor.paddedLen !== metadata.paddedLen) throw new Error('descriptor.paddedLen must match metadata.paddedLen');
+  if (!Array.isArray(descriptor.root) || descriptor.root.length !== 32) {
+    throw new Error('descriptor.root must be a 32-byte array');
+  }
+
   console.log('prepareFile OK');
   console.log('  metadata.root (hex):', metadata.root.slice(0, 24) + '...');
   console.log('  metadata.objectId:', metadata.objectId);
   console.log('  metadata.fileId:', metadata.fileId);
   console.log('  metadata.originalSize:', metadata.originalSize);
   console.log('  preparedFile.treeLeavesHex.length:', preparedFile.treeLeavesHex.length);
+  console.log('  descriptor.root.length:', descriptor.root.length);
 }
 
 main().catch((err) => {

@@ -110,8 +110,8 @@ mod standalone_poseidon {
 
     fn make_identity<F: PrimeField>(size: usize) -> Matrix<F> {
         let mut m = vec![vec![F::ZERO; size]; size];
-        for i in 0..size {
-            m[i][i] = F::ONE;
+        for (i, row) in m.iter_mut().enumerate() {
+            row[i] = F::ONE;
         }
         m
     }
@@ -662,15 +662,21 @@ mod standalone_poseidon {
     // --- Permutation (hash_optimized_static) ---
 
     fn permute(state: &mut [Fq], c: &PoseidonConstants, offset: &mut usize) {
-        // Nova uses result[j] = sum_i matrix[i][j]*state[i] i.e. M^T * state; MDS is symmetric so M is ok.
         fn product_mds<F: PrimeField>(s: &mut [F], m: &Matrix<F>) {
             let r = left_apply_matrix(m, s);
             s.copy_from_slice(&r);
         }
-        fn product_mds_transpose<F: PrimeField>(s: &mut [F], m: &Matrix<F>) {
-            let mt = transpose(m);
-            let r = left_apply_matrix(&mt, s);
-            s.copy_from_slice(&r);
+        fn product_mds_with_matrix<F: PrimeField>(s: &mut [F], m: &Matrix<F>) {
+            let size = s.len();
+            let mut result = vec![F::ZERO; size];
+            for (j, val) in result.iter_mut().enumerate() {
+                for (i, row) in m.iter().enumerate() {
+                    let mut tmp = row[j];
+                    tmp.mul_assign(&s[i]);
+                    val.add_assign(&tmp);
+                }
+            }
+            s.copy_from_slice(&result);
         }
         fn product_sparse<F: PrimeField>(s: &mut [F], sp: &SparseMatrix<F>) {
             let mut out = vec![F::ZERO; s.len()];
@@ -688,7 +694,7 @@ mod standalone_poseidon {
             s.copy_from_slice(&out);
         }
 
-        // ARK (first width constants)
+        // Initial ARK
         for (i, rc) in c.compressed_round_constants[*offset..*offset + c.width]
             .iter()
             .enumerate()
@@ -697,36 +703,23 @@ mod standalone_poseidon {
         }
         *offset += c.width;
 
-        // First half full rounds: first one uses no keys (already in ARK), rest consume width each.
-        // Last of first half uses pre_sparse (round_product_mds when current_round == sparse_offset).
+        // First half full rounds: all with post-round keys.
+        // Last round of this half uses pre_sparse matrix (matches Nova's round_product_mds).
         let sparse_offset = c.half_full_rounds - 1;
         for round in 0..c.half_full_rounds {
-            if round > 0 {
-                let keys = &c.compressed_round_constants[*offset..*offset + c.width];
-                for (s, k) in state.iter_mut().zip(keys.iter()) {
-                    quintic_s_box(s, None, Some(k));
-                }
-                *offset += c.width;
-            } else {
-                for s in state.iter_mut() {
-                    quintic_s_box(s, None, None);
-                }
+            let keys = &c.compressed_round_constants[*offset..*offset + c.width];
+            for (s, k) in state.iter_mut().zip(keys.iter()) {
+                quintic_s_box(s, None, Some(k));
             }
+            *offset += c.width;
             if round == sparse_offset {
-                product_mds_transpose(state, &c.pre_sparse);
+                product_mds_with_matrix(state, &c.pre_sparse);
             } else {
                 product_mds(state, &c.mds_m);
             }
         }
 
-        // Partial rounds: ARK with round_acc_inv (width), then each partial round uses 1 key + sparse MDS
-        for (i, rc) in c.compressed_round_constants[*offset..*offset + c.width]
-            .iter()
-            .enumerate()
-        {
-            state[i].add_assign(rc);
-        }
-        *offset += c.width;
+        // Partial rounds: 1 post-round key each + sparse MDS
         for sp in &c.sparse {
             let k = &c.compressed_round_constants[*offset];
             *offset += 1;
@@ -734,21 +727,21 @@ mod standalone_poseidon {
             product_sparse(state, sp);
         }
 
-        // Second half full rounds: (half_full_rounds - 1) with keys, then last without
-        for round in 0..c.half_full_rounds {
-            if round < c.half_full_rounds - 1 {
-                let keys = &c.compressed_round_constants[*offset..*offset + c.width];
-                for (s, k) in state.iter_mut().zip(keys.iter()) {
-                    quintic_s_box(s, None, Some(k));
-                }
-                *offset += c.width;
-            } else {
-                for s in state.iter_mut() {
-                    quintic_s_box(s, None, None);
-                }
+        // Second half full rounds: all but last with post-round keys
+        for _ in 1..c.half_full_rounds {
+            let keys = &c.compressed_round_constants[*offset..*offset + c.width];
+            for (s, k) in state.iter_mut().zip(keys.iter()) {
+                quintic_s_box(s, None, Some(k));
             }
+            *offset += c.width;
             product_mds(state, &c.mds_m);
         }
+
+        // Last full round: S-box only, no post-round keys
+        for s in state.iter_mut() {
+            quintic_s_box(s, None, None);
+        }
+        product_mds(state, &c.mds_m);
     }
 
     // --- Sponge: absorb then squeeze (same as Nova Sponge API) ---
@@ -893,6 +886,38 @@ mod tests {
         let (rf, rp) = round_numbers_base(2);
         assert_eq!(rf, 8, "full rounds from calc_round_numbers(3, true)");
         assert_eq!(rp, 55, "partial rounds from calc_round_numbers(3, true)");
+    }
+
+    /// Known-answer regression: standalone Poseidon must match Nova's output.
+    /// Expected values are Nova's canonical output. If this test fails, the
+    /// standalone implementation diverges from Nova and the WASM path is broken.
+    #[cfg(not(feature = "nova_poseidon"))]
+    #[test]
+    fn poseidon_known_answer_standalone() {
+        use ff::PrimeField;
+
+        fn fq_from_hex(hex: &str) -> Fq {
+            let hex = hex.trim_start_matches("0x");
+            let mut buf = [0u8; 32];
+            for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+                let s = core::str::from_utf8(chunk).unwrap();
+                buf[31 - i] = u8::from_str_radix(s, 16).unwrap();
+            }
+            let mut repr = <Fq as PrimeField>::Repr::default();
+            repr.as_mut().copy_from_slice(&buf);
+            Fq::from_repr(repr).unwrap()
+        }
+
+        assert_eq!(
+            poseidon_hash2(Fq::from(0u64), Fq::from(0u64)),
+            fq_from_hex("38ec69788c896550d69fb76411058e72798b21bcaaae2ad06101e9dc558b5dbd"),
+            "poseidon_hash2(0,0) must match Nova"
+        );
+        assert_eq!(
+            poseidon_hash_tagged(domain_tags::leaf(), Fq::from(1u64), Fq::from(2u64)),
+            fq_from_hex("2eb3923b358306dc6af5240a87e8ea32ec23a2b4cc99932af880d75a86021495"),
+            "poseidon_hash_tagged(leaf,1,2) must match Nova"
+        );
     }
 
     #[test]

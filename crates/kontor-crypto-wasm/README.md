@@ -69,6 +69,8 @@ async function run() {
   console.log(result.metadata.objectId);   // e.g. "obj_..."
   console.log(result.metadata.fileId);      // e.g. "file_..."
   console.log(result.preparedFile.treeLeavesHex);
+  // Ready-to-send descriptor for filestorage.create_agreement:
+  console.log(result.descriptor); // { fileId, objectId, nonce, root, paddedLen, originalSize, filename }
 }
 run();
 ```
@@ -98,6 +100,9 @@ const result = prepareFile(file, 'filename.dat', new Uint8Array(0));
       - `root`: Merkle root as hex string  
     - **preparedFile**: `{ root, fileId, treeLeavesHex }`  
       - `treeLeavesHex`: array of hex strings (for prover)
+    - **descriptor**: `{ fileId, objectId, nonce, root, paddedLen, originalSize, filename }`
+      - `root`: 32-byte array (`Uint8Array` after serde-wasm-bindgen conversion)
+      - Shape matches the `RawFileDescriptor` required by filestorage `create_agreement`.
 
 Throws if input is empty or encoding fails.
 

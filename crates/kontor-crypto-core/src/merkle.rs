@@ -97,7 +97,8 @@ pub fn build_tree(data_chunks: &[Vec<u8>]) -> Result<(MerkleTree, FieldElement)>
         .map(|chunk| get_leaf_hash(chunk))
         .collect::<Result<Vec<_>>>()?;
     let tree = build_tree_from_leaves(&leaves)?;
-    Ok((tree.clone(), tree.root()))
+    let root = tree.root();
+    Ok((tree, root))
 }
 
 /// Merkle proof for circuit verification (leaf, siblings, path indices).

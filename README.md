@@ -124,6 +124,11 @@ The `prepare_file()` pipeline is available in the browser and in Node.js via the
 - **Browser:** `import init, { prepareFile } from '.../pkg/kontor_crypto_wasm'; await init(); const result = prepareFile(fileBytes, filename, nonce);`
 - **Node:** same `init` + `prepareFile`; the `pkg/` directory is a valid npm package.
 
+The returned object includes:
+- `metadata` (root hex + IDs + sizes)
+- `preparedFile` (tree leaves for prover workflow)
+- `descriptor` (**ready for filestorage `create_agreement`**): `{ fileId, objectId, nonce, root, paddedLen, originalSize, filename }`, where `root` is the canonical 32-byte field representation.
+
 **Compatibility:** The main crate uses `kontor-crypto-core` with Nova’s Poseidon; the WASM crate uses the same core without Nova. Regression tests ensure Poseidon and `prepare_file` output stay compatible when the main crate uses the core with Nova.
 
 **Limitations:** Large files in the browser may hit memory or performance limits; consider size and UX. The WASM build does not use the `asm` optimisations available for `pasta_curves` on native targets.

@@ -46,6 +46,23 @@ pub struct PreparedFileOut {
 pub struct PrepareResult {
     pub metadata: MetadataOut,
     pub prepared_file: PreparedFileOut,
+    /// Descriptor ready for filestorage `create_agreement`.
+    /// Shape mirrors `RawFileDescriptor` from `kontor:built-in/file-registry`.
+    pub descriptor: RawFileDescriptorOut,
+}
+
+/// File descriptor payload expected by filestorage `create_agreement`.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawFileDescriptorOut {
+    pub file_id: String,
+    pub object_id: String,
+    pub nonce: Vec<u8>,
+    /// Canonical field bytes (`to_repr`) expected by host `from_raw` (exactly 32 bytes).
+    pub root: Vec<u8>,
+    pub padded_len: u64,
+    pub original_size: u64,
+    pub filename: String,
 }
 
 fn metadata_to_out(m: &FileMetadata) -> MetadataOut {
@@ -74,6 +91,18 @@ fn prepared_file_to_out(p: &PreparedFile) -> PreparedFileOut {
     }
 }
 
+fn metadata_to_descriptor_out(m: &FileMetadata) -> RawFileDescriptorOut {
+    RawFileDescriptorOut {
+        file_id: m.file_id.clone(),
+        object_id: m.object_id.clone(),
+        nonce: m.nonce.clone(),
+        root: m.root.to_repr().as_ref().to_vec(),
+        padded_len: m.padded_len as u64,
+        original_size: m.original_size as u64,
+        filename: m.filename.clone(),
+    }
+}
+
 /// Prepares file data for PoR: takes raw file bytes, filename, and nonce; returns metadata and prepared file.
 ///
 /// # Arguments
@@ -82,7 +111,12 @@ fn prepared_file_to_out(p: &PreparedFile) -> PreparedFileOut {
 /// - `nonce`: nonce bytes (Uint8Array)
 ///
 /// # Returns
-/// JS object: `{ metadata: { root, objectId, fileId, nonce, paddedLen, originalSize, filename }, preparedFile: { root, fileId, treeLeavesHex } }`
+/// JS object:
+/// `{ metadata, preparedFile, descriptor }`
+///
+/// `descriptor` is directly usable for filestorage `create_agreement`:
+/// `{ fileId, objectId, nonce, root, paddedLen, originalSize, filename }`
+/// where `root` is a 32-byte array (not hex).
 ///
 /// # Errors
 /// Returns a JS Error if input is empty or encoding fails.
@@ -97,6 +131,7 @@ pub fn prepare_file_wasm(
     let result = PrepareResult {
         metadata: metadata_to_out(&metadata),
         prepared_file: prepared_file_to_out(&prepared),
+        descriptor: metadata_to_descriptor_out(&metadata),
     };
     serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
 }
@@ -124,5 +159,15 @@ mod tests {
         assert_eq!(meta_out.root, prep_out.root);
         assert_eq!(meta_out.file_id, prep_out.file_id);
         assert!(!prep_out.tree_leaves_hex.is_empty(), "tree should have leaves");
+
+        // Descriptor is ready for filestorage create_agreement.
+        let desc = metadata_to_descriptor_out(&metadata);
+        assert_eq!(desc.file_id, meta_out.file_id);
+        assert_eq!(desc.object_id, meta_out.object_id);
+        assert_eq!(desc.nonce, meta_out.nonce);
+        assert_eq!(desc.padded_len, meta_out.padded_len as u64);
+        assert_eq!(desc.original_size, meta_out.original_size as u64);
+        assert_eq!(desc.filename, meta_out.filename);
+        assert_eq!(desc.root.len(), 32, "descriptor.root must be 32 bytes");
     }
 }
