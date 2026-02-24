@@ -15,6 +15,12 @@ use once_cell::sync::Lazy;
 static POSEIDON_CONSTANTS: Lazy<PoseidonConstants<FieldElement, U2>> =
     Lazy::new(|| Sponge::<FieldElement, U2>::api_constants(Strength::Standard));
 
+/// Expose constants for tests (e.g. dump to align core with Nova).
+#[cfg(test)]
+pub fn poseidon_constants_for_test() -> &'static PoseidonConstants<FieldElement, U2> {
+    &POSEIDON_CONSTANTS
+}
+
 /// Cached IO pattern for 2-input, 1-output Poseidon hashing
 static IO_PATTERN_2: Lazy<IOPattern> =
     Lazy::new(|| IOPattern(vec![SpongeOp::Absorb(2), SpongeOp::Squeeze(1)]));
@@ -23,56 +29,34 @@ static IO_PATTERN_2: Lazy<IOPattern> =
 static IO_PATTERN_3: Lazy<IOPattern> =
     Lazy::new(|| IOPattern(vec![SpongeOp::Absorb(3), SpongeOp::Squeeze(1)]));
 
-/// Domain separation tag values
-/// These are distinct integers used to prevent hash collisions across different contexts
-mod tag_values {
-    pub const LEAF: u64 = 1;
-    pub const NODE: u64 = 2;
-    pub const CHALLENGE: u64 = 6;
-    pub const STATE_UPDATE: u64 = 7;
-    pub const ROOT_COMMITMENT: u64 = 8;
-    pub const CHALLENGE_PER_FILE: u64 = 9;
-    pub const CHALLENGE_ID: u64 = 10;
-}
-
 /// Domain separation tags for different Poseidon hash contexts
 pub mod domain_tags {
-    use super::tag_values;
+    pub use kontor_crypto_core::poseidon::domain_tags::{
+        CHALLENGE, CHALLENGE_ID, CHALLENGE_PER_FILE, LEAF, NODE, ROOT_COMMITMENT, STATE_UPDATE,
+    };
+
     use ff::PrimeField;
 
-    /// Tag for hashing leaf data in Merkle trees
     pub fn leaf<F: PrimeField>() -> F {
-        F::from(tag_values::LEAF)
+        F::from(LEAF)
     }
-
-    /// Tag for hashing internal Merkle tree nodes
     pub fn node<F: PrimeField>() -> F {
-        F::from(tag_values::NODE)
+        F::from(NODE)
     }
-
-    /// Tag for challenge derivation
     pub fn challenge<F: PrimeField>() -> F {
-        F::from(tag_values::CHALLENGE)
+        F::from(CHALLENGE)
     }
-
-    /// Tag for state updates
     pub fn state_update<F: PrimeField>() -> F {
-        F::from(tag_values::STATE_UPDATE)
+        F::from(STATE_UPDATE)
     }
-
-    /// Tag for root commitment (rc = Poseidon(root, depth))
     pub fn root_commitment<F: PrimeField>() -> F {
-        F::from(tag_values::ROOT_COMMITMENT)
+        F::from(ROOT_COMMITMENT)
     }
-
-    /// Tag for per-file challenge derivation (combines challenge with file index)
     pub fn challenge_per_file<F: PrimeField>() -> F {
-        F::from(tag_values::CHALLENGE_PER_FILE)
+        F::from(CHALLENGE_PER_FILE)
     }
-
-    /// Tag for challenge ID derivation
     pub fn challenge_id<F: PrimeField>() -> F {
-        F::from(tag_values::CHALLENGE_ID)
+        F::from(CHALLENGE_ID)
     }
 }
 

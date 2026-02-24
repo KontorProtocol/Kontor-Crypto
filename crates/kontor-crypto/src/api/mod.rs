@@ -88,15 +88,10 @@ pub use witness::generate_circuit_witness;
 // Re-export key external types for easier access.
 pub use crate::{KontorPoRError, Result};
 
-// Local imports for utility functions
-use crate::build_tree;
-use sha2::{Digest, Sha256};
 use tracing::debug_span;
 
 /// Processes raw data into a `PreparedFile` (private) and `FileMetadata` (public).
-/// This function applies erasure coding, concatenates shards, chunks the result into
-/// fixed-size pieces (config::CHUNK_SIZE_BYTES), and builds a Merkle tree whose
-/// leaves are the Poseidon commitments of those pieces.
+/// Delegates to `kontor_crypto_core::prepare_file` and converts results to main-crate types.
 ///
 /// Note: This is also available as `PorSystem::prepare_file()` method. The free function
 /// is provided for cases where you need to prepare files before creating the ledger.
@@ -126,50 +121,13 @@ pub fn prepare_file(
 ) -> Result<(types::PreparedFile, types::FileMetadata)> {
     let _span = debug_span!("prepare_file", data_size = data.len(), filename).entered();
 
-    if data.is_empty() {
-        return Err(KontorPoRError::EmptyData {
-            operation: "prepare_file".to_string(),
-        });
-    }
+    let (core_pf, metadata) =
+        kontor_crypto_core::prepare_file(data, filename, nonce)?;
 
-    // 1a. Calculate object ID: object_<SHA256(data)> - content-based, for file discovery
-    let mut object_hasher = Sha256::new();
-    object_hasher.update(data);
-    let object_id = format!("obj_{:x}", object_hasher.finalize());
-
-    // 1b. Calculate file ID: file_<SHA256(data || nonce)> - unique per upload
-    let mut file_hasher = Sha256::new();
-    file_hasher.update(data);
-    file_hasher.update(nonce);
-    let file_id = format!("file_{:x}", file_hasher.finalize());
-
-    // 2. Encode file into 31-byte symbols using multi-codeword RS
-    let all_symbols = crate::erasure::encode_file_symbols(data)?;
-
-    // 3. Pad to next power of two
-    let padded_len = all_symbols.len().next_power_of_two();
-    let mut padded_symbols = all_symbols;
-    padded_symbols.resize(padded_len, vec![0; crate::config::CHUNK_SIZE_BYTES]);
-
-    // 4. Build Merkle tree
-    let (tree, root) = build_tree(&padded_symbols)?;
-
-    // 5. Create metadata (num_data_symbols, num_codewords, total_symbols are derived)
-    let metadata = types::FileMetadata {
-        root,
-        object_id,
-        file_id: file_id.clone(),
-        nonce: nonce.to_vec(),
-        padded_len,
-        original_size: data.len(),
-        filename: filename.to_string(),
-    };
-
-    // 6. Create prepared file
     let prepared_file = types::PreparedFile {
-        tree,
-        file_id,
-        root,
+        tree: core_pf.tree,
+        file_id: core_pf.file_id,
+        root: metadata.root,
     };
 
     Ok((prepared_file, metadata))
@@ -184,6 +142,7 @@ pub fn tree_depth_from_metadata(metadata: &types::FileMetadata) -> usize {
 }
 
 /// Reconstructs the original file from erasure-coded shards.
+/// Delegates to `kontor_crypto_core::reconstruct_file` with metadata converted to core type.
 ///
 /// # Arguments
 ///
@@ -221,11 +180,5 @@ pub fn reconstruct_file(
     symbols: &[Option<Vec<u8>>],
     metadata: &types::FileMetadata,
 ) -> Result<Vec<u8>> {
-    let mut mutable_symbols = symbols.to_vec();
-
-    crate::erasure::decode_file_symbols(
-        &mut mutable_symbols,
-        metadata.num_codewords(),
-        metadata.original_size,
-    )
+    Ok(kontor_crypto_core::reconstruct_file(symbols, metadata)?)
 }

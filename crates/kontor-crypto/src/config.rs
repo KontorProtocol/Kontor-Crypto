@@ -190,24 +190,12 @@ pub fn derive_shape(num_files: usize, max_depth: usize) -> (usize, usize) {
     (files_per_step, file_tree_depth)
 }
 
-// --- Hashing and Merkle Tree Parameters ---
+// --- Hashing and Merkle Tree Parameters (re-exported from core) ---
 
-/// The size of chunks/symbols (in bytes) for proof-of-retrievability.
-/// This value is set to 31 to ensure that the resulting integer fits safely within
-/// the scalar field of the Pallas curve, which has a 255-bit modulus.
-/// This is the fundamental unit: chunk = symbol = shard = leaf = 31 bytes.
-pub const CHUNK_SIZE_BYTES: usize = 31;
-
-// --- Reed-Solomon Multi-Codeword Parameters ---
-
-/// Data symbols per RS codeword (GF(2^8) constraint: total ≤ 255)
-pub const DATA_SYMBOLS_PER_CODEWORD: usize = 231;
-
-/// Parity symbols per codeword (10% overhead)
-pub const PARITY_SYMBOLS_PER_CODEWORD: usize = 24;
-
-/// Total symbols per codeword (data + parity)
-pub const TOTAL_SYMBOLS_PER_CODEWORD: usize = 255;
+pub use kontor_crypto_core::config::{
+    CHUNK_SIZE_BYTES, DATA_SYMBOLS_PER_CODEWORD, PARITY_SYMBOLS_PER_CODEWORD,
+    TOTAL_SYMBOLS_PER_CODEWORD,
+};
 
 // --- Erasure Coding Parameters ---
 

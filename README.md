@@ -10,6 +10,16 @@ This project implements a Proof-of-Retrievability (PoR) system designed to provi
 
 The system uses [Nova](https://eprint.iacr.org/2021/370) recursive SNARKs via Microsoft's [`nova-snark`](https://github.com/microsoft/Nova) library to generate constant-size (~10 kB) cryptographic proofs that a prover possesses a specific set of data. These proofs are efficient to verify (~30ms), making it feasible to enforce storage guarantees at scale.
 
+## Workspace structure
+
+The repository is a Cargo workspace with three crates:
+
+- **`kontor-crypto`** – Main library and CLI: full PoR API (`PorSystem`, `prepare_file`, `prove`, `verify`), Nova proving/verification, benchmarks, and formal verification tooling. Lives in `crates/kontor-crypto`.
+- **`kontor-crypto-core`** – Core logic shared by the main crate and WASM: Reed–Solomon encoding, Poseidon Merkle trees, and `prepare_file` (no Nova). Lives in `crates/kontor-crypto-core`.
+- **`kontor-crypto-wasm`** – WASM bindings for `prepare_file` only, for use in the browser or Node.js. Depends on `kontor-crypto-core` (no Nova). Lives in `crates/kontor-crypto-wasm`.
+
+From the repo root, use `cargo build --workspace`, `cargo test --workspace`, or build the WASM crate with `cargo build -p kontor-crypto-wasm --target wasm32-unknown-unknown --release`.
+
 ## Core Capabilities
 
 - Partition files into fixed 31-byte symbols for direct field element encoding.
@@ -99,18 +109,39 @@ assert!(is_valid, "Proof verification failed!");
 println!("Proof successfully generated and verified with Nova PoR API.");
 ```
 
+## Using prepare_file in the browser (WASM)
+
+The `prepare_file()` pipeline is available in the browser and in Node.js via the **`kontor-crypto-wasm`** package. It uses the same core logic as the main crate (Reed–Solomon, Poseidon Merkle), so metadata and prepared file output are compatible with the Nova-based prover/verifier.
+
+**Build (from repo root or `crates/kontor-crypto-wasm`):**
+
+- Raw WASM: `cargo build -p kontor-crypto-wasm --target wasm32-unknown-unknown --release`
+- Full JS/TS bindings: [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/) then  
+  `wasm-pack build -p kontor-crypto-wasm --target web` (browser) or `--target nodejs` (Node)
+
+**Usage (after wasm-pack build):** import the module, initialise the WASM runtime, then call `prepareFile`:
+
+- **Browser:** `import init, { prepareFile } from '.../pkg/kontor_crypto_wasm'; await init(); const result = prepareFile(fileBytes, filename, nonce);`
+- **Node:** same `init` + `prepareFile`; the `pkg/` directory is a valid npm package.
+
+**Compatibility:** The main crate uses `kontor-crypto-core` with Nova’s Poseidon; the WASM crate uses the same core without Nova. Regression tests ensure Poseidon and `prepare_file` output stay compatible when the main crate uses the core with Nova.
+
+**Limitations:** Large files in the browser may hit memory or performance limits; consider size and UX. The WASM build does not use the `asm` optimisations available for `pasta_curves` on native targets.
+
 ## CLI & Simulation
 
 The project includes a CLI that simulates storage node operations with heterogeneous file sizes, staggered challenges, and multi-file proof aggregation.
 
 ### Usage
 
+From the repo root, run the CLI with `-p kontor-crypto`:
+
 ```bash
 # Default: small demo (100 files in ledger, node stores 10, 5 challenges)
-cargo run
+cargo run -p kontor-crypto
 
 # Large-scale test with memory profiling
-cargo run --features memory-profiling -- \
+cargo run -p kontor-crypto --features memory-profiling -- \
   --total-files-in-ledger 1000 \
   --files-stored-by-node 100 \
   --challenges-to-simulate 20 \

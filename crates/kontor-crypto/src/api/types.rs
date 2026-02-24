@@ -212,54 +212,7 @@ impl Clone for PorParams {
     }
 }
 
-/// The public commitment to a file, which is shared with verifiers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FileMetadata {
-    /// The Merkle root over all symbols (data + parity)
-    pub root: FieldElement,
-    /// Content-based identifier: `object_<SHA256(data)>`
-    /// Not unique - same data produces same object_id. Used for file discovery.
-    pub object_id: String,
-    /// Unique file identifier: `file_<SHA256(data || nonce)>`
-    /// Unique per upload - used in the storage protocol.
-    pub file_id: String,
-    /// The deterministic nonce used to derive the file_id (enables same data to have unique IDs)
-    pub nonce: Vec<u8>,
-    /// The total number of leaves in the Merkle tree (padded to power of 2)
-    pub padded_len: usize,
-    /// Size of original file in bytes (for reconstruction)
-    pub original_size: usize,
-    /// Filename for operator UX and integration
-    pub filename: String,
-}
-
-impl FileMetadata {
-    /// Number of data symbols (31-byte chunks from original file).
-    pub fn num_data_symbols(&self) -> usize {
-        self.original_size.div_ceil(crate::config::CHUNK_SIZE_BYTES)
-    }
-
-    /// Number of RS codewords.
-    pub fn num_codewords(&self) -> usize {
-        self.num_data_symbols()
-            .div_ceil(crate::config::DATA_SYMBOLS_PER_CODEWORD)
-    }
-
-    /// Total symbols including parity (num_codewords × 255).
-    pub fn total_symbols(&self) -> usize {
-        self.num_codewords() * crate::config::TOTAL_SYMBOLS_PER_CODEWORD
-    }
-
-    /// Computes the Merkle tree depth from padded_len.
-    /// Depth is log2(padded_len), assuming padded_len is a power of 2.
-    pub fn depth(&self) -> usize {
-        if self.padded_len == 0 {
-            0
-        } else {
-            self.padded_len.trailing_zeros() as usize
-        }
-    }
-}
+pub use kontor_crypto_core::types::FileMetadata;
 
 impl crate::ledger::FileDescriptor for FileMetadata {
     fn file_id(&self) -> &str {

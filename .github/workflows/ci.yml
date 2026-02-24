@@ -48,20 +48,30 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # 4. Check formatting
+      # 4. Build whole workspace (from root)
+      - name: Build workspace
+        run: cargo build --workspace
+
+      # 5. Check formatting
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      # 5. Run clippy
+      # 6. Run clippy
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
 
-      # 6. Run tests.
+      # 7. Run tests.
       # The --all-features flag ensures all optional dependencies are tested.
       - name: Run tests
         run: cargo test --all-features --workspace
 
-      # 7. Run security audit.
+      # 8. Build WASM (kontor-crypto-wasm for browser/Node prepare_file)
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Build WASM
+        run: cargo build -p kontor-crypto-wasm --target wasm32-unknown-unknown --release
+
+      # 9. Run security audit.
       # The command will fail the workflow if any vulnerabilities are found.
       - name: Install cargo-audit
         run: |

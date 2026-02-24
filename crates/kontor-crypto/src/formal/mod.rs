@@ -6,6 +6,7 @@
 pub mod components;
 pub mod roles;
 
+use num_integer::Integer;
 use crate::api::{prepare_file, tree_depth_from_metadata, Challenge, FieldElement, PreparedFile};
 use crate::circuit::formal_components::{
     synthesize_aggregation_merkle_component, synthesize_carry_forward_component,
@@ -2056,7 +2057,7 @@ fn hex_to_le_bytes(hex: &str) -> Result<Vec<u8>> {
     let clean = hex.trim_start_matches('0');
     let normalized = if clean.is_empty() {
         String::from("00")
-    } else if clean.len().is_multiple_of(2) {
+    } else if clean.len().is_multiple_of(&2) {
         clean.to_string()
     } else {
         format!("0{}", clean)
@@ -2571,8 +2572,10 @@ mod tests {
         // Regression guard: if a step output is allocated as a fresh wire but never tied
         // back to its intended value, it will not appear in any constraint and Picus
         // can (correctly) report an underconstraint.
-        let fixtures_dir = Path::new("tools/picus/fixtures");
-        let fixture = load_fixture(fixtures_dir, "single-file-minimal").expect("fixture loads");
+        // Path from crate dir (crates/kontor-crypto) to workspace root then tools/picus/fixtures
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let fixtures_dir = manifest_dir.join("../../tools/picus/fixtures");
+        let fixture = load_fixture(&fixtures_dir, "single-file-minimal").expect("fixture loads");
 
         let scenario = build_fixture_scenario(&fixture).expect("scenario builds");
         let plan = derive_plan(&scenario.challenges, &scenario.ledger).expect("plan derives");
