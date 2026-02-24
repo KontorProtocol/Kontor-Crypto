@@ -92,7 +92,6 @@ impl From<kontor_crypto_core::error::CoreError> for KontorPoRError {
             CoreError::InvalidInput(s) => KontorPoRError::InvalidInput(s),
             CoreError::MerkleTree(s) => KontorPoRError::MerkleTree(s),
             CoreError::ErasureCoding { details } => KontorPoRError::ErasureCoding { details },
-            CoreError::Cryptographic(s) => KontorPoRError::Cryptographic(s),
             CoreError::IndexOutOfBounds { index, length } => {
                 KontorPoRError::IndexOutOfBounds { index, length }
             }

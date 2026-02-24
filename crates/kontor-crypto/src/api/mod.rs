@@ -127,7 +127,7 @@ pub fn prepare_file(
     let prepared_file = types::PreparedFile {
         tree: core_pf.tree,
         file_id: core_pf.file_id,
-        root: metadata.root,
+        root: core_pf.root,
     };
 
     Ok((prepared_file, metadata))

@@ -24,7 +24,9 @@ pub fn encode_file_symbols(data: &[u8]) -> Result<Vec<Vec<u8>>> {
         config::DATA_SYMBOLS_PER_CODEWORD,
         config::PARITY_SYMBOLS_PER_CODEWORD,
     )
-    .map_err(|e| CoreError::Cryptographic(format!("Reed-Solomon setup failed: {e}")))?;
+    .map_err(|e| CoreError::ErasureCoding {
+        details: format!("Reed-Solomon setup failed: {e}"),
+    })?;
 
     let mut all_symbols = Vec::new();
     for codeword_chunks in chunks.chunks(config::DATA_SYMBOLS_PER_CODEWORD) {
@@ -36,7 +38,9 @@ pub fn encode_file_symbols(data: &[u8]) -> Result<Vec<Vec<u8>>> {
             codeword.push(vec![0; config::CHUNK_SIZE_BYTES]);
         }
         rs.encode(&mut codeword)
-            .map_err(|e| CoreError::Cryptographic(format!("RS encode failed: {e}")))?;
+            .map_err(|e| CoreError::ErasureCoding {
+                details: format!("RS encode failed: {e}"),
+            })?;
         all_symbols.extend(codeword);
     }
 
@@ -53,7 +57,9 @@ pub fn decode_file_symbols(
         config::DATA_SYMBOLS_PER_CODEWORD,
         config::PARITY_SYMBOLS_PER_CODEWORD,
     )
-    .map_err(|e| CoreError::Cryptographic(format!("Reed-Solomon setup failed: {e}")))?;
+    .map_err(|e| CoreError::ErasureCoding {
+        details: format!("Reed-Solomon setup failed: {e}"),
+    })?;
 
     let mut reconstructed = Vec::new();
     for cw_idx in 0..num_codewords {
@@ -61,7 +67,9 @@ pub fn decode_file_symbols(
         let end = std::cmp::min(start + config::TOTAL_SYMBOLS_PER_CODEWORD, symbols.len());
         let mut codeword_symbols = symbols[start..end].to_vec();
         rs.reconstruct(&mut codeword_symbols).map_err(|e| {
-            CoreError::Cryptographic(format!("RS decode failed for codeword {}: {e}", cw_idx))
+            CoreError::ErasureCoding {
+                details: format!("RS decode failed for codeword {}: {e}", cw_idx),
+            }
         })?;
         let data_end = std::cmp::min(config::DATA_SYMBOLS_PER_CODEWORD, codeword_symbols.len());
         for sym in codeword_symbols.iter().take(data_end).flatten() {
@@ -113,6 +121,27 @@ mod tests {
         damaged[255] = None;
         damaged[510] = None;
         let reconstructed = decode_file_symbols(&mut damaged, 3, data.len()).unwrap();
+        assert_eq!(reconstructed, data);
+    }
+
+    #[test]
+    fn test_too_many_missing_symbols() {
+        let data = b"Test";
+        let symbols = encode_file_symbols(data).unwrap();
+        let mut damaged: Vec<Option<Vec<u8>>> = symbols.into_iter().map(Some).collect();
+        for item in damaged.iter_mut().take(25) {
+            *item = None;
+        }
+        assert!(decode_file_symbols(&mut damaged, 1, data.len()).is_err());
+    }
+
+    #[test]
+    fn test_single_byte() {
+        let data = b"A";
+        let symbols = encode_file_symbols(data).unwrap();
+        assert_eq!(symbols.len(), 255);
+        let mut full: Vec<Option<Vec<u8>>> = symbols.into_iter().map(Some).collect();
+        let reconstructed = decode_file_symbols(&mut full, 1, data.len()).unwrap();
         assert_eq!(reconstructed, data);
     }
 }

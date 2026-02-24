@@ -64,6 +64,12 @@ jobs:
       - name: Run tests
         run: cargo test --all-features --workspace
 
+      # 7b. Test core crate without --all-features so the standalone Poseidon
+      #     path (used in WASM) is exercised. Feature unification in step 7
+      #     enables nova_poseidon, which hides all #[cfg(not(feature = "nova_poseidon"))] tests.
+      - name: Test core standalone Poseidon (no nova_poseidon)
+        run: cargo test -p kontor-crypto-core
+
       # 8. Build WASM (kontor-crypto-wasm for browser/Node prepare_file)
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown

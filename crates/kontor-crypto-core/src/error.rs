@@ -18,10 +18,6 @@ pub enum CoreError {
     #[error("Erasure coding error: {details}")]
     ErasureCoding { details: String },
 
-    /// Cryptographic operation failed.
-    #[error("Cryptographic error: {0}")]
-    Cryptographic(String),
-
     /// Index out of bounds.
     #[error("Index out of bounds: index {index}, length {length}")]
     IndexOutOfBounds { index: usize, length: usize },
