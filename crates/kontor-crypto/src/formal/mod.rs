@@ -2056,7 +2056,7 @@ fn hex_to_le_bytes(hex: &str) -> Result<Vec<u8>> {
     let clean = hex.trim_start_matches('0');
     let normalized = if clean.is_empty() {
         String::from("00")
-    } else if clean.len().is_multiple_of(2) {
+    } else if clean.len() % 2 == 0 {
         clean.to_string()
     } else {
         format!("0{}", clean)
