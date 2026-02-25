@@ -42,8 +42,8 @@ jobs:
           cargo codspeed build -m walltime
 
       - name: Run benchmarks with CodSpeed
-        # v4.4.1 (tag v4) pinned to commit for supply-chain safety
-        uses: CodSpeedHQ/action@346a2d8a8d9d38909abd0bc3d23f773110f076ad
+        # v4.10.6 pinned to commit for supply-chain safety
+        uses: CodSpeedHQ/action@568631e981ca53efe0331925d2a3c8e5d53ab6e5
         with:
           mode: walltime
           run: cargo codspeed run -- ${{ matrix.shard }}
