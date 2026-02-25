@@ -66,11 +66,10 @@ pub fn decode_file_symbols(
         let start = cw_idx * config::TOTAL_SYMBOLS_PER_CODEWORD;
         let end = std::cmp::min(start + config::TOTAL_SYMBOLS_PER_CODEWORD, symbols.len());
         let mut codeword_symbols = symbols[start..end].to_vec();
-        rs.reconstruct(&mut codeword_symbols).map_err(|e| {
-            CoreError::ErasureCoding {
+        rs.reconstruct(&mut codeword_symbols)
+            .map_err(|e| CoreError::ErasureCoding {
                 details: format!("RS decode failed for codeword {}: {e}", cw_idx),
-            }
-        })?;
+            })?;
         let data_end = std::cmp::min(config::DATA_SYMBOLS_PER_CODEWORD, codeword_symbols.len());
         for sym in codeword_symbols.iter().take(data_end).flatten() {
             reconstructed.extend_from_slice(sym);

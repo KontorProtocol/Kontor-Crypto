@@ -13,5 +13,9 @@ pub fn decode_file_symbols(
     num_codewords: usize,
     original_size: usize,
 ) -> Result<Vec<u8>> {
-    Ok(kontor_crypto_core::erasure::decode_file_symbols(symbols, num_codewords, original_size)?)
+    Ok(kontor_crypto_core::erasure::decode_file_symbols(
+        symbols,
+        num_codewords,
+        original_size,
+    )?)
 }

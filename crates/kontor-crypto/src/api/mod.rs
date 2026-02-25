@@ -121,8 +121,7 @@ pub fn prepare_file(
 ) -> Result<(types::PreparedFile, types::FileMetadata)> {
     let _span = debug_span!("prepare_file", data_size = data.len(), filename).entered();
 
-    let (core_pf, metadata) =
-        kontor_crypto_core::prepare_file(data, filename, nonce)?;
+    let (core_pf, metadata) = kontor_crypto_core::prepare_file(data, filename, nonce)?;
 
     let prepared_file = types::PreparedFile {
         tree: core_pf.tree,

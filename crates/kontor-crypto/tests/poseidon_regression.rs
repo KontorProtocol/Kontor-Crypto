@@ -64,7 +64,8 @@ fn poseidon_hash_tagged_node_42_123() {
         FieldElement::from(42u64),
         FieldElement::from(123u64),
     );
-    let leaf_result = fq_from_hex("2eb3923b358306dc6af5240a87e8ea32ec23a2b4cc99932af880d75a86021495");
+    let leaf_result =
+        fq_from_hex("2eb3923b358306dc6af5240a87e8ea32ec23a2b4cc99932af880d75a86021495");
     assert_ne!(result, leaf_result, "node tag must differ from leaf tag");
     assert_eq!(
         poseidon_hash_tagged(

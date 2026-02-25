@@ -1,8 +1,8 @@
 //! WASM bindings for Kontor `prepare_file`: browser-callable API returning metadata and prepared file.
 
-use kontor_crypto_core::{prepare_file, FileMetadata, PreparedFile};
-use kontor_crypto_core::poseidon::FieldElement;
 use ff::PrimeField;
+use kontor_crypto_core::poseidon::FieldElement;
+use kontor_crypto_core::{prepare_file, FileMetadata, PreparedFile};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -151,14 +151,20 @@ mod tests {
         let meta_out = metadata_to_out(&metadata);
         let prep_out = prepared_file_to_out(&prepared);
 
-        assert!(meta_out.root.len() >= 32, "root should be hex-encoded field element");
+        assert!(
+            meta_out.root.len() >= 32,
+            "root should be hex-encoded field element"
+        );
         assert!(meta_out.object_id.starts_with("obj_"), "objectId format");
         assert!(meta_out.file_id.starts_with("file_"), "fileId format");
         assert_eq!(meta_out.original_size, 5);
         assert_eq!(meta_out.filename, "test.txt");
         assert_eq!(meta_out.root, prep_out.root);
         assert_eq!(meta_out.file_id, prep_out.file_id);
-        assert!(!prep_out.tree_leaves_hex.is_empty(), "tree should have leaves");
+        assert!(
+            !prep_out.tree_leaves_hex.is_empty(),
+            "tree should have leaves"
+        );
 
         // Descriptor is ready for filestorage create_agreement.
         let desc = metadata_to_descriptor_out(&metadata);

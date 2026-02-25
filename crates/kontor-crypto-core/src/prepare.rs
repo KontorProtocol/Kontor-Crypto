@@ -57,10 +57,11 @@ pub fn prepare_file(
 }
 
 /// Reconstructs the original file from erasure-coded symbols and metadata.
-pub fn reconstruct_file(
-    symbols: &[Option<Vec<u8>>],
-    metadata: &FileMetadata,
-) -> Result<Vec<u8>> {
+pub fn reconstruct_file(symbols: &[Option<Vec<u8>>], metadata: &FileMetadata) -> Result<Vec<u8>> {
     let mut mutable = symbols.to_vec();
-    decode_file_symbols(&mut mutable, metadata.num_codewords(), metadata.original_size)
+    decode_file_symbols(
+        &mut mutable,
+        metadata.num_codewords(),
+        metadata.original_size,
+    )
 }

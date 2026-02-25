@@ -2,8 +2,8 @@
 //! No dependency on nova-snark; suitable for WASM and CLI.
 
 pub mod config;
-pub mod error;
 pub mod erasure;
+pub mod error;
 pub mod merkle;
 pub mod poseidon;
 pub mod prepare;
