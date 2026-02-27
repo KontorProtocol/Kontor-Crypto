@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Kontor prepareFile (WASM)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { margin-bottom: 0.25rem; }
+    .hint { color: #666; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    .file-picker {
+      border: 2px dashed #bbb; border-radius: 8px; padding: 2rem; text-align: center;
+      cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative;
+    }
+    .file-picker:hover, .file-picker.dragover { border-color: #4a90d9; background: #f0f6ff; }
+    .file-picker input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .file-picker .label { font-size: 1.1rem; color: #555; pointer-events: none; }
+    .file-picker .selected { font-weight: 600; color: #1a1a1a; }
+    button {
+      padding: 0.6rem 1.4rem; cursor: pointer; font-size: 1rem; border: none;
+      border-radius: 6px; background: #4a90d9; color: #fff; margin-top: 1rem;
+      transition: background 0.2s;
+    }
+    button:hover { background: #357abd; }
+    button:disabled { background: #aaa; cursor: not-allowed; }
+    pre {
+      background: #f4f4f4; padding: 1rem; overflow-x: auto; font-size: 0.85rem;
+      border-radius: 6px; white-space: pre-wrap; word-break: break-all;
+    }
+    .error { color: #c00; }
+    .ok { color: #1a7f37; }
+  </style>
+</head>
+<body>
+  <h1>prepareFile (WASM)</h1>
+  <p class="hint">Prerequisites: <code>wasm-pack build --target web</code> then serve via <code>npx serve .</code></p>
+
+  <div class="file-picker" id="dropzone">
+    <input type="file" id="fileInput">
+    <div class="label" id="fileLabel">Drop a file here or click to browse</div>
+  </div>
+
+  <button id="run" disabled>Run prepareFile</button>
+  <pre id="out">Select a file, then click Run.</pre>
+
+  <script type="module">
+    const out = document.getElementById('out');
+    const run = document.getElementById('run');
+    const fileInput = document.getElementById('fileInput');
+    const fileLabel = document.getElementById('fileLabel');
+    const dropzone = document.getElementById('dropzone');
+
+    let selectedFile = null;
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function selectFile(file) {
+      selectedFile = file;
+      fileLabel.className = 'label selected';
+      fileLabel.textContent = `${file.name} (${formatBytes(file.size)})`;
+      run.disabled = false;
+      out.textContent = 'Ready. Click Run.';
+      out.className = '';
+    }
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length) selectFile(e.target.files[0]);
+    });
+
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) {
+        selectFile(e.dataTransfer.files[0]);
+        fileInput.files = e.dataTransfer.files;
+      }
+    });
+
+    async function main() {
+      if (!selectedFile) return;
+      run.disabled = true;
+      out.textContent = `Processing "${selectedFile.name}" (${formatBytes(selectedFile.size)})…`;
+      out.className = '';
+
+      try {
+        const { default: init, prepareFile } = await import('../pkg/kontor_crypto_wasm.js');
+        await init();
+
+        const buffer = await selectedFile.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        const nonce = new Uint8Array(0);
+
+        const t0 = performance.now();
+        const result = prepareFile(bytes, selectedFile.name, nonce);
+        const elapsed = (performance.now() - t0).toFixed(1);
+
+        if (!result || !result.metadata) {
+          out.textContent = 'Error: prepareFile returned invalid result';
+          out.className = 'error';
+          run.disabled = false;
+          return;
+        }
+
+        const { metadata, preparedFile, descriptor } = result;
+
+        const metaOk = metadata.root && metadata.objectId?.startsWith('obj_') && metadata.fileId?.startsWith('file_')
+          && metadata.originalSize === bytes.length && metadata.filename === selectedFile.name
+          && preparedFile?.root === metadata.root && preparedFile?.fileId === metadata.fileId
+          && Array.isArray(preparedFile?.treeLeavesHex) && preparedFile.treeLeavesHex.length > 0;
+        const descOk = descriptor?.fileId === metadata.fileId
+          && descriptor?.objectId === metadata.objectId && descriptor?.filename === metadata.filename
+          && descriptor?.originalSize === metadata.originalSize && descriptor?.paddedLen === metadata.paddedLen
+          && Array.isArray(descriptor?.root) && descriptor.root.length === 32;
+        const ok = metaOk && descOk;
+
+        const rootPreview = metadata.root ? metadata.root.slice(0, 32) + '…' : '';
+
+        out.textContent = (ok ? 'OK' : 'WARN — unexpected shape') + `  (${elapsed} ms)\n\n`
+          + 'metadata:\n' + JSON.stringify({
+            root: rootPreview,
+            objectId: metadata.objectId,
+            fileId: metadata.fileId,
+            originalSize: metadata.originalSize,
+            paddedLen: metadata.paddedLen,
+            filename: metadata.filename
+          }, null, 2)
+          + '\n\ntreeLeavesHex count: ' + (preparedFile?.treeLeavesHex?.length ?? 0)
+          + '\ndescriptor.root length: ' + (descriptor?.root?.length ?? 'missing');
+        out.className = ok ? 'ok' : 'error';
+      } catch (e) {
+        out.textContent = 'Error: ' + e.message;
+        out.className = 'error';
+      } finally {
+        run.disabled = false;
+      }
+    }
+
+    run.addEventListener('click', () => main());
+  </script>
+</body>
+</html>
