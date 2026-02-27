@@ -39,12 +39,16 @@ Artifact: `target/wasm32-unknown-unknown/release/kontor_crypto_wasm.wasm`.
 
 ## Binary size
 
-Target size for the `.wasm` is ~500 KB (release build). Check with:
+Typical size for the `.wasm` is ~650 KB (release build). Check with:
 
 ```bash
 wasm-pack build --target nodejs --release
 ls -la pkg/*.wasm
 ```
+
+## Performance
+
+On first call, `prepareFile` initialises Poseidon constants (MDS matrix, round constants, sparse factorisation). This is a one-time cost cached for subsequent calls. On native targets this takes <10ms; in WASM it may take 50-200ms depending on the runtime. If cold-start latency matters, call `prepareFile` once with a small dummy input during app initialisation.
 
 ## Usage
 
@@ -114,7 +118,6 @@ Throws if input is empty or encoding fails.
   node examples/node_prepare_file.mjs
   ```
   Calls `prepareFile` with fixed input and asserts metadata and `preparedFile` shape and consistency.
-- **Browser example:** after `wasm-pack build --target web`, run `npx serve .` from the crate dir and open `examples/browser_prepare_file.html`.
 - **Browser example:** after `wasm-pack build --target web`, serve the crate directory (e.g. `npx serve .` from `crates/kontor-crypto-wasm`) and open `examples/browser_prepare_file.html`. Verifies same metadata/preparedFile consistency from the browser.
 
 ## Package (npm)

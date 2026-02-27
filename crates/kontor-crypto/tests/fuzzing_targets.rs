@@ -1,7 +1,8 @@
-//! Fuzzing target placeholders for property-based and fuzz testing
+//! Fuzz target stubs for Kontor PoR.
 //!
-//! These tests are structured as placeholders for future fuzzing implementation.
-//! They can be converted to actual fuzz targets using cargo-fuzz or proptest.
+//! These are placeholder tests documenting intended fuzzing coverage.
+//! Actual fuzz harnesses should be implemented using `cargo-fuzz` or
+//! `proptest` before production deployment. See each test for scope.
 
 #![allow(dead_code)]
 

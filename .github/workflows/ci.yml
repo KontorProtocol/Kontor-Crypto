@@ -74,6 +74,12 @@ jobs:
       - name: Build WASM
         run: cargo build -p kontor-crypto-wasm --target wasm32-unknown-unknown --release
 
+      # 8b. Run WASM tests (kontor-crypto-wasm unit tests via wasm-pack)
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+      - name: Test WASM
+        run: wasm-pack test --node crates/kontor-crypto-wasm
+
       # 9. Run security audit.
       # The command will fail the workflow if any vulnerabilities are found.
       - name: Install cargo-audit

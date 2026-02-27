@@ -1,4 +1,7 @@
-//! Reed-Solomon erasure coding — re-exported from kontor-crypto-core with error mapping.
+//! Reed-Solomon erasure coding — thin delegation to `kontor-crypto-core`.
+//!
+//! Error conversion from `CoreError` to `KontorPoRError` is handled
+//! automatically via the `From` impl in `error.rs`.
 
 use crate::Result;
 

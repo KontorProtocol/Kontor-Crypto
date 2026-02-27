@@ -229,6 +229,9 @@ impl crate::ledger::FileDescriptor for FileMetadata {
 }
 
 /// The prover's representation of a file, containing the full Merkle tree.
+/// This wraps `kontor_crypto_core::types::PreparedFile` to restrict `tree`
+/// visibility to `pub(crate)`, preventing external access to the raw Merkle
+/// data which would compromise the zero-knowledge property.
 #[derive(Debug, Clone)]
 pub struct PreparedFile {
     /// The full Merkle tree structure held by the prover

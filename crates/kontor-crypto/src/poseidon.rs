@@ -29,7 +29,11 @@ static IO_PATTERN_2: Lazy<IOPattern> =
 static IO_PATTERN_3: Lazy<IOPattern> =
     Lazy::new(|| IOPattern(vec![SpongeOp::Absorb(3), SpongeOp::Squeeze(1)]));
 
-/// Domain separation tags for different Poseidon hash contexts
+/// Domain separation tags for different Poseidon hash contexts.
+///
+/// Constants are re-exported from `kontor_crypto_core` (single source of truth).
+/// Functions use generic `F: PrimeField` (vs concrete `FieldElement` in core)
+/// because circuit gadgets require type-generic field operations.
 pub mod domain_tags {
     pub use kontor_crypto_core::poseidon::domain_tags::{
         CHALLENGE, CHALLENGE_ID, CHALLENGE_PER_FILE, LEAF, NODE, ROOT_COMMITMENT, STATE_UPDATE,

@@ -9,6 +9,9 @@ default = []
 # Use Nova's Poseidon (same constants) so regression tests core vs Nova pass. For test/dev only.
 nova_poseidon = ["nova-snark", "generic-array"]
 
+# Dependency version pins:
+# - blake2b_simd and constant_time_eq: pinned to avoid edition2024 crates
+#   (blake2b_simd 1.0.4+ pulls constant_time_eq 0.4.2+ which requires edition2024).
 [dependencies]
 ff = "0.13"
 nova-snark = { version = "0.41.0", optional = true, default-features = false }

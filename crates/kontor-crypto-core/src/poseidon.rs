@@ -239,7 +239,7 @@ mod standalone_poseidon {
             .iter()
             .map(|x| x.ceil() as usize)
             .max()
-            .unwrap();
+            .expect("round number candidates must not be empty");
         rf >= rf_max
     }
 
@@ -310,7 +310,7 @@ mod standalone_poseidon {
             let mut acc = 0u8;
             for _ in 0..bits {
                 acc <<= 1;
-                if self.next().unwrap() {
+                if self.next().expect("Grain LFSR iterator is infinite") {
                     acc += 1;
                 }
             }
@@ -391,7 +391,8 @@ mod standalone_poseidon {
                     .map(|yj| {
                         let mut tmp = *xi;
                         tmp.add_assign(yj);
-                        tmp.invert().unwrap()
+                        tmp.invert()
+                            .expect("Cauchy matrix element must be invertible")
                     })
                     .collect()
             })
@@ -455,9 +456,9 @@ mod standalone_poseidon {
     }
 
     fn derive_mds_matrices<F: PrimeField>(m: Matrix<F>) -> MdsMatrices<F> {
-        let m_inv = invert(&m).unwrap();
+        let m_inv = invert(&m).expect("MDS matrix must be invertible");
         let m_hat = minor(&m, 0, 0);
-        let m_hat_inv = invert(&m_hat).unwrap();
+        let m_hat_inv = invert(&m_hat).expect("MDS minor matrix must be invertible");
         let m_prime = make_prime(&m);
         let m_double_prime = make_double_prime(&m, &m_hat_inv);
         MdsMatrices {
@@ -515,7 +516,7 @@ mod standalone_poseidon {
             let w_hat: Vec<F> = (0..size).map(|i| m_dd[i][0]).collect();
             let v_rest = m_dd[0][1..].to_vec();
             sparse_matrices.push(SparseMatrix { w_hat, v_rest });
-            curr = mat_mul(base, &derived.m_prime).unwrap();
+            curr = mat_mul(base, &derived.m_prime).expect("MDS matrix multiplication must succeed");
         }
         sparse_matrices.reverse();
         (curr, sparse_matrices)
@@ -656,7 +657,7 @@ mod standalone_poseidon {
     fn scalar_from_u128(v: u128) -> Fq {
         let mut repr = <Fq as PrimeField>::Repr::default();
         repr.as_mut()[..16].copy_from_slice(&v.to_le_bytes());
-        Fq::from_repr(repr).unwrap()
+        Fq::from_repr(repr).expect("u128 value must fit in Pallas field")
     }
 
     // --- Permutation (hash_optimized_static) ---
@@ -934,5 +935,60 @@ mod tests {
         let a = Fq::from(1u64);
         let b = Fq::from(2u64);
         assert_eq!(poseidon_hash2(a, b), poseidon_hash2(a, b));
+    }
+
+    #[cfg(not(feature = "nova_poseidon"))]
+    #[test]
+    fn poseidon_hash2_one_two() {
+        let result = poseidon_hash2(Fq::from(1u64), Fq::from(2u64));
+        assert_eq!(poseidon_hash2(Fq::from(1u64), Fq::from(2u64)), result);
+        assert_ne!(result, poseidon_hash2(Fq::from(0u64), Fq::from(0u64)));
+    }
+
+    #[cfg(not(feature = "nova_poseidon"))]
+    #[test]
+    fn poseidon_hash2_symmetry_broken() {
+        let a = Fq::from(1u64);
+        let b = Fq::from(2u64);
+        assert_ne!(poseidon_hash2(a, b), poseidon_hash2(b, a));
+    }
+
+    #[cfg(not(feature = "nova_poseidon"))]
+    #[test]
+    fn poseidon_hash_tagged_all_tags_distinct() {
+        let x = Fq::from(100u64);
+        let y = Fq::from(200u64);
+        let results: Vec<Fq> = vec![
+            poseidon_hash_tagged(domain_tags::leaf(), x, y),
+            poseidon_hash_tagged(domain_tags::node(), x, y),
+            poseidon_hash_tagged(domain_tags::challenge(), x, y),
+            poseidon_hash_tagged(domain_tags::state_update(), x, y),
+            poseidon_hash_tagged(domain_tags::root_commitment(), x, y),
+            poseidon_hash_tagged(domain_tags::challenge_per_file(), x, y),
+            poseidon_hash_tagged(domain_tags::challenge_id(), x, y),
+        ];
+        for i in 0..results.len() {
+            for j in (i + 1)..results.len() {
+                assert_ne!(results[i], results[j], "tags {} and {} collide", i, j);
+            }
+        }
+    }
+
+    #[cfg(not(feature = "nova_poseidon"))]
+    #[test]
+    fn poseidon_hash2_large_field_elements() {
+        let large = Fq::ZERO - Fq::ONE;
+        let one = Fq::ONE;
+        let result = poseidon_hash2(large, one);
+        assert_ne!(result, Fq::ZERO);
+        assert_eq!(poseidon_hash2(large, one), result, "must be deterministic");
+    }
+
+    #[cfg(not(feature = "nova_poseidon"))]
+    #[test]
+    fn poseidon_hash2_identity_element() {
+        let x = Fq::from(42u64);
+        assert_ne!(poseidon_hash2(Fq::ZERO, x), x);
+        assert_ne!(poseidon_hash2(x, Fq::ZERO), x);
     }
 }

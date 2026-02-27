@@ -6,10 +6,6 @@ members = [
     "crates/kontor-crypto-wasm",
 ]
 
-# Pin constant_time_eq to 0.3.1 for rustc 1.80 (0.4.x uses edition2024)
-[patch.crates-io]
-constant_time_eq = { git = "https://github.com/cesarb/constant_time_eq", tag = "0.3.1" }
-
 [profile.dev]
 opt-level = 3
 
