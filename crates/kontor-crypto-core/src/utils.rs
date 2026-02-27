@@ -20,3 +20,29 @@ pub fn field_to_bytes31_le<F: PrimeField>(element: &F) -> [u8; 31] {
     out.copy_from_slice(&bytes[..31]);
     out
 }
+
+/// Render a field element as a lowercase hex string of its canonical `to_repr` bytes.
+pub fn field_to_hex<F: PrimeField>(f: &F) -> String {
+    use std::fmt::Write;
+    let repr = f.to_repr();
+    repr.as_ref()
+        .iter()
+        .fold(String::with_capacity(64), |mut s, b| {
+            let _ = write!(s, "{:02x}", b);
+            s
+        })
+}
+
+/// Parse a hex string (optionally `0x`-prefixed) into a field element.
+/// Bytes are interpreted MSB-first and stored in reverse (little-endian repr).
+pub fn field_from_hex<F: PrimeField>(hex: &str) -> F {
+    let hex = hex.trim_start_matches("0x");
+    let mut buf = [0u8; 32];
+    for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+        let s = core::str::from_utf8(chunk).expect("hex must be valid UTF-8");
+        buf[31 - i] = u8::from_str_radix(s, 16).expect("hex must contain valid hex digits");
+    }
+    let mut repr = <F as PrimeField>::Repr::default();
+    repr.as_mut().copy_from_slice(&buf);
+    F::from_repr(repr).expect("hex value must fit in the field")
+}

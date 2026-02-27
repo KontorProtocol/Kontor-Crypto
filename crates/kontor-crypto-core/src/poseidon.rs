@@ -1,6 +1,24 @@
 //! Poseidon hash for Pallas scalar field, arity 2, Strength::Standard.
 //! Compatible with nova-snark's Sponge API (same constants and permutation).
 //! Uses halo2curves::pasta::Fq so constants match Nova (same as kontor-crypto FieldElement).
+//!
+//! ## Provenance
+//!
+//! The standalone implementation (`#[cfg(not(feature = "nova_poseidon"))]`) is a
+//! faithful port of the Poseidon sponge from **nova-snark v0.41.0** (crate
+//! `nova_snark::frontend::gadgets::poseidon`). It replicates the Grain LFSR
+//! round-constant generation, MDS / sparse-matrix factorisation, optimised
+//! permutation, and sponge absorb/squeeze exactly as Nova implements them, so
+//! that hashes produced by the standalone path are bit-identical to those
+//! produced via the `nova_poseidon` feature gate.
+//!
+//! Known-answer regression tests in this file and in
+//! `kontor-crypto/tests/poseidon_regression.rs` lock the output to golden
+//! values cross-validated between both paths.
+//!
+//! **Audit note**: this module should be reviewed alongside any nova-snark
+//! upgrade.  If the upstream Poseidon constants or permutation change, both the
+//! standalone code and the golden values must be updated in lockstep.
 
 #[cfg(not(feature = "nova_poseidon"))]
 use ff::{Field, PrimeField};
@@ -895,28 +913,20 @@ mod tests {
     #[cfg(not(feature = "nova_poseidon"))]
     #[test]
     fn poseidon_known_answer_standalone() {
-        use ff::PrimeField;
-
-        fn fq_from_hex(hex: &str) -> Fq {
-            let hex = hex.trim_start_matches("0x");
-            let mut buf = [0u8; 32];
-            for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
-                let s = core::str::from_utf8(chunk).unwrap();
-                buf[31 - i] = u8::from_str_radix(s, 16).unwrap();
-            }
-            let mut repr = <Fq as PrimeField>::Repr::default();
-            repr.as_mut().copy_from_slice(&buf);
-            Fq::from_repr(repr).unwrap()
-        }
+        use crate::utils::field_from_hex;
 
         assert_eq!(
             poseidon_hash2(Fq::from(0u64), Fq::from(0u64)),
-            fq_from_hex("38ec69788c896550d69fb76411058e72798b21bcaaae2ad06101e9dc558b5dbd"),
+            field_from_hex::<Fq>(
+                "38ec69788c896550d69fb76411058e72798b21bcaaae2ad06101e9dc558b5dbd"
+            ),
             "poseidon_hash2(0,0) must match Nova"
         );
         assert_eq!(
             poseidon_hash_tagged(domain_tags::leaf(), Fq::from(1u64), Fq::from(2u64)),
-            fq_from_hex("2eb3923b358306dc6af5240a87e8ea32ec23a2b4cc99932af880d75a86021495"),
+            field_from_hex::<Fq>(
+                "2eb3923b358306dc6af5240a87e8ea32ec23a2b4cc99932af880d75a86021495"
+            ),
             "poseidon_hash_tagged(leaf,1,2) must match Nova"
         );
     }

@@ -4,7 +4,9 @@ use crate::api::FieldElement;
 use crate::poseidon::{domain_tags, poseidon_hash_tagged};
 use ff::FromUniformBytes;
 
-pub use kontor_crypto_core::utils::{bytes31_to_field_le, field_to_bytes31_le};
+pub use kontor_crypto_core::utils::{
+    bytes31_to_field_le, field_from_hex, field_to_bytes31_le, field_to_hex,
+};
 
 /// Utility function to derive a leaf index from a hash value using least-significant bits.
 /// This extracts the first `depth` bits from the hash in little-endian order.

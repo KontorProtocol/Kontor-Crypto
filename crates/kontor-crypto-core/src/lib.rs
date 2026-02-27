@@ -1,6 +1,8 @@
 //! Shared cryptographic primitives for Kontor PoR (prepare_file, encode, Merkle).
 //! No dependency on nova-snark; suitable for WASM and CLI.
 
+#![deny(unsafe_code)]
+
 pub mod config;
 pub mod erasure;
 pub mod error;

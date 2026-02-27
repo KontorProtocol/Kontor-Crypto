@@ -123,13 +123,7 @@ pub fn prepare_file(
 
     let (core_pf, metadata) = kontor_crypto_core::prepare_file(data, filename, nonce)?;
 
-    let prepared_file = types::PreparedFile {
-        tree: core_pf.tree,
-        file_id: core_pf.file_id,
-        root: core_pf.root,
-    };
-
-    Ok((prepared_file, metadata))
+    Ok((core_pf.into(), metadata))
 }
 
 /// Computes the Merkle tree depth implied by `FileMetadata`.

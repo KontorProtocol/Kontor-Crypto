@@ -4,17 +4,8 @@
 //! and guard against silent changes in the prepare_file pipeline
 //! (Reed-Solomon encoding, Poseidon Merkle tree, ID generation).
 
-use ff::PrimeField;
-use kontor_crypto::api::{prepare_file, FieldElement};
-
-fn field_to_hex(f: &FieldElement) -> String {
-    let repr = f.to_repr();
-    repr.as_ref().iter().fold(String::new(), |mut s, b| {
-        use std::fmt::Write;
-        let _ = write!(s, "{:02x}", b);
-        s
-    })
-}
+use kontor_crypto::api::prepare_file;
+use kontor_crypto::utils::field_to_hex;
 
 #[test]
 fn prepare_file_hello_deterministic() {

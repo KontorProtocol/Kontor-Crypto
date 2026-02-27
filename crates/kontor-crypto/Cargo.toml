@@ -51,12 +51,10 @@ tracing-tree = "0.3"
 peak_alloc = { version = "0.2", optional = true }
 
 # Dependency version pins:
-# - blake2b_simd and constant_time_eq: pinned to avoid edition2024 crates
-#   (blake2b_simd 1.0.4+ pulls constant_time_eq 0.4.2+ which requires edition2024).
-# - indexmap: pinned because 2.13+ requires rustc 1.82.
+# Pin: nova-snark -> halo2curves -> blake2b_simd 1.0.4+ -> constant_time_eq 0.4.2+
+# (edition2024, requires rustc 1.85+). Pin blake2b_simd <= 1.0.3 to stay safe.
 constant_time_eq = "0.3.1"
 blake2b_simd = "1.0.1"
-indexmap = "2.11"
 
 [dev-dependencies]
 clap = { version = "4.5.10", features = ["derive"] }
@@ -81,4 +79,3 @@ targets = ["x86_64-unknown-linux-gnu"]
 [[bench]]
 name = "bench_main"
 harness = false
-path = "../../benches/bench_main.rs"

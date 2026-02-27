@@ -1,22 +1,12 @@
 //! WASM bindings for Kontor `prepare_file`: browser-callable API returning metadata and prepared file.
 
+#![deny(unsafe_code)]
+
 use ff::PrimeField;
-use kontor_crypto_core::poseidon::FieldElement;
+use kontor_crypto_core::utils::field_to_hex;
 use kontor_crypto_core::{prepare_file, FileMetadata, PreparedFile};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
-
-/// Converts a field element to its canonical hex string (lowercase).
-fn field_to_hex(f: &FieldElement) -> String {
-    use std::fmt::Write;
-    let repr = f.to_repr();
-    repr.as_ref()
-        .iter()
-        .fold(String::with_capacity(64), |mut s, b| {
-            let _ = write!(s, "{:02x}", b);
-            s
-        })
-}
 
 /// Metadata returned to JS (root as hex, objectId, fileId, etc.).
 #[derive(Serialize)]
@@ -140,8 +130,8 @@ pub fn prepare_file_wasm(
 mod tests {
     use super::*;
     use kontor_crypto_core::prepare_file;
+    use kontor_crypto_core::utils::field_to_hex;
 
-    /// Same input as Node example: ensures metadata shape and that core output matches expected.
     #[test]
     fn prepare_file_metadata_consistency() {
         let file = b"hello";
@@ -166,7 +156,6 @@ mod tests {
             "tree should have leaves"
         );
 
-        // Descriptor is ready for filestorage create_agreement.
         let desc = metadata_to_descriptor_out(&metadata);
         assert_eq!(desc.file_id, meta_out.file_id);
         assert_eq!(desc.object_id, meta_out.object_id);
@@ -175,5 +164,75 @@ mod tests {
         assert_eq!(desc.original_size, meta_out.original_size as u64);
         assert_eq!(desc.filename, meta_out.filename);
         assert_eq!(desc.root.len(), 32, "descriptor.root must be 32 bytes");
+    }
+
+    #[test]
+    fn prepare_file_empty_input_returns_error() {
+        let result = prepare_file(b"", "empty.txt", b"");
+        assert!(result.is_err(), "empty input must fail");
+    }
+
+    #[test]
+    fn descriptor_root_matches_metadata_field_repr() {
+        let (_, metadata) = prepare_file(b"hello", "test.txt", b"").unwrap();
+        let desc = metadata_to_descriptor_out(&metadata);
+        let meta_out = metadata_to_out(&metadata);
+
+        let root_hex_from_bytes: String =
+            desc.root
+                .iter()
+                .fold(String::with_capacity(64), |mut s, b| {
+                    use std::fmt::Write;
+                    let _ = write!(s, "{:02x}", b);
+                    s
+                });
+        assert_eq!(
+            root_hex_from_bytes, meta_out.root,
+            "descriptor.root bytes must match metadata.root hex"
+        );
+
+        assert_eq!(
+            root_hex_from_bytes,
+            field_to_hex(&metadata.root),
+            "descriptor.root must be canonical to_repr of the field element"
+        );
+    }
+
+    #[test]
+    fn prepare_file_multi_codeword() {
+        let data = vec![42u8; 15_000];
+        let (prepared, metadata) = prepare_file(&data, "big.bin", b"nonce").unwrap();
+        let meta_out = metadata_to_out(&metadata);
+        let prep_out = prepared_file_to_out(&prepared);
+
+        assert!(
+            meta_out.padded_len >= 765,
+            "15 KB needs 3 codewords (765 symbols), padded to next power of two"
+        );
+        assert!(
+            (meta_out.padded_len as u64).is_power_of_two(),
+            "padded_len must be power of two"
+        );
+        assert_eq!(meta_out.original_size, 15_000);
+        assert_eq!(
+            prep_out.tree_leaves_hex.len(),
+            meta_out.padded_len,
+            "tree leaves count must equal padded_len"
+        );
+        assert_eq!(meta_out.root, prep_out.root);
+
+        let desc = metadata_to_descriptor_out(&metadata);
+        assert_eq!(desc.original_size, 15_000);
+        assert_eq!(desc.padded_len, meta_out.padded_len as u64);
+    }
+
+    #[test]
+    fn prepare_file_nonce_changes_file_id_not_root() {
+        let (_, m1) = prepare_file(b"data", "f.bin", b"").unwrap();
+        let (_, m2) = prepare_file(b"data", "f.bin", b"nonce").unwrap();
+
+        assert_eq!(m1.object_id, m2.object_id, "same content, same object_id");
+        assert_ne!(m1.file_id, m2.file_id, "different nonce, different file_id");
+        assert_eq!(m1.root, m2.root, "nonce must not affect Merkle root");
     }
 }

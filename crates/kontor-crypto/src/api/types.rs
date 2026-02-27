@@ -212,6 +212,9 @@ impl Clone for PorParams {
     }
 }
 
+/// File metadata is shared directly from `kontor-crypto-core` (single source of truth).
+/// If the main crate ever needs additional proof-related fields beyond what core provides,
+/// replace this re-export with a wrapper struct (similar to `PreparedFile` below).
 pub use kontor_crypto_core::types::FileMetadata;
 
 impl crate::ledger::FileDescriptor for FileMetadata {
@@ -240,6 +243,16 @@ pub struct PreparedFile {
     pub file_id: String,
     /// The Merkle root for quick access
     pub root: FieldElement,
+}
+
+impl From<kontor_crypto_core::types::PreparedFile> for PreparedFile {
+    fn from(core: kontor_crypto_core::types::PreparedFile) -> Self {
+        Self {
+            tree: core.tree,
+            file_id: core.file_id,
+            root: core.root,
+        }
+    }
 }
 
 /// Encapsulates a verifier's challenge request for a specific file.
