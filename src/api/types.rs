@@ -69,7 +69,7 @@ mod proof_format {
     pub const MAGIC: &[u8] = b"NPOR";
 
     /// Current format version for forward compatibility
-    pub const VERSION: u16 = 1;
+    pub const VERSION: u16 = 2;
 
     /// Header size in bytes: magic(4) + version(2) + length(4)
     pub const HEADER_SIZE: usize = 10;
