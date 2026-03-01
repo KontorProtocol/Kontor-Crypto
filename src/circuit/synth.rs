@@ -40,9 +40,10 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
     assert_eq!(
         z.len(),
         layout.arity(),
-        "Public input count mismatch: expected {} (FIXED={} + ledger_indices={} + depths={} + seeds={} + leaves={}), got {}",
+        "Public input count mismatch: expected {} (FIXED={} + ledger_indices={} + depths={} + seeds={} + expected_rcs={} + leaves={}), got {}",
         layout.arity(),
         config::PublicIOLayout::FIXED,
+        files_per_step,
         files_per_step,
         files_per_step,
         files_per_step,
