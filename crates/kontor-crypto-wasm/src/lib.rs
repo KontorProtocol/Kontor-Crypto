@@ -126,6 +126,137 @@ pub fn prepare_file_wasm(
     serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// Prepares leaf data for parallel Merkle tree computation.
+///
+/// Does everything EXCEPT building the Merkle tree: SHA256 for IDs,
+/// RS-encode, pad to power of two, convert each chunk to a 32-byte
+/// field element representation.
+///
+/// Returns a JS object:
+/// `{ leafBytes: Uint8Array, objectId, fileId, paddedLen, originalSize, filename, nonce }`
+#[wasm_bindgen(js_name = prepareLeaves)]
+pub fn prepare_leaves(
+    file: Box<[u8]>,
+    filename: &str,
+    nonce: Box<[u8]>,
+) -> Result<JsValue, JsValue> {
+    use kontor_crypto_core::config;
+    use kontor_crypto_core::erasure::encode_file_symbols;
+    use kontor_crypto_core::merkle::get_leaf_hash;
+    use sha2::{Digest, Sha256};
+
+    if file.is_empty() {
+        return Err(JsValue::from_str("empty file"));
+    }
+
+    let mut object_hasher = Sha256::new();
+    object_hasher.update(file.as_ref());
+    let object_id = format!("obj_{:x}", object_hasher.finalize());
+
+    let mut file_hasher = Sha256::new();
+    file_hasher.update(file.as_ref());
+    file_hasher.update(nonce.as_ref());
+    let file_id = format!("file_{:x}", file_hasher.finalize());
+
+    let all_symbols =
+        encode_file_symbols(file.as_ref()).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let padded_len = all_symbols.len().next_power_of_two();
+    let mut padded_symbols = all_symbols;
+    padded_symbols.resize(padded_len, vec![0; config::CHUNK_SIZE_BYTES]);
+
+    let mut leaf_bytes = Vec::with_capacity(padded_len * 32);
+    for chunk in &padded_symbols {
+        let fe = get_leaf_hash(chunk).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        leaf_bytes.extend_from_slice(fe.to_repr().as_ref());
+    }
+
+    let result = js_sys::Object::new();
+    let leaf_arr = js_sys::Uint8Array::from(leaf_bytes.as_slice());
+    js_sys::Reflect::set(&result, &"leafBytes".into(), &leaf_arr)?;
+    js_sys::Reflect::set(
+        &result,
+        &"objectId".into(),
+        &JsValue::from_str(&object_id),
+    )?;
+    js_sys::Reflect::set(&result, &"fileId".into(), &JsValue::from_str(&file_id))?;
+    js_sys::Reflect::set(
+        &result,
+        &"paddedLen".into(),
+        &JsValue::from_f64(padded_len as f64),
+    )?;
+    js_sys::Reflect::set(
+        &result,
+        &"originalSize".into(),
+        &JsValue::from_f64(file.len() as f64),
+    )?;
+    js_sys::Reflect::set(
+        &result,
+        &"filename".into(),
+        &JsValue::from_str(filename),
+    )?;
+    let nonce_arr = js_sys::Uint8Array::from(nonce.as_ref());
+    js_sys::Reflect::set(&result, &"nonce".into(), &nonce_arr)?;
+
+    Ok(result.into())
+}
+
+/// Builds a Merkle tree from a flat `Uint8Array` of 32-byte field element
+/// representations and returns the 32-byte root.
+///
+/// Designed to run inside a Web Worker on a subset of leaves for parallel
+/// tree construction.
+#[wasm_bindgen(js_name = buildMerkleRoot)]
+pub fn build_merkle_root(leaf_bytes: Box<[u8]>) -> Result<Box<[u8]>, JsValue> {
+    use kontor_crypto_core::merkle::build_tree_from_leaves;
+    use kontor_crypto_core::poseidon::FieldElement;
+
+    if leaf_bytes.len() % 32 != 0 {
+        return Err(JsValue::from_str(
+            "leafBytes length must be a multiple of 32",
+        ));
+    }
+
+    let leaves: Vec<FieldElement> = leaf_bytes
+        .chunks(32)
+        .map(|chunk| {
+            let mut repr = <FieldElement as PrimeField>::Repr::default();
+            repr.as_mut().copy_from_slice(chunk);
+            let opt: Option<FieldElement> = FieldElement::from_repr(repr).into();
+            opt.ok_or_else(|| JsValue::from_str("invalid field element in leafBytes"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let tree =
+        build_tree_from_leaves(&leaves).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let root = tree.root();
+    Ok(root.to_repr().as_ref().to_vec().into_boxed_slice())
+}
+
+/// Hashes two 32-byte field elements using the Merkle internal-node hash
+/// (Poseidon, domain-tagged). Used to combine sub-roots from parallel workers.
+#[wasm_bindgen(js_name = hashNodes)]
+pub fn hash_nodes(left_bytes: Box<[u8]>, right_bytes: Box<[u8]>) -> Result<Box<[u8]>, JsValue> {
+    use kontor_crypto_core::merkle::hash_node;
+    use kontor_crypto_core::poseidon::FieldElement;
+
+    if left_bytes.len() != 32 || right_bytes.len() != 32 {
+        return Err(JsValue::from_str("each input must be exactly 32 bytes"));
+    }
+
+    let mut left_repr = <FieldElement as PrimeField>::Repr::default();
+    left_repr.as_mut().copy_from_slice(&left_bytes);
+    let left: Option<FieldElement> = FieldElement::from_repr(left_repr).into();
+    let left = left.ok_or_else(|| JsValue::from_str("invalid left field element"))?;
+
+    let mut right_repr = <FieldElement as PrimeField>::Repr::default();
+    right_repr.as_mut().copy_from_slice(&right_bytes);
+    let right: Option<FieldElement> = FieldElement::from_repr(right_repr).into();
+    let right = right.ok_or_else(|| JsValue::from_str("invalid right field element"))?;
+
+    let result = hash_node(left, right);
+    Ok(result.to_repr().as_ref().to_vec().into_boxed_slice())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +365,51 @@ mod tests {
         assert_eq!(m1.object_id, m2.object_id, "same content, same object_id");
         assert_ne!(m1.file_id, m2.file_id, "different nonce, different file_id");
         assert_eq!(m1.root, m2.root, "nonce must not affect Merkle root");
+    }
+
+    #[test]
+    fn parallel_root_matches_sequential() {
+        use kontor_crypto_core::config;
+        use kontor_crypto_core::erasure::encode_file_symbols;
+        use kontor_crypto_core::merkle::{build_tree_from_leaves, get_leaf_hash, hash_node};
+        use kontor_crypto_core::poseidon::FieldElement;
+
+        let data = vec![42u8; 15_000];
+        let (_, metadata) = prepare_file(&data, "test.bin", b"nonce").unwrap();
+        let sequential_root = metadata.root;
+
+        let all_symbols = encode_file_symbols(&data).unwrap();
+        let padded_len = all_symbols.len().next_power_of_two();
+        let mut padded_symbols = all_symbols;
+        padded_symbols.resize(padded_len, vec![0; config::CHUNK_SIZE_BYTES]);
+
+        let leaves: Vec<FieldElement> = padded_symbols
+            .iter()
+            .map(|chunk| get_leaf_hash(chunk).unwrap())
+            .collect();
+
+        let num_workers = 4usize;
+        let chunk_size = leaves.len() / num_workers;
+        let mut sub_roots = Vec::new();
+        for i in 0..num_workers {
+            let start = i * chunk_size;
+            let end = (i + 1) * chunk_size;
+            let sub_tree = build_tree_from_leaves(&leaves[start..end]).unwrap();
+            sub_roots.push(sub_tree.root());
+        }
+
+        while sub_roots.len() > 1 {
+            let mut next = Vec::new();
+            for pair in sub_roots.chunks(2) {
+                next.push(hash_node(pair[0], pair[1]));
+            }
+            sub_roots = next;
+        }
+        let parallel_root = sub_roots[0];
+
+        assert_eq!(
+            sequential_root, parallel_root,
+            "parallel root must match sequential root"
+        );
     }
 }

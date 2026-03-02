@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Kontor prepareFile (WASM)</title>
+  <title>Kontor prepareFile</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
     h1 { margin-bottom: 0.25rem; }
@@ -28,11 +28,25 @@
     }
     .error { color: #c00; }
     .ok { color: #1a7f37; }
+    .progress-section {
+      display: none; margin-top: 1rem;
+    }
+    .progress-section.visible { display: block; }
+    .progress-section progress {
+      width: 100%; height: 1.1rem; border-radius: 6px; overflow: hidden;
+      appearance: none; -webkit-appearance: none;
+    }
+    .progress-section progress::-webkit-progress-bar { background: #e8e8e8; border-radius: 6px; }
+    .progress-section progress::-webkit-progress-value { background: #4a90d9; border-radius: 6px; transition: width 0.15s ease; }
+    .progress-section progress::-moz-progress-bar { background: #4a90d9; border-radius: 6px; }
+    .progress-phase {
+      display: block; margin-top: 0.35rem; font-size: 0.85rem; color: #666;
+    }
   </style>
 </head>
 <body>
-  <h1>prepareFile (WASM)</h1>
-  <p class="hint">Prerequisites: <code>wasm-pack build --target web</code> then serve via <code>npx serve .</code></p>
+  <h1>prepareFile</h1>
+  <p class="hint">Build: <code>cd packages/kontor-crypto && npm run build</code>, then serve from repo root: <code>npx serve .</code></p>
 
   <div class="file-picker" id="dropzone">
     <input type="file" id="fileInput">
@@ -40,21 +54,38 @@
   </div>
 
   <button id="run" disabled>Run prepareFile</button>
+
+  <div class="progress-section" id="progressSection">
+    <progress id="progressBar" max="1" value="0"></progress>
+    <span class="progress-phase" id="progressPhase"></span>
+  </div>
+
   <pre id="out">Select a file, then click Run.</pre>
 
   <script type="module">
+    import { prepareFile } from '../../../packages/kontor-crypto/dist/index.js';
+
     const out = document.getElementById('out');
     const run = document.getElementById('run');
     const fileInput = document.getElementById('fileInput');
     const fileLabel = document.getElementById('fileLabel');
     const dropzone = document.getElementById('dropzone');
-
+    const progressSection = document.getElementById('progressSection');
+    const progressBar = document.getElementById('progressBar');
+    const progressPhase = document.getElementById('progressPhase');
     let selectedFile = null;
 
-    function formatBytes(bytes) {
-      if (bytes < 1024) return bytes + ' B';
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    const phaseLabels = {
+      reading: 'Reading file…',
+      encoding: 'Encoding…',
+      merkle: 'Building Merkle tree…',
+      finalizing: 'Finalizing…',
+    };
+
+    function formatBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(2) + ' MB';
     }
 
     function selectFile(file) {
@@ -66,81 +97,44 @@
       out.className = '';
     }
 
-    fileInput.addEventListener('change', (e) => {
-      if (e.target.files.length) selectFile(e.target.files[0]);
-    });
-
+    fileInput.addEventListener('change', (e) => { if (e.target.files.length) selectFile(e.target.files[0]); });
     dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
     dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
     dropzone.addEventListener('drop', (e) => {
       e.preventDefault();
       dropzone.classList.remove('dragover');
-      if (e.dataTransfer.files.length) {
-        selectFile(e.dataTransfer.files[0]);
-        fileInput.files = e.dataTransfer.files;
-      }
+      if (e.dataTransfer.files.length) { selectFile(e.dataTransfer.files[0]); fileInput.files = e.dataTransfer.files; }
     });
 
-    async function main() {
+    run.addEventListener('click', async () => {
       if (!selectedFile) return;
       run.disabled = true;
       out.textContent = `Processing "${selectedFile.name}" (${formatBytes(selectedFile.size)})…`;
       out.className = '';
-
+      progressBar.value = 0;
+      progressPhase.textContent = '';
+      progressSection.classList.add('visible');
+      const onProgress = (progress, phase) => {
+        progressBar.value = progress;
+        progressPhase.textContent = phaseLabels[phase] || phase;
+      };
       try {
-        const { default: init, prepareFile } = await import('../pkg/kontor_crypto_wasm.js');
-        await init();
-
-        const buffer = await selectedFile.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        const nonce = new Uint8Array(0);
-
         const t0 = performance.now();
-        const result = prepareFile(bytes, selectedFile.name, nonce);
-        const elapsed = (performance.now() - t0).toFixed(1);
-
-        if (!result || !result.metadata) {
-          out.textContent = 'Error: prepareFile returned invalid result';
-          out.className = 'error';
-          run.disabled = false;
-          return;
-        }
-
-        const { metadata, preparedFile, descriptor } = result;
-
-        const metaOk = metadata.root && metadata.objectId?.startsWith('obj_') && metadata.fileId?.startsWith('file_')
-          && metadata.originalSize === bytes.length && metadata.filename === selectedFile.name
-          && preparedFile?.root === metadata.root && preparedFile?.fileId === metadata.fileId
-          && Array.isArray(preparedFile?.treeLeavesHex) && preparedFile.treeLeavesHex.length > 0;
-        const descOk = descriptor?.fileId === metadata.fileId
-          && descriptor?.objectId === metadata.objectId && descriptor?.filename === metadata.filename
-          && descriptor?.originalSize === metadata.originalSize && descriptor?.paddedLen === metadata.paddedLen
-          && Array.isArray(descriptor?.root) && descriptor.root.length === 32;
-        const ok = metaOk && descOk;
-
-        const rootPreview = metadata.root ? metadata.root.slice(0, 32) + '…' : '';
-
-        out.textContent = (ok ? 'OK' : 'WARN — unexpected shape') + `  (${elapsed} ms)\n\n`
-          + 'metadata:\n' + JSON.stringify({
-            root: rootPreview,
-            objectId: metadata.objectId,
-            fileId: metadata.fileId,
-            originalSize: metadata.originalSize,
-            paddedLen: metadata.paddedLen,
-            filename: metadata.filename
-          }, null, 2)
-          + '\n\ntreeLeavesHex count: ' + (preparedFile?.treeLeavesHex?.length ?? 0)
-          + '\ndescriptor.root length: ' + (descriptor?.root?.length ?? 'missing');
-        out.className = ok ? 'ok' : 'error';
+        const result = await prepareFile(selectedFile, undefined, undefined, onProgress);
+        const ms = (performance.now() - t0).toFixed(1);
+        out.className = 'ok';
+        out.textContent = `OK (${ms} ms)\n\n` + JSON.stringify({
+          metadata: { ...result.metadata, root: result.metadata.root.slice(0, 32) + '…' },
+          treeLeavesCount: result.preparedFile.treeLeavesHex.length,
+          descriptorRootLen: result.descriptor.root.length,
+        }, null, 2);
       } catch (e) {
-        out.textContent = 'Error: ' + e.message;
         out.className = 'error';
+        out.textContent = 'Error: ' + (e.message || e);
       } finally {
         run.disabled = false;
       }
-    }
-
-    run.addEventListener('click', () => main());
+    });
   </script>
 </body>
 </html>
