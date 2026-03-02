@@ -173,11 +173,7 @@ pub fn prepare_leaves(
     let result = js_sys::Object::new();
     let leaf_arr = js_sys::Uint8Array::from(leaf_bytes.as_slice());
     js_sys::Reflect::set(&result, &"leafBytes".into(), &leaf_arr)?;
-    js_sys::Reflect::set(
-        &result,
-        &"objectId".into(),
-        &JsValue::from_str(&object_id),
-    )?;
+    js_sys::Reflect::set(&result, &"objectId".into(), &JsValue::from_str(&object_id))?;
     js_sys::Reflect::set(&result, &"fileId".into(), &JsValue::from_str(&file_id))?;
     js_sys::Reflect::set(
         &result,
@@ -189,11 +185,7 @@ pub fn prepare_leaves(
         &"originalSize".into(),
         &JsValue::from_f64(file.len() as f64),
     )?;
-    js_sys::Reflect::set(
-        &result,
-        &"filename".into(),
-        &JsValue::from_str(filename),
-    )?;
+    js_sys::Reflect::set(&result, &"filename".into(), &JsValue::from_str(filename))?;
     let nonce_arr = js_sys::Uint8Array::from(nonce.as_ref());
     js_sys::Reflect::set(&result, &"nonce".into(), &nonce_arr)?;
 
@@ -226,8 +218,7 @@ pub fn build_merkle_root(leaf_bytes: Box<[u8]>) -> Result<Box<[u8]>, JsValue> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let tree =
-        build_tree_from_leaves(&leaves).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let tree = build_tree_from_leaves(&leaves).map_err(|e| JsValue::from_str(&e.to_string()))?;
     let root = tree.root();
     Ok(root.to_repr().as_ref().to_vec().into_boxed_slice())
 }
