@@ -65,4 +65,8 @@ fn regression_active_flags_prefix_constraints_present() {
         dbg.contains("active_flags_prefix_file0_lvl2"),
         "missing prefix constraint for level 2"
     );
+    assert!(
+        dbg.contains("sum_active_init_is_zero_file0"),
+        "missing sum_active initializer zero-binding constraint"
+    );
 }
