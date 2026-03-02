@@ -67,6 +67,9 @@ perf.data.old
 claude
 .nvimlog
 
+# CI / analysis artifacts
+artifacts/
+
 # cargo-fuzz
 fuzz/artifacts/
 fuzz/coverage/
