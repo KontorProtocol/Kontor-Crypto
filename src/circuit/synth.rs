@@ -35,6 +35,7 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
 ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
     // Use centralized layout helper
     let layout = config::PublicIOLayout::new(files_per_step);
+    let breakdown = layout.arity_breakdown();
 
     // Assert that the public inputs match the expected circuit arity
     assert_eq!(
@@ -42,12 +43,12 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         layout.arity(),
         "Public input count mismatch: expected {} (FIXED={} + ledger_indices={} + depths={} + seeds={} + expected_rcs={} + leaves={}), got {}",
         layout.arity(),
-        config::PublicIOLayout::FIXED,
-        files_per_step,
-        files_per_step,
-        files_per_step,
-        files_per_step,
-        files_per_step,
+        breakdown.fixed,
+        breakdown.ledger_indices,
+        breakdown.depths,
+        breakdown.seeds,
+        breakdown.expected_rcs,
+        breakdown.leaves,
         z.len()
     );
 
@@ -394,6 +395,14 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         } else {
             let mut sum_active =
                 AllocatedNum::alloc(file_cs.namespace(|| "sum_active_init"), || Ok(F::ZERO))?;
+            // Bind the running-sum initializer to canonical zero so depth is exactly
+            // the sum of active flags (not an affine-shifted variant).
+            file_cs.enforce(
+                || format!("sum_active_init_is_zero_file{}", file_idx),
+                |lc| lc + sum_active.get_variable(),
+                |lc| lc + CS::one(),
+                |lc| lc,
+            );
             for (j, flag) in active_flags.iter().enumerate() {
                 let new_sum = AllocatedNum::alloc(
                     file_cs.namespace(|| format!("sum_active_file{}_lvl{}", file_idx, j)),

@@ -22,12 +22,29 @@ pub const BASE_CIRCUIT_ARITY: usize = 2;
 /// arity = fixed_fields + ledger_indices + depths + seeds + expected_rcs + leaves
 #[inline]
 pub fn circuit_arity(files_per_step: usize) -> usize {
-    BASE_CIRCUIT_ARITY
-        + files_per_step
-        + files_per_step
-        + files_per_step
-        + files_per_step
-        + files_per_step
+    PublicIOLayout::new(files_per_step).arity()
+}
+
+/// Canonical section-by-section arity breakdown for public IO layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PublicIOArityBreakdown {
+    pub fixed: usize,
+    pub ledger_indices: usize,
+    pub depths: usize,
+    pub seeds: usize,
+    pub expected_rcs: usize,
+    pub leaves: usize,
+}
+
+impl PublicIOArityBreakdown {
+    pub fn total(&self) -> usize {
+        self.fixed
+            + self.ledger_indices
+            + self.depths
+            + self.seeds
+            + self.expected_rcs
+            + self.leaves
+    }
 }
 
 /// Public input/output layout helper to centralize index management.
@@ -48,9 +65,21 @@ impl PublicIOLayout {
         Self { files_per_step }
     }
 
+    /// Arity breakdown for each public section.
+    pub fn arity_breakdown(&self) -> PublicIOArityBreakdown {
+        PublicIOArityBreakdown {
+            fixed: Self::FIXED,
+            ledger_indices: self.files_per_step,
+            depths: self.files_per_step,
+            seeds: self.files_per_step,
+            expected_rcs: self.files_per_step,
+            leaves: self.files_per_step,
+        }
+    }
+
     /// Total arity: fixed + ledger indices + depths + seeds + leaf outputs
     pub fn arity(&self) -> usize {
-        Self::FIXED + 5 * self.files_per_step
+        self.arity_breakdown().total()
     }
 
     /// Helper: compute the start index of a per-file section
@@ -316,3 +345,23 @@ pub const S_CHAL: usize = 100;
 
 /// Proof submission window
 pub const W_PROOF: u64 = 2016;
+
+#[cfg(test)]
+mod tests {
+    use super::{circuit_arity, PublicIOLayout};
+
+    #[test]
+    fn test_public_io_breakdown_matches_total_arity() {
+        let layout = PublicIOLayout::new(4);
+        let breakdown = layout.arity_breakdown();
+
+        assert_eq!(breakdown.fixed, PublicIOLayout::FIXED);
+        assert_eq!(breakdown.ledger_indices, 4);
+        assert_eq!(breakdown.depths, 4);
+        assert_eq!(breakdown.seeds, 4);
+        assert_eq!(breakdown.expected_rcs, 4);
+        assert_eq!(breakdown.leaves, 4);
+        assert_eq!(breakdown.total(), layout.arity());
+        assert_eq!(breakdown.total(), circuit_arity(4));
+    }
+}
