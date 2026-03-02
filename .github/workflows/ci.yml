@@ -67,19 +67,7 @@ jobs:
       - name: Test core standalone Poseidon (no nova_poseidon)
         run: cargo test -p kontor-crypto-core
 
-      # 9. Build WASM target.
-      - name: Add wasm32 target
-        run: rustup target add wasm32-unknown-unknown
-      - name: Build WASM
-        run: cargo build -p kontor-crypto-wasm --target wasm32-unknown-unknown --release
-
-      # 10. Run WASM unit tests via wasm-pack.
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-      - name: Test WASM
-        run: wasm-pack test --node crates/kontor-crypto-wasm
-
-      # 11. Run security audit.
+      # 9. Run security audit.
       # The command will fail the workflow if any vulnerabilities are found.
       - name: Install cargo-audit
         run: |
