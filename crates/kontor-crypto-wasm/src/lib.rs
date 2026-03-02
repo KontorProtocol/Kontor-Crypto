@@ -198,11 +198,11 @@ pub fn prepare_leaves(
 /// Designed to run inside a Web Worker on a subset of leaves for parallel
 /// tree construction.
 #[wasm_bindgen(js_name = buildMerkleRoot)]
-pub fn build_merkle_root(leaf_bytes: Box<[u8]>) -> Result<Box<[u8]>, JsValue> {
+pub fn build_merkle_root(leaf_bytes: &[u8]) -> Result<Box<[u8]>, JsValue> {
     use kontor_crypto_core::merkle::build_tree_from_leaves;
     use kontor_crypto_core::poseidon::FieldElement;
 
-    if leaf_bytes.len() % 32 != 0 {
+    if !leaf_bytes.len().is_multiple_of(32) {
         return Err(JsValue::from_str(
             "leafBytes length must be a multiple of 32",
         ));
