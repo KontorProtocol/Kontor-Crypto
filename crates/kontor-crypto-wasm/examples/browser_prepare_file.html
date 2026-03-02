@@ -32,13 +32,14 @@
       display: none; margin-top: 1rem;
     }
     .progress-section.visible { display: block; }
-    .progress-section progress {
-      width: 100%; height: 1.1rem; border-radius: 6px; overflow: hidden;
-      appearance: none; -webkit-appearance: none;
+    .progress-track {
+      width: 100%; height: 1.1rem; border-radius: 6px; background: #e8e8e8;
+      overflow: hidden;
     }
-    .progress-section progress::-webkit-progress-bar { background: #e8e8e8; border-radius: 6px; }
-    .progress-section progress::-webkit-progress-value { background: #4a90d9; border-radius: 6px; transition: width 0.15s ease; }
-    .progress-section progress::-moz-progress-bar { background: #4a90d9; border-radius: 6px; }
+    .progress-fill {
+      height: 100%; width: 0%; border-radius: 6px; background: #4a90d9;
+      transition: width 0.25s ease-out;
+    }
     .progress-phase {
       display: block; margin-top: 0.35rem; font-size: 0.85rem; color: #666;
     }
@@ -46,7 +47,6 @@
 </head>
 <body>
   <h1>prepareFile</h1>
-  <p class="hint">Build: <code>cd packages/kontor-crypto && npm run build</code>, then serve from repo root: <code>npx serve .</code></p>
 
   <div class="file-picker" id="dropzone">
     <input type="file" id="fileInput">
@@ -56,7 +56,9 @@
   <button id="run" disabled>Run prepareFile</button>
 
   <div class="progress-section" id="progressSection">
-    <progress id="progressBar" max="1" value="0"></progress>
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
     <span class="progress-phase" id="progressPhase"></span>
   </div>
 
@@ -71,7 +73,7 @@
     const fileLabel = document.getElementById('fileLabel');
     const dropzone = document.getElementById('dropzone');
     const progressSection = document.getElementById('progressSection');
-    const progressBar = document.getElementById('progressBar');
+    const progressFill = document.getElementById('progressFill');
     const progressPhase = document.getElementById('progressPhase');
     let selectedFile = null;
 
@@ -111,17 +113,22 @@
       run.disabled = true;
       out.textContent = `Processing "${selectedFile.name}" (${formatBytes(selectedFile.size)})…`;
       out.className = '';
-      progressBar.value = 0;
+      progressFill.style.width = '0%';
       progressPhase.textContent = '';
       progressSection.classList.add('visible');
+      const t0 = performance.now();
       const onProgress = (progress, phase) => {
-        progressBar.value = progress;
-        progressPhase.textContent = phaseLabels[phase] || phase;
+        progressFill.style.width = `${progress * 100}%`;
+        const pct = Math.round(progress * 100);
+        const elapsed = performance.now() - t0;
+        const timeStr = elapsed > 500 ? ` · ${(elapsed / 1000).toFixed(1)}s` : '';
+        progressPhase.textContent = `${phaseLabels[phase] || phase} ${pct}%${timeStr}`;
       };
       try {
-        const t0 = performance.now();
         const result = await prepareFile(selectedFile, undefined, undefined, onProgress);
         const ms = (performance.now() - t0).toFixed(1);
+        progressFill.style.width = '100%';
+        progressPhase.textContent = `Done · ${(ms / 1000).toFixed(1)}s`;
         out.className = 'ok';
         out.textContent = `OK (${ms} ms)\n\n` + JSON.stringify({
           metadata: { ...result.metadata, root: result.metadata.root.slice(0, 32) + '…' },

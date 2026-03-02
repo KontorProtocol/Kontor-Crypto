@@ -57,11 +57,12 @@ export function init(): Promise<void> {
   return initPromise;
 }
 
+const HEX: string[] = [];
+for (let i = 0; i < 256; i++) HEX[i] = i.toString(16).padStart(2, "0");
+
 function bytesToHex(bytes: Uint8Array): string {
   let hex = "";
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i].toString(16).padStart(2, "0");
-  }
+  for (let i = 0; i < bytes.length; i++) hex += HEX[bytes[i]];
   return hex;
 }
 
@@ -97,34 +98,123 @@ function spawnWorker(): Worker {
   return new Worker(URL.createObjectURL(blob), { type: "module" });
 }
 
-function runWorker(
-  leafChunk: Uint8Array,
+interface WorkerPool {
+  dispatch(leafBytes: Uint8Array): Promise<Uint8Array>;
+  terminate(): void;
+}
+
+function createWorkerPool(
+  size: number,
   jsUrl: string,
   wasmUrl: string
-): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    const worker = spawnWorker();
-    worker.onmessage = (ev: MessageEvent) => {
-      if (ev.data.type === "ready") {
-        worker.postMessage(
-          { type: "build", leafBytes: leafChunk },
-          [leafChunk.buffer]
+): Promise<WorkerPool> {
+  return new Promise((resolvePool) => {
+    const workers: Worker[] = [];
+    const freeWorkers: Worker[] = [];
+    const pendingTasks = new Map<
+      Worker,
+      { resolve: (root: Uint8Array) => void; reject: (err: Error) => void }
+    >();
+    const taskQueue: {
+      leafBytes: Uint8Array;
+      resolve: (root: Uint8Array) => void;
+      reject: (err: Error) => void;
+    }[] = [];
+    let readyCount = 0;
+
+    function recycleWorker(w: Worker) {
+      const next = taskQueue.shift();
+      if (next) {
+        pendingTasks.set(w, { resolve: next.resolve, reject: next.reject });
+        w.postMessage(
+          { type: "build", leafBytes: next.leafBytes },
+          [next.leafBytes.buffer]
         );
-      } else if (ev.data.type === "result") {
-        worker.terminate();
-        resolve(ev.data.root);
-      } else if (ev.data.type === "error") {
-        worker.terminate();
-        reject(new Error(ev.data.message));
+      } else {
+        freeWorkers.push(w);
       }
-    };
-    worker.onerror = (err) => {
-      worker.terminate();
-      reject(err);
-    };
-    worker.postMessage({ type: "init", jsUrl, wasmUrl });
+    }
+
+    for (let i = 0; i < size; i++) {
+      const w = spawnWorker();
+      workers.push(w);
+
+      w.onmessage = (ev: MessageEvent) => {
+        if (ev.data.type === "ready") {
+          freeWorkers.push(w);
+          readyCount++;
+          if (readyCount === size) {
+            resolvePool({
+              dispatch(leafBytes: Uint8Array): Promise<Uint8Array> {
+                return new Promise((resolve, reject) => {
+                  const worker = freeWorkers.pop();
+                  if (worker) {
+                    pendingTasks.set(worker, { resolve, reject });
+                    worker.postMessage(
+                      { type: "build", leafBytes },
+                      [leafBytes.buffer]
+                    );
+                  } else {
+                    taskQueue.push({ leafBytes, resolve, reject });
+                  }
+                });
+              },
+              terminate() {
+                workers.forEach((w) => w.terminate());
+              },
+            });
+          }
+        } else if (ev.data.type === "result") {
+          const pending = pendingTasks.get(w)!;
+          pendingTasks.delete(w);
+          pending.resolve(ev.data.root);
+          recycleWorker(w);
+        } else if (ev.data.type === "error") {
+          const pending = pendingTasks.get(w)!;
+          pendingTasks.delete(w);
+          pending.reject(new Error(ev.data.message));
+          recycleWorker(w);
+        }
+      };
+
+      w.onerror = (err) => {
+        const pending = pendingTasks.get(w);
+        if (pending) {
+          pendingTasks.delete(w);
+          pending.reject(new Error(String(err)));
+        }
+      };
+
+      w.postMessage({ type: "init", jsUrl, wasmUrl });
+    }
   });
 }
+
+function chooseBatchCount(leavesCount: number): number {
+  if (leavesCount <= 32) return leavesCount;
+  if (leavesCount >= 65536) return 128;
+  if (leavesCount >= 16384) return 64;
+  return 32;
+}
+
+function readFileWithProgress(
+  file: File,
+  onProgress?: (ratio: number) => void
+): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+    };
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+const PHASE_READING = 0.05;
+const PHASE_ENCODING = 0.15;
+const PHASE_MERKLE = 0.90;
 
 export async function prepareFile(
   file: File | Uint8Array | ArrayBuffer,
@@ -142,45 +232,53 @@ export async function prepareFile(
   } else if (file instanceof ArrayBuffer) {
     bytes = new Uint8Array(file);
   } else {
-    bytes = new Uint8Array(await file.arrayBuffer());
+    bytes = await readFileWithProgress(file, (ratio) => {
+      onProgress?.(PHASE_READING * ratio, 'reading');
+    });
     if (!filename) filename = file.name;
   }
 
   if (!filename) filename = "untitled";
   if (!nonce) nonce = new Uint8Array(0);
 
-  onProgress?.(0.05, 'encoding');
+  // Workers load WASM in background threads while prepareLeaves runs on main
+  const poolPromise = createWorkerPool(getWorkerCount(), wasmJsUrl, wasmBinUrl);
+
+  onProgress?.(PHASE_READING, 'encoding');
   await new Promise((r) => setTimeout(r, 0));
 
   const prep = mod.prepareLeaves(bytes, filename, nonce);
   const leafBytes = prep.leafBytes;
   const leavesCount = leafBytes.length / 32;
 
-  onProgress?.(0.15, 'merkle');
+  onProgress?.(PHASE_ENCODING, 'merkle');
 
-  const workerCount = Math.min(getWorkerCount(), leavesCount);
-  const chunkSize = leavesCount / workerCount;
+  const pool = await poolPromise;
+  const batchCount = chooseBatchCount(leavesCount);
+  const batchSize = leavesCount / batchCount;
 
-  const promises: Promise<Uint8Array>[] = [];
-  for (let i = 0; i < workerCount; i++) {
-    const start = i * chunkSize * 32;
-    const end = (i + 1) * chunkSize * 32;
-    promises.push(runWorker(leafBytes.slice(start, end), wasmJsUrl, wasmBinUrl));
-  }
-
-  const results: Uint8Array[] = new Array(workerCount);
+  const merkleRange = PHASE_MERKLE - PHASE_ENCODING;
   let completed = 0;
-  await Promise.all(
-    promises.map((p, i) =>
-      p.then((root) => {
-        results[i] = root;
-        completed++;
-        onProgress?.(0.15 + 0.75 * (completed / workerCount), 'merkle');
-      })
-    )
-  );
-  let roots = results;
 
+  const subRoots = new Array<Uint8Array>(batchCount);
+  await Promise.all(
+    Array.from({ length: batchCount }, (_, i) => {
+      const start = i * batchSize * 32;
+      const end = (i + 1) * batchSize * 32;
+      return pool.dispatch(leafBytes.slice(start, end)).then((root) => {
+        subRoots[i] = root;
+        completed++;
+        onProgress?.(
+          PHASE_ENCODING + merkleRange * (completed / batchCount),
+          'merkle'
+        );
+      });
+    })
+  );
+
+  pool.terminate();
+
+  let roots: Uint8Array[] = subRoots;
   while (roots.length > 1) {
     const next: Uint8Array[] = [];
     for (let i = 0; i < roots.length; i += 2) {
@@ -192,9 +290,26 @@ export async function prepareFile(
   const rootBytes = roots[0];
   const rootHex = bytesToHex(rootBytes);
 
-  const treeLeavesHex: string[] = [];
-  for (let i = 0; i < leavesCount; i++) {
-    treeLeavesHex.push(bytesToHex(leafBytes.subarray(i * 32, (i + 1) * 32)));
+  const treeLeavesHex: string[] = new Array(leavesCount);
+  const hexBatchSize = 8192;
+  const finalRange = 1 - PHASE_MERKLE;
+
+  for (let batch = 0; batch < leavesCount; batch += hexBatchSize) {
+    const end = Math.min(batch + hexBatchSize, leavesCount);
+    for (let i = batch; i < end; i++) {
+      const off = i * 32;
+      let h = "";
+      for (let j = 0; j < 32; j++) h += HEX[leafBytes[off + j]];
+      treeLeavesHex[i] = h;
+    }
+    onProgress?.(
+      PHASE_MERKLE +
+        finalRange * Math.min((batch + hexBatchSize) / leavesCount, 1),
+      'finalizing'
+    );
+    if (end < leavesCount) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
   }
 
   const metadata: FileMetadata = {
