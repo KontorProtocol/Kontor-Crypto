@@ -1,0 +1,42 @@
+[package]
+name = "kontor-crypto-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.kontor-crypto]
+path = ".."
+
+[[bin]]
+name = "proof_from_bytes"
+path = "fuzz_targets/proof_from_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ledger_load"
+path = "fuzz_targets/ledger_load.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_file_symbols"
+path = "fuzz_targets/decode_file_symbols.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "challenge_id"
+path = "fuzz_targets/challenge_id.rs"
+test = false
+doc = false
+bench = false

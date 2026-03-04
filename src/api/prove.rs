@@ -9,12 +9,12 @@ use super::{
     witness::generate_circuit_witness,
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
-use ff::Field;
 use nova_snark::{
     nova::{CompressedSNARK, RecursiveSNARK},
     provider::{PallasEngine, VestaEngine},
 };
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 use tracing::{debug, debug_span, info_span, trace};
 
 // Type aliases needed for proving
@@ -99,6 +99,11 @@ fn setup_proving_environment(
         });
     }
 
+    // Validate challenge structure and metadata invariants first.
+    for challenge in challenges.iter() {
+        challenge.validate()?;
+    }
+
     // Verify all challenges use the same num_challenges (Nova requirement)
     let num_challenges = challenges[0].num_challenges;
 
@@ -116,6 +121,17 @@ fn setup_proving_environment(
         }
     }
 
+    // Reject duplicate challenges up front to avoid wasted proving work.
+    let mut seen = HashSet::with_capacity(challenges.len());
+    for challenge in challenges.iter() {
+        let challenge_id = challenge.id();
+        if !seen.insert(challenge_id) {
+            return Err(KontorPoRError::InvalidInput(
+                "prove: duplicate challenge detected".to_string(),
+            ));
+        }
+    }
+
     // Validate all files
     for challenge in challenges.iter() {
         let file = files.get(&challenge.file_metadata.file_id).ok_or_else(|| {
@@ -126,6 +142,21 @@ fn setup_proving_environment(
 
         if file.tree.root() != challenge.file_metadata.root {
             return Err(KontorPoRError::MetadataMismatch);
+        }
+        if file.root != challenge.file_metadata.root {
+            return Err(KontorPoRError::MetadataMismatch);
+        }
+        if file.file_id != challenge.file_metadata.file_id {
+            return Err(KontorPoRError::MetadataMismatch);
+        }
+        let file_leaf_count = file.tree.layers.first().map_or(0, |layer| layer.len());
+        if file_leaf_count != challenge.file_metadata.padded_len {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "Metadata padded_len {} does not match prepared file leaf count {} for file {}",
+                challenge.file_metadata.padded_len,
+                file_leaf_count,
+                challenge.file_metadata.file_id
+            )));
         }
     }
 
@@ -180,7 +211,7 @@ fn initialize_recursive_snark(
     ledger: &FileLedger,
 ) -> Result<(NovaProof, FieldElement)> {
     // Generate witnesses for the first step using the canonical function
-    let current_state = FieldElement::ZERO;
+    let current_state = plan.initial_state;
     let sorted_challenges_refs: Vec<&Challenge> = plan.sorted_challenges.iter().collect();
     let (circuit_witness, new_state) = generate_circuit_witness(
         &sorted_challenges_refs,

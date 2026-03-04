@@ -16,7 +16,7 @@ fn test_circuit_arity_matches_public_inputs() {
     // The documented public inputs are (current implementation):
     // 1. aggregated_root (or file_root for single-file)
     // 2. state_in
-    // Plus per-file sections: ledger_indices, depths, seeds, leaves (added dynamically)
+    // Plus per-file sections: ledger_indices, depths, seeds, expected_rcs, leaves (added dynamically)
 
     let expected_base_arity = 2; // Only 2 fixed fields
 
@@ -66,7 +66,7 @@ fn test_circuit_arity_matches_public_inputs() {
     let circuit = PorCircuit::<FieldElement>::new(files_per_step, 1, 0, Some(witness.witnesses));
 
     let circuit_arity = circuit.arity();
-    // Phase 3: arity = fixed_fields + ledger_indices + depths + leaves
+    // Current: arity = fixed_fields + ledger_indices + depths + seeds + expected_rcs + leaves
     let expected_arity = config::circuit_arity(files_per_step);
 
     assert_eq!(
@@ -80,16 +80,19 @@ fn test_circuit_arity_matches_public_inputs() {
             + files_per_step
             + files_per_step
             + files_per_step
+            + files_per_step
             + files_per_step,
-        "Circuit's arity() doesn't match BASE_CIRCUIT_ARITY + 4*files_per_step (current)"
+        "Circuit's arity() doesn't match BASE_CIRCUIT_ARITY + 5*files_per_step (current)"
     );
 
     println!(
         "✓ BASE_CIRCUIT_ARITY ({}) matches actual implementation",
         config::BASE_CIRCUIT_ARITY
     );
-    println!("  Base public inputs: [agg_root, state_in, seed, num_files, meta_commit]");
-    println!("  Plus per-file: [ledger_idx_0, ..., ledger_idx_{{F-1}}]");
+    println!("  Base public inputs: [agg_root, state_in]");
+    println!(
+        "  Plus per-file: [ledger_idx_i, depth_i, seed_i, expected_rc_i, leaf_i] for i in [0,F)"
+    );
 }
 
 #[test]
@@ -323,7 +326,8 @@ fn test_option1_proof_format_version_awareness() {
 
     println!("Testing Option 1 proof format version awareness");
 
-    // Current: Public inputs are [agg_root, state, ledger_indices..., depths..., seeds..., leaves...] = 2 + 4*F
+    // Current: Public inputs are
+    // [agg_root, state, ledger_indices..., depths..., seeds..., expected_rcs..., leaves...] = 2 + 5*F
     // Per-file seeds enable multi-batch aggregation (different challenges from different sources)
 
     // Document the format change
@@ -340,33 +344,34 @@ fn test_option1_proof_format_version_awareness() {
     // Test that circuit arity is now dynamic
     let files_per_step = 3;
     let dynamic_arity = config::circuit_arity(files_per_step);
-    // Current: arity = 2 + ledger_indices + depths + seeds + leaves = 2 + 4 * files_per_step
-    assert_eq!(dynamic_arity, base_arity + 4 * files_per_step);
+    // Current: arity = 2 + ledger_indices + depths + seeds + expected_rcs + leaves = 2 + 5 * files_per_step
+    assert_eq!(dynamic_arity, base_arity + 5 * files_per_step);
 
     // Create a small test to verify the schema works
     let data = vec![42u8; 100];
     let (_prepared, _metadata) = api::prepare_file(&data, "test_file.dat", b"").unwrap();
 
-    // Test with single file (should have arity = 2 + 1 (ledger) + 1 (depth) + 1 (seed) + 1 (leaf) = 6)
+    // Test with single file: arity = 2 + 1 (ledger) + 1 (depth) + 1 (seed) + 1 (expected_rc) + 1 (leaf) = 7
     use kontor_crypto::circuit::PorCircuit;
     let circuit = PorCircuit::<FieldElement>::new(1, 3, 0, None);
     assert_eq!(
         circuit.arity(),
-        6,
-        "Single-file circuit should have arity 6 (2 + 4*1)"
+        7,
+        "Single-file circuit should have arity 7 (2 + 5*1)"
     );
 
-    // Test with multi-file (should have arity = 2 + 4 (ledger) + 4 (depths) + 4 (seeds) + 4 (leaves) = 18)
+    // Test with multi-file: arity = 2 + 4 (ledger) + 4 (depths) + 4 (seeds) + 4 (expected_rcs) + 4 (leaves) = 22
     let circuit_multi = PorCircuit::<FieldElement>::new(4, 3, 2, None);
     assert_eq!(
         circuit_multi.arity(),
-        18,
-        "4-file circuit should have arity 18 (2 + 4*4)"
+        22,
+        "4-file circuit should have arity 22 (2 + 5*4)"
     );
 
     println!("✓ Option 1 proof format documented:");
     println!("  - REMOVED: challenged_roots_commitment");
     println!("  - ADDED: public ledger_index per file slot");
+    println!("  - ADDED: expected root-commitment per file slot");
     println!("  - ADDED: public leaf value per file slot");
     println!(
         "  - SCHEMA: BASE_ARITY={} + files_per_step + files_per_step",

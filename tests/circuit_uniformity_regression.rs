@@ -146,36 +146,17 @@ fn test_malformed_metadata_rejected() {
     // Create ledger for unified API
     let ledger = create_single_file_ledger(&metadata);
 
-    // This might succeed during proving (API doesn't validate this deeply)
-    // but it demonstrates that specific metadata validations can be added if needed
     let system = PorSystem::new(&ledger);
     let files_vec: Vec<&_> = files.values().copied().collect();
     let result = system.prove(files_vec, std::slice::from_ref(&impossible_challenge));
-
-    match result {
-        Ok(proof) => {
-            println!("  Note: Prove succeeds with logically inconsistent metadata");
-            println!("  This is acceptable since the prover doesn't need to validate all metadata fields");
-
-            // Try verification
-            let verify_result = system.verify(&proof, &[impossible_challenge]);
-            match verify_result {
-                Ok(is_valid) => {
-                    if is_valid {
-                        println!("  Verification also succeeds (metadata not cryptographically validated)");
-                    } else {
-                        println!("  Verification correctly rejects the proof");
-                    }
-                }
-                Err(_) => {
-                    println!("  Verification correctly fails with error");
-                }
-            }
-        }
-        Err(error) => {
-            println!("✓ Malformed metadata rejected during proving: {}", error);
-        }
-    }
+    assert!(
+        result.is_err(),
+        "Malformed metadata should be rejected during proving"
+    );
+    println!(
+        "✓ Malformed metadata rejected during proving: {}",
+        result.err().unwrap()
+    );
 
     println!("✓ Malformed metadata handling verified");
 }

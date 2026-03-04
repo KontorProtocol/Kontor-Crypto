@@ -8,16 +8,23 @@
 
 use kontor_crypto::{
     api::{Challenge, FieldElement, PorSystem, Proof},
-    FileLedger,
+    config, FileLedger,
 };
+use rand::{Rng, SeedableRng};
 use std::collections::HashSet;
+
+fn deterministic_nonce(seed: u64) -> [u8; 16] {
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    rng.gen()
+}
 
 #[test]
 fn test_challenge_id_determinism() {
     println!("Testing ChallengeID deterministic derivation");
 
     let data = b"Test data for challenge ID determinism";
-    let (_, metadata) = kontor_crypto::api::prepare_file(data, "test.dat", b"").unwrap();
+    let nonce = deterministic_nonce(1);
+    let (_, metadata) = kontor_crypto::api::prepare_file(data, "test.dat", &nonce).unwrap();
 
     // Same challenge should produce same ID
     let challenge1 = Challenge::new_test(metadata.clone(), 1000, 5, FieldElement::from(42u64));
@@ -67,8 +74,10 @@ fn test_challenge_id_collision_resistance() {
     let data1 = b"First test file for collision resistance testing";
     let data2 = b"Second test file with different content entirely";
 
-    let (_, metadata1) = kontor_crypto::api::prepare_file(data1, "file1.dat", b"").unwrap();
-    let (_, metadata2) = kontor_crypto::api::prepare_file(data2, "file2.dat", b"").unwrap();
+    let (_, metadata1) =
+        kontor_crypto::api::prepare_file(data1, "file1.dat", &deterministic_nonce(10)).unwrap();
+    let (_, metadata2) =
+        kontor_crypto::api::prepare_file(data2, "file2.dat", &deterministic_nonce(11)).unwrap();
 
     // Same parameters, different files
     let challenge1 = Challenge::new_test(metadata1, 1000, 5, FieldElement::from(42u64));
@@ -84,9 +93,12 @@ fn test_challenge_id_collision_resistance() {
     let mut ids = HashSet::new();
     for i in 0..100 {
         let data = format!("Test file content {}", i);
-        let (_, metadata) =
-            kontor_crypto::api::prepare_file(data.as_bytes(), &format!("file{}.dat", i), b"")
-                .unwrap();
+        let (_, metadata) = kontor_crypto::api::prepare_file(
+            data.as_bytes(),
+            &format!("file{}.dat", i),
+            &deterministic_nonce(100 + i as u64),
+        )
+        .unwrap();
         let challenge =
             Challenge::new_test(metadata, 1000 + i as u64, 3, FieldElement::from(i as u64));
         let id = challenge.id();
@@ -103,12 +115,38 @@ fn test_challenge_id_collision_resistance() {
 }
 
 #[test]
+fn test_challenge_id_uses_canonical_length_delimited_encoding() {
+    println!("Testing ChallengeID canonical length-delimited encoding");
+
+    let data = b"Challenge ID canonicalization test";
+    let nonce = deterministic_nonce(2);
+    let (_, metadata) = kontor_crypto::api::prepare_file(data, "canon.dat", &nonce).unwrap();
+
+    let mut meta_a = metadata.clone();
+    meta_a.file_id = "ab".to_string();
+    let challenge_a = Challenge::new(meta_a, 1000, 5, FieldElement::from(42u64), "c".to_string());
+
+    let mut meta_b = metadata;
+    meta_b.file_id = "a".to_string();
+    let challenge_b = Challenge::new(meta_b, 1000, 5, FieldElement::from(42u64), "bc".to_string());
+
+    assert_ne!(
+        challenge_a.id(),
+        challenge_b.id(),
+        "Length-delimited encoding must distinguish concatenation-ambiguous tuples"
+    );
+
+    println!("  ✓ Canonical length-delimited encoding verified");
+}
+
+#[test]
 fn test_proof_serialization_roundtrip() {
     println!("Testing proof serialization round-trip");
 
     let data = b"Test data for proof serialization testing with sufficient length";
     let (prepared, metadata) =
-        kontor_crypto::api::prepare_file(data, "serialize_test.dat", b"").unwrap();
+        kontor_crypto::api::prepare_file(data, "serialize_test.dat", &deterministic_nonce(3))
+            .unwrap();
 
     // Create ledger
     let mut ledger = FileLedger::new();
@@ -158,11 +196,39 @@ fn test_proof_serialization_format_validation() {
     assert!(result.is_err(), "Should reject unsupported version");
 
     // Test truncated data
-    let truncated = b"NPOR\x01\x00";
+    let truncated = b"NPOR\x02\x00";
     let result = Proof::from_bytes(truncated);
     assert!(result.is_err(), "Should reject truncated data");
 
     println!("  ✓ Format validation working correctly");
+}
+
+#[test]
+fn test_proof_serialization_rejects_oversized_payload_length() {
+    println!("Testing proof deserialization oversized payload guard");
+
+    // Build a header with a declared payload length above MAX_PROOF_SIZE_BYTES.
+    let oversized_len = (config::MAX_PROOF_SIZE_BYTES + 1) as u32;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"NPOR"); // magic
+    bytes.extend_from_slice(&2u16.to_le_bytes()); // version
+    bytes.extend_from_slice(&oversized_len.to_le_bytes()); // declared payload size
+                                                           // No payload bytes appended: parser should reject on size bound first.
+
+    let result = Proof::from_bytes(&bytes);
+    assert!(result.is_err(), "Oversized payload length must be rejected");
+
+    let err = match result {
+        Ok(_) => panic!("Oversized payload length should fail"),
+        Err(e) => format!("{}", e),
+    };
+    assert!(
+        err.contains("exceeds maximum"),
+        "Error should indicate size bound violation, got: {}",
+        err
+    );
+
+    println!("  ✓ Oversized payload guard enforced");
 }
 
 #[test]
@@ -173,9 +239,9 @@ fn test_batch_seed_validation() {
     let data2 = b"Second file for batch seed testing";
 
     let (prepared1, metadata1) =
-        kontor_crypto::api::prepare_file(data1, "batch1.dat", b"").unwrap();
+        kontor_crypto::api::prepare_file(data1, "batch1.dat", &deterministic_nonce(20)).unwrap();
     let (prepared2, metadata2) =
-        kontor_crypto::api::prepare_file(data2, "batch2.dat", b"").unwrap();
+        kontor_crypto::api::prepare_file(data2, "batch2.dat", &deterministic_nonce(21)).unwrap();
 
     // Create ledger
     let mut ledger = FileLedger::new();
@@ -222,7 +288,8 @@ fn test_porsystem_challenge_id_matching() {
 
     let data = b"Test data for challenge ID matching";
     let (prepared, metadata) =
-        kontor_crypto::api::prepare_file(data, "id_match_test.dat", b"").unwrap();
+        kontor_crypto::api::prepare_file(data, "id_match_test.dat", &deterministic_nonce(30))
+            .unwrap();
 
     // Create ledger
     let mut ledger = FileLedger::new();
@@ -265,7 +332,8 @@ fn test_porsystem_file_not_found() {
 
     let data = b"Test data for file not found testing";
     let (prepared, metadata) =
-        kontor_crypto::api::prepare_file(data, "missing_test.dat", b"").unwrap();
+        kontor_crypto::api::prepare_file(data, "missing_test.dat", &deterministic_nonce(40))
+            .unwrap();
 
     // Create ledger without adding the file
     let ledger = FileLedger::new();
@@ -299,7 +367,7 @@ fn test_porsystem_prepare_file() {
     let data = b"Test data for PorSystem prepare_file method testing";
 
     // Test successful preparation
-    let result = system.prepare_file(data, "porsystem_test.dat", b"");
+    let result = system.prepare_file(data, "porsystem_test.dat", &deterministic_nonce(50));
     assert!(
         result.is_ok(),
         "PorSystem::prepare_file should succeed with valid inputs"
@@ -327,7 +395,7 @@ fn test_porsystem_prepare_file() {
     );
 
     // Test empty data rejection
-    let empty_result = system.prepare_file(&[], "empty.dat", b"");
+    let empty_result = system.prepare_file(&[], "empty.dat", &deterministic_nonce(51));
     match empty_result {
         Err(kontor_crypto::KontorPoRError::EmptyData { operation }) => {
             assert_eq!(operation, "prepare_file", "Should report correct operation");
@@ -344,15 +412,17 @@ fn test_porsystem_vs_free_function_equivalence() {
     println!("Testing equivalence between PorSystem methods and free functions");
 
     let data = b"Test data for API equivalence testing";
+    let nonce = deterministic_nonce(60);
 
     // Test prepare_file equivalence
     let (prepared_free, metadata_free) =
-        kontor_crypto::api::prepare_file(data, "free_func.dat", b"").unwrap();
+        kontor_crypto::api::prepare_file(data, "free_func.dat", &nonce).unwrap();
 
     let ledger = FileLedger::new();
     let system = PorSystem::new(&ledger);
-    let (prepared_system, metadata_system) =
-        system.prepare_file(data, "system_method.dat", b"").unwrap();
+    let (prepared_system, metadata_system) = system
+        .prepare_file(data, "system_method.dat", &nonce)
+        .unwrap();
 
     // Results should be equivalent (except for filename)
     assert_eq!(

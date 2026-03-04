@@ -6,6 +6,7 @@
 use ff::Field;
 use kontor_crypto::circuit::{FileProofWitness, PorCircuit};
 use kontor_crypto::merkle::F as FieldElement;
+use kontor_crypto::poseidon::calculate_root_commitment;
 use nova_snark::frontend::{
     gadgets::num::AllocatedNum, util_cs::test_cs::TestConstraintSystem, ConstraintSystem,
 };
@@ -56,6 +57,10 @@ fn test_verifier_index_responsibility() {
             FieldElement::from(42u64),
             &[valid_index, 0], // ledger_indices
             &[2, 0],           // depths (depth 2 for real file, 0 for padding)
+            &[
+                calculate_root_commitment(FieldElement::from(100u64), FieldElement::from(2u64)),
+                FieldElement::ZERO,
+            ],
             &[FieldElement::ZERO, FieldElement::ZERO],
         );
 
@@ -101,7 +106,7 @@ fn test_verifier_index_responsibility() {
 
         let mut cs = TestConstraintSystem::<FieldElement>::new();
 
-        // Current schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
+        // Current schema: [agg_root, state_in, ledger_indices, depths, seeds, expected_rcs, leaves]
         let mut z0 = vec![
             FieldElement::from(99999u64), // aggregated_root
             FieldElement::ZERO,           // state_in
@@ -118,6 +123,13 @@ fn test_verifier_index_responsibility() {
         // Add seeds
         z0.push(FieldElement::from(42u64)); // seed for file 0
         z0.push(FieldElement::from(42u64)); // seed for file 1 (same seed)
+
+        // Add expected RCs
+        z0.push(calculate_root_commitment(
+            FieldElement::from(100u64),
+            FieldElement::from(2u64),
+        ));
+        z0.push(FieldElement::ZERO);
 
         // Add leaf slots
         z0.push(FieldElement::ZERO); // leaf 0
@@ -197,7 +209,7 @@ fn test_verifier_prevents_bit_masking_attacks() {
 
         let mut cs = TestConstraintSystem::<FieldElement>::new();
 
-        // Current schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
+        // Current schema: [agg_root, state_in, ledger_indices, depths, seeds, expected_rcs, leaves]
         let mut z0 = vec![
             FieldElement::from(99999u64), // aggregated_root (dummy)
             FieldElement::ZERO,           // state_in
@@ -214,6 +226,13 @@ fn test_verifier_prevents_bit_masking_attacks() {
         // Add seeds
         z0.push(FieldElement::from(42u64)); // seed for file 0
         z0.push(FieldElement::from(42u64)); // seed for file 1 (same seed)
+
+        // Add expected RCs
+        z0.push(calculate_root_commitment(
+            FieldElement::from(100u64),
+            FieldElement::from(2u64),
+        ));
+        z0.push(FieldElement::ZERO);
 
         // Add leaf slots
         z0.push(FieldElement::ZERO); // leaf 0

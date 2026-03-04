@@ -67,8 +67,8 @@ fn test_verify_with_zero_challenges() {
     // This should fail
     let result = system.verify(&proof, &zero_challenges);
 
-    // Should either error or return false (gets caught by challenge ID validation)
-    assert_verify_fails_contains(result, Some("Challenge ID mismatch"));
+    // Validation now rejects invalid challenge counts before challenge-ID binding.
+    assert_verify_fails_contains(result, Some("Invalid challenge count"));
 
     println!("✓ Zero challenges correctly rejected in verify");
 }
@@ -97,7 +97,8 @@ fn test_prove_fails_with_empty_challenges_slice() {
 fn test_file_metadata_sha256_matches_input() {
     // Confirm that the object_id and file_id in FileMetadata are correct SHA-256 digests
     // object_id = "object_" + hex(SHA256(data)) - content-based, for file discovery
-    // file_id = "file_" + hex(SHA256(data || nonce)) - unique per upload
+    // file_id = "file_" + hex(SHA256(domain || len(data) || data || len(nonce) || nonce))
+    //          - unique per upload and tuple-bound (no concat ambiguity)
     println!("Testing object_id and file_id are correct SHA-256 digests");
 
     let data = b"Hello, Kontor PoR!";
@@ -115,9 +116,13 @@ fn test_file_metadata_sha256_matches_input() {
     object_hasher.update(data);
     let expected_object_id = format!("obj_{:x}", object_hasher.finalize());
 
-    // Manually compute file_id: SHA-256(data || nonce) - unique per upload
+    // Manually compute file_id with explicit tuple framing
+    const FILE_ID_DOMAIN_V1: &[u8] = b"kontor.file_id.v1";
     let mut file_hasher = Sha256::new();
+    file_hasher.update(FILE_ID_DOMAIN_V1);
+    file_hasher.update((data.len() as u64).to_le_bytes());
     file_hasher.update(data);
+    file_hasher.update((nonce.len() as u64).to_le_bytes());
     file_hasher.update(nonce);
     let expected_file_id = format!("file_{:x}", file_hasher.finalize());
 
@@ -130,7 +135,7 @@ fn test_file_metadata_sha256_matches_input() {
     // Compare file_id
     assert_eq!(
         metadata.file_id, expected_file_id,
-        "file_id should match 'file_' + SHA-256 of (data || nonce)"
+        "file_id should match framed hash of (data, nonce)"
     );
 
     // Verify nonce is stored in metadata
@@ -141,7 +146,7 @@ fn test_file_metadata_sha256_matches_input() {
     );
 
     println!("✓ object_id correctly matches SHA-256 of data (content-based)");
-    println!("✓ file_id correctly matches SHA-256 of data || nonce (unique)");
+    println!("✓ file_id correctly matches framed SHA-256 of (data, nonce) (unique)");
 }
 
 #[test]
@@ -190,8 +195,10 @@ fn test_reconstruct_fails_metadata_inconsistencies() {
     let data = create_test_data(512, Some(12345));
 
     // Prepare file and get symbols
+    let mut rng = StdRng::seed_from_u64(201);
+    let nonce: [u8; 16] = rng.gen();
     let (_prepared, metadata) =
-        api::prepare_file(&data, "test_file.dat", b"").expect("Should prepare file");
+        api::prepare_file(&data, "test_file.dat", &nonce).expect("Should prepare file");
 
     // Create mock symbols for testing (all zero-filled)
     let total_symbols = metadata.total_symbols();
@@ -209,6 +216,54 @@ fn test_reconstruct_fails_metadata_inconsistencies() {
     );
 
     println!("✓ Metadata inconsistencies correctly handled");
+}
+
+#[test]
+fn test_reconstruct_rejects_symbol_count_mismatch_without_panic() {
+    println!("Testing reconstruct_file rejects symbol count mismatch");
+
+    let data = create_test_data(512, Some(5555));
+    let mut rng = StdRng::seed_from_u64(202);
+    let nonce: [u8; 16] = rng.gen();
+    let (_prepared, metadata) =
+        api::prepare_file(&data, "symbol_count_mismatch.dat", &nonce).expect("Should prepare file");
+
+    let total_symbols = metadata.total_symbols();
+    let incomplete_shards: Vec<Option<Vec<u8>>> = (0..(total_symbols - 1))
+        .map(|_| Some(vec![0u8; 31]))
+        .collect();
+
+    let result = api::reconstruct_file(&incomplete_shards, &metadata);
+    assert!(
+        result.is_err(),
+        "reconstruct_file must reject mismatched shard count"
+    );
+
+    println!("✓ Symbol count mismatch rejected safely");
+}
+
+#[test]
+fn test_reconstruct_rejects_invalid_symbol_length() {
+    println!("Testing reconstruct_file rejects invalid symbol length");
+
+    let data = create_test_data(512, Some(7777));
+    let mut rng = StdRng::seed_from_u64(203);
+    let nonce: [u8; 16] = rng.gen();
+    let (_prepared, metadata) =
+        api::prepare_file(&data, "symbol_len_mismatch.dat", &nonce).expect("Should prepare file");
+
+    let total_symbols = metadata.total_symbols();
+    let mut shards: Vec<Option<Vec<u8>>> =
+        (0..total_symbols).map(|_| Some(vec![0u8; 31])).collect();
+    shards[0] = Some(vec![0u8; 30]);
+
+    let result = api::reconstruct_file(&shards, &metadata);
+    assert!(
+        result.is_err(),
+        "reconstruct_file must reject symbols with invalid length"
+    );
+
+    println!("✓ Invalid symbol length rejected safely");
 }
 
 #[test]

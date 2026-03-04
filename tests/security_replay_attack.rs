@@ -116,3 +116,94 @@ fn test_proof_replay_with_wrong_seed_is_rejected() {
     );
     println!("✓ Proof correctly rejected when using a different seed for verification");
 }
+
+#[test]
+fn test_verify_raw_rejects_rebinding_non_circuit_challenge_fields() {
+    // This test ensures verify_raw enforces ChallengeID binding so non-circuit fields
+    // like block_height/prover_id cannot be silently rebound by callers.
+    println!("Testing verify_raw challenge-ID binding for non-circuit fields...");
+
+    let setup = setup_test_scenario(&TestConfig::default()).unwrap();
+    let file_refs = setup.file_refs();
+    let ledger = setup
+        .ledger_ref()
+        .expect("Ledger should be available for unified API");
+    let system = kontor_crypto::api::PorSystem::new(ledger);
+    let files_vec: Vec<&_> = file_refs.values().copied().collect();
+    let proof = system
+        .prove(files_vec, &setup.challenges)
+        .expect("Should generate valid proof");
+
+    // Tamper a non-circuit field (block_height) while keeping circuit-bound fields the same.
+    let mut tampered_challenges = setup.challenges.clone();
+    tampered_challenges[0].block_height += 1;
+
+    let result = kontor_crypto::api::verify_raw(&tampered_challenges, &proof, ledger)
+        .expect("Verification should complete");
+
+    assert!(
+        !result,
+        "SECURITY VIOLATION: verify_raw accepted proof after challenge rebinding"
+    );
+    println!("✓ verify_raw correctly rejects rebinding of non-circuit challenge fields");
+}
+
+#[test]
+fn test_verify_raw_rejects_rebinding_even_with_rewritten_proof_challenge_ids() {
+    // A malicious prover can rewrite proof.challenge_ids. Verification must still
+    // reject rebinding of non-circuit challenge fields.
+    let setup = setup_test_scenario(&TestConfig::default()).unwrap();
+    let file_refs = setup.file_refs();
+    let ledger = setup
+        .ledger_ref()
+        .expect("Ledger should be available for unified API");
+    let system = kontor_crypto::api::PorSystem::new(ledger);
+    let files_vec: Vec<&_> = file_refs.values().copied().collect();
+    let mut proof = system
+        .prove(files_vec, &setup.challenges)
+        .expect("Should generate valid proof");
+
+    let mut tampered_challenges = setup.challenges.clone();
+    tampered_challenges[0].block_height = tampered_challenges[0].block_height.saturating_add(1);
+
+    // Simulate attacker rewriting proof metadata to match tampered challenges.
+    proof.challenge_ids = tampered_challenges.iter().map(|c| c.id()).collect();
+
+    let result = kontor_crypto::api::verify_raw(&tampered_challenges, &proof, ledger)
+        .expect("Verification should complete");
+
+    assert!(
+        !result,
+        "SECURITY VIOLATION: verify_raw accepted proof after rebinding + challenge_ids rewrite"
+    );
+}
+
+#[test]
+fn test_verify_raw_rejects_non_member_file_id_even_with_matching_root() {
+    // File membership must be bound by file_id, not only by (root, depth) commitment.
+    let setup = setup_test_scenario(&TestConfig::default()).unwrap();
+    let file_refs = setup.file_refs();
+    let ledger = setup
+        .ledger_ref()
+        .expect("Ledger should be available for unified API");
+    let system = kontor_crypto::api::PorSystem::new(ledger);
+    let files_vec: Vec<&_> = file_refs.values().copied().collect();
+    let mut proof = system
+        .prove(files_vec, &setup.challenges)
+        .expect("Should generate valid proof");
+
+    let mut tampered_challenges = setup.challenges.clone();
+    tampered_challenges[0].file_metadata.file_id = "file_non_member".to_string();
+    proof.challenge_ids = tampered_challenges.iter().map(|c| c.id()).collect();
+
+    let result = kontor_crypto::api::verify_raw(&tampered_challenges, &proof, ledger);
+    match result {
+        Err(kontor_crypto::KontorPoRError::FileNotInLedger { file_id }) => {
+            assert_eq!(file_id, "file_non_member");
+        }
+        other => panic!(
+            "Expected FileNotInLedger for non-member file_id with matching root, got {:?}",
+            other
+        ),
+    }
+}

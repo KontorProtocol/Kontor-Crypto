@@ -278,10 +278,12 @@ struct DerivedPlan {
     file_tree_depth: usize,
     aggregated_tree_depth: usize,
     aggregated_root: FieldElement,
+    initial_state: FieldElement,
     sorted_challenges: Vec<Challenge>,
     ledger_indices: Vec<usize>,
     depths: Vec<usize>,
     seeds: Vec<FieldElement>,
+    expected_rcs: Vec<FieldElement>,
     public_io_layout: PublicIOLayout,
 }
 
@@ -454,7 +456,7 @@ fn export_fixture_impl(
         &scenario.ledger,
         plan.file_tree_depth,
         plan.file_tree_depth,
-        FieldElement::ZERO,
+        plan.initial_state,
         plan.aggregated_tree_depth,
         0,
         &plan.ledger_indices,
@@ -464,9 +466,11 @@ fn export_fixture_impl(
 
     let z0_primary = plan.public_io_layout.build_z0_primary(
         plan.aggregated_root,
+        plan.initial_state,
         &plan.ledger_indices,
         &plan.depths,
         &plan.seeds,
+        &plan.expected_rcs,
     );
 
     let mut shape_cs: ShapeCS<E1> = ShapeCS::new();
@@ -2339,10 +2343,12 @@ fn derive_plan(challenges: &[Challenge], ledger: &FileLedger) -> Result<DerivedP
             .cmp(&b.file_metadata.file_id)
             .then_with(|| a.id().0.cmp(&b.id().0))
     });
+    let initial_state = derive_initial_state(&sorted_challenges);
 
     let mut ledger_indices = vec![0usize; files_per_step];
     let mut depths = vec![0usize; files_per_step];
     let mut seeds = vec![FieldElement::ZERO; files_per_step];
+    let mut expected_rcs = vec![FieldElement::ZERO; files_per_step];
 
     for (i, challenge) in sorted_challenges.iter().enumerate() {
         let file_depth = tree_depth_from_metadata(&challenge.file_metadata);
@@ -2350,6 +2356,7 @@ fn derive_plan(challenges: &[Challenge], ledger: &FileLedger) -> Result<DerivedP
             challenge.file_metadata.root,
             FieldElement::from(file_depth as u64),
         );
+        expected_rcs[i] = rc;
 
         let ledger_idx = ledger.get_canonical_index_for_rc(rc).ok_or_else(|| {
             KontorPoRError::FileNotInLedger {
@@ -2369,12 +2376,39 @@ fn derive_plan(challenges: &[Challenge], ledger: &FileLedger) -> Result<DerivedP
         file_tree_depth,
         aggregated_tree_depth,
         aggregated_root,
+        initial_state,
         sorted_challenges,
         ledger_indices,
         depths,
         seeds,
+        expected_rcs,
         public_io_layout,
     })
+}
+
+fn derive_initial_state(sorted_challenges: &[Challenge]) -> FieldElement {
+    const DOMAIN_V1: &[u8] = b"kontor.challenge_set.initial_state.v1";
+    const DOMAIN_V1_EXPAND: &[u8] = b"kontor.challenge_set.initial_state.v1.expand";
+
+    let mut hasher = Sha256::new();
+    hasher.update(DOMAIN_V1);
+    let count = u64::try_from(sorted_challenges.len()).unwrap_or(u64::MAX);
+    hasher.update(count.to_le_bytes());
+    for challenge in sorted_challenges {
+        hasher.update(challenge.id().0);
+    }
+    let digest_a = hasher.finalize();
+
+    let mut expander = Sha256::new();
+    expander.update(DOMAIN_V1_EXPAND);
+    expander.update(digest_a);
+    let digest_b = expander.finalize();
+
+    let mut uniform_bytes = [0u8; 64];
+    uniform_bytes[..32].copy_from_slice(&digest_a);
+    uniform_bytes[32..].copy_from_slice(&digest_b);
+
+    crate::utils::field_from_uniform_bytes(&uniform_bytes)
 }
 
 fn alloc_z_inputs<CS: ConstraintSystem<F1>>(
@@ -2587,7 +2621,7 @@ mod tests {
             &scenario.ledger,
             plan.file_tree_depth,
             plan.file_tree_depth,
-            FieldElement::ZERO,
+            plan.initial_state,
             plan.aggregated_tree_depth,
             0,
             &plan.ledger_indices,
@@ -2598,9 +2632,11 @@ mod tests {
 
         let z0_primary = plan.public_io_layout.build_z0_primary(
             plan.aggregated_root,
+            plan.initial_state,
             &plan.ledger_indices,
             &plan.depths,
             &plan.seeds,
+            &plan.expected_rcs,
         );
 
         let mut shape_cs: ShapeCS<E1> = ShapeCS::new();
