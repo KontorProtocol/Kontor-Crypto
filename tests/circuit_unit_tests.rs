@@ -1,7 +1,7 @@
 use kontor_crypto::circuit::{FileProofWitness, PorCircuit};
 use kontor_crypto::config;
 use kontor_crypto::merkle::{build_tree, get_padded_proof_for_leaf};
-use kontor_crypto::poseidon::{domain_tags, poseidon_hash_tagged};
+use kontor_crypto::poseidon::{calculate_root_commitment, domain_tags, poseidon_hash_tagged};
 
 mod common;
 use common::fixtures::{create_circuit_public_inputs, E1, E2, F1, S1, S2};
@@ -51,14 +51,15 @@ fn test_por_circuit_basic() {
     let pp =
         PublicParams::<E1, E2, PorCircuit<F1>>::setup(&circuit, &*S1::ck_floor(), &*S2::ck_floor())
             .expect("Failed to setup public params");
-    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
+    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, expected_rcs, leaves]
     let z0_primary = vec![
-        root,                   // [0] agg_root
-        acc_in,                 // [1] state_in
+        root,                                                    // [0] agg_root
+        acc_in,                                                  // [1] state_in
         F1::ZERO,               // [2] ledger_index_0 (single file at index 0)
         F1::from(depth as u64), // [3] depth_0 (actual depth for file 0)
         random_seed,            // [4] seed_0
-        F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
+        calculate_root_commitment(root, F1::from(depth as u64)), // [5] expected_rc_0
+        F1::ZERO,               // [6] leaf_0 (will be filled by circuit)
     ];
     let result = RecursiveSNARK::new(&pp, &circuit, &z0_primary);
     assert!(
@@ -161,6 +162,7 @@ fn test_por_circuit_invalid_sibling() {
         random_seed,
         &[0],     // ledger_indices
         &[depth], // depths
+        &[calculate_root_commitment(root, F1::from(depth as u64))],
         &[F1::ZERO],
     );
     let result = invalid_circuit.synthesize(&mut cs, &z);
@@ -236,14 +238,15 @@ fn test_por_circuit_zero_depth() {
         PublicParams::<E1, E2, PorCircuit<F1>>::setup(&circuit, &*S1::ck_floor(), &*S2::ck_floor())
             .expect("Failed to setup public params");
     // Circuit now expects dynamic public inputs based on files_per_step
-    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
+    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, expected_rcs, leaves]
     let z0_primary = vec![
-        root,                   // [0] agg_root
-        acc_in,                 // [1] state_in
+        root,                                                    // [0] agg_root
+        acc_in,                                                  // [1] state_in
         F1::ZERO,               // [2] ledger_index_0 (single file at index 0)
         F1::from(depth as u64), // [3] depth_0 (actual depth for file 0)
         random_seed,            // [4] seed_0
-        F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
+        calculate_root_commitment(root, F1::from(depth as u64)), // [5] expected_rc_0
+        F1::ZERO,               // [6] leaf_0 (will be filled by circuit)
     ];
     let result = RecursiveSNARK::new(&pp, &circuit, &z0_primary);
     assert!(result.is_ok(), "Zero depth circuit should work");
@@ -293,14 +296,15 @@ fn test_por_circuit_accumulator_update() {
     let pp =
         PublicParams::<E1, E2, PorCircuit<F1>>::setup(&circuit, &*S1::ck_floor(), &*S2::ck_floor())
             .expect("Failed to setup public params");
-    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, leaves]
+    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, expected_rcs, leaves]
     let z0_primary = vec![
-        root,                   // [0] agg_root
-        initial_acc,            // [1] state_in
+        root,                                                    // [0] agg_root
+        initial_acc,                                             // [1] state_in
         F1::ZERO,               // [2] ledger_index_0 (single file at index 0)
         F1::from(depth as u64), // [3] depth_0 (actual depth for file 0)
         random_seed,            // [4] seed_0
-        F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
+        calculate_root_commitment(root, F1::from(depth as u64)), // [5] expected_rc_0
+        F1::ZERO,               // [6] leaf_0 (will be filled by circuit)
     ];
 
     let mut recursive_snark =
@@ -353,24 +357,26 @@ fn test_por_circuit_wrong_root() {
             .expect("Failed to setup public params");
 
     // Phase 3: No more meta commitment - security from public depth binding
-    // Phase 3: New schema [agg_root, state_in, seed, ledger_indices, depths, leaves]
+    // New schema: [agg_root, state_in, ledger_indices, depths, seeds, expected_rcs, leaves]
     let z0_primary_correct = vec![
-        correct_root,           // [0] agg_root
-        acc_in,                 // [1] state_in
-        random_seed,            // [2] seed
-        F1::ZERO,               // [3] ledger_index_0 (single file at index 0)
-        F1::from(depth as u64), // [4] depth_0 (actual depth for file 0)
-        F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
+        correct_root,                                                    // [0] agg_root
+        acc_in,                                                          // [1] state_in
+        F1::ZERO,               // [2] ledger_index_0 (single file at index 0)
+        F1::from(depth as u64), // [3] depth_0 (actual depth for file 0)
+        random_seed,            // [4] seed_0
+        calculate_root_commitment(correct_root, F1::from(depth as u64)), // [5] expected_rc_0
+        F1::ZERO,               // [6] leaf_0 (will be filled by circuit)
     ];
     let recursive_snark = RecursiveSNARK::new(&pp, &circuit, &z0_primary_correct)
         .expect("Should create RecursiveSNARK with correct root");
     let z0_primary_wrong = vec![
-        wrong_root,             // [0] agg_root (wrong)
-        acc_in,                 // [1] state_in
-        random_seed,            // [2] seed
-        F1::ZERO,               // [3] ledger_index_0 (single file at index 0)
-        F1::from(depth as u64), // [4] depth_0 (actual depth for file 0)
-        F1::ZERO,               // [5] leaf_0 (will be filled by circuit)
+        wrong_root,                                                      // [0] agg_root (wrong)
+        acc_in,                                                          // [1] state_in
+        F1::ZERO,               // [2] ledger_index_0 (single file at index 0)
+        F1::from(depth as u64), // [3] depth_0 (actual depth for file 0)
+        random_seed,            // [4] seed_0
+        calculate_root_commitment(correct_root, F1::from(depth as u64)), // [5] expected_rc_0
+        F1::ZERO,               // [6] leaf_0 (will be filled by circuit)
     ];
     let result = recursive_snark.verify(&pp, 1, &z0_primary_wrong);
     assert!(result.is_err(), "Verification with wrong root should fail");
@@ -450,6 +456,7 @@ fn test_constraint_count() {
             random_seed,
             &[0],     // ledger_indices
             &[depth], // depths
+            &[calculate_root_commitment(root, F1::from(depth as u64))],
             &[F1::ZERO],
         );
         let result = circuit.synthesize(&mut cs, &z);

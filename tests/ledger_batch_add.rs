@@ -7,18 +7,13 @@
 use kontor_crypto::api::{self, FieldElement, FileMetadata};
 use kontor_crypto::ledger::FileLedger;
 
+mod common;
+use common::fixtures::synthetic_metadata;
+
 /// Helper to create a dummy FileMetadata for testing.
 /// The depth is derived from padded_len (2^depth).
 fn dummy_metadata(file_id: &str, root_val: u64, depth: usize) -> FileMetadata {
-    FileMetadata {
-        root: FieldElement::from(root_val),
-        object_id: format!("object_{}", file_id),
-        file_id: file_id.to_string(),
-        nonce: vec![],
-        padded_len: 1 << depth, // 2^depth
-        original_size: 100,
-        filename: format!("{}.dat", file_id),
-    }
+    synthetic_metadata(file_id, FieldElement::from(root_val), depth)
 }
 
 fn historical_root_total(ledger: &FileLedger) -> usize {

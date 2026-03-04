@@ -35,18 +35,20 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
 ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
     // Use centralized layout helper
     let layout = config::PublicIOLayout::new(files_per_step);
+    let breakdown = layout.arity_breakdown();
 
     // Assert that the public inputs match the expected circuit arity
     assert_eq!(
         z.len(),
         layout.arity(),
-        "Public input count mismatch: expected {} (FIXED={} + ledger_indices={} + depths={} + seeds={} + leaves={}), got {}",
+        "Public input count mismatch: expected {} (FIXED={} + ledger_indices={} + depths={} + seeds={} + expected_rcs={} + leaves={}), got {}",
         layout.arity(),
-        config::PublicIOLayout::FIXED,
-        files_per_step,
-        files_per_step,
-        files_per_step,
-        files_per_step,
+        breakdown.fixed,
+        breakdown.ledger_indices,
+        breakdown.depths,
+        breakdown.seeds,
+        breakdown.expected_rcs,
+        breakdown.leaves,
         z.len()
     );
 
@@ -67,6 +69,18 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
     // Extract public seeds for each file slot
     let seeds_public: Vec<&AllocatedNum<F>> = (0..files_per_step)
         .map(|i| &z[layout.idx_seed(i)])
+        .collect();
+
+    // Extract expected root commitments for each file slot
+    let expected_rc_public: Vec<&AllocatedNum<F>> = (0..files_per_step)
+        .map(|i| &z[layout.idx_expected_rc(i)])
+        .collect();
+
+    // Extract public leaf accumulator section (leaf outputs from previous step).
+    // This is part of the Nova state vector, so it must exist in both inputs and outputs.
+    // We only constrain it for inactive (padding) slots to keep the statement canonical.
+    let leaf_inputs_public: Vec<&AllocatedNum<F>> = (0..files_per_step)
+        .map(|i| &z[layout.idx_leaf(i)])
         .collect();
 
     #[cfg(debug_assertions)]
@@ -115,6 +129,14 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
                 layout.idx_seed(i),
                 i,
                 seed.get_value()
+            );
+        }
+        for (i, expected_rc) in expected_rc_public.iter().enumerate() {
+            debug!(
+                "  - Input z[{}] (expected_rc_{}): {:?}",
+                layout.idx_expected_rc(i),
+                i,
+                expected_rc.get_value()
             );
         }
     }
@@ -277,6 +299,20 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
             })
             .collect::<Result<Vec<Boolean>, SynthesisError>>()?;
 
+        // Enforce prefix-ones depth gating:
+        // For a valid Merkle depth d, active_flags must be [1, 1, ..., 1, 0, 0, ...].
+        // This prevents adversarial "holey" patterns (e.g. 1,0,1,0,...) that still sum to d.
+        for level in 1..file_tree_depth {
+            let cur = active_flags[level].clone();
+            let prev_not = active_flags[level - 1].not();
+            file_cs.enforce(
+                || format!("active_flags_prefix_file{}_lvl{}", file_idx, level),
+                |lc| lc + &cur.lc(CS::one(), F::ONE),
+                |lc| lc + &prev_not.lc(CS::one(), F::ONE),
+                |lc| lc,
+            );
+        }
+
         // Gating logic: only process slots with public_depth > 0
         // This prevents padding files from being processed regardless of slot position
         let public_depth_bits = {
@@ -295,6 +331,44 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         }
 
         let gate_for_slot = depth_is_positive;
+
+        // Canonicalize inactive (padding) slots: if gate_for_slot == 0, force public inputs to zero.
+        // This prevents statement malleability where unused per-slot public inputs can vary freely.
+        let inactive = gate_for_slot.not();
+        {
+            // Enforce: inactive * ledger_index_public == 0
+            let ledger_index_public = ledger_indices_public[file_idx];
+            file_cs.enforce(
+                || "inactive_ledger_index_is_zero",
+                |lc| lc + &inactive.lc(CS::one(), F::ONE),
+                |lc| lc + ledger_index_public.get_variable(),
+                |lc| lc,
+            );
+
+            // Enforce: inactive * seed_public == 0
+            file_cs.enforce(
+                || "inactive_seed_is_zero",
+                |lc| lc + &inactive.lc(CS::one(), F::ONE),
+                |lc| lc + seed_public.get_variable(),
+                |lc| lc,
+            );
+
+            // Enforce: inactive * expected_rc_public == 0
+            file_cs.enforce(
+                || "inactive_expected_rc_is_zero",
+                |lc| lc + &inactive.lc(CS::one(), F::ONE),
+                |lc| lc + expected_rc_public[file_idx].get_variable(),
+                |lc| lc,
+            );
+
+            // Enforce: inactive * leaf_input == 0
+            file_cs.enforce(
+                || "inactive_leaf_input_is_zero",
+                |lc| lc + &inactive.lc(CS::one(), F::ONE),
+                |lc| lc + leaf_inputs_public[file_idx].get_variable(),
+                |lc| lc,
+            );
+        }
 
         let computed_file_root = verify_merkle_path_gated(
             file_cs.namespace(|| "verify_file_merkle"),
@@ -321,6 +395,14 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         } else {
             let mut sum_active =
                 AllocatedNum::alloc(file_cs.namespace(|| "sum_active_init"), || Ok(F::ZERO))?;
+            // Bind the running-sum initializer to canonical zero so depth is exactly
+            // the sum of active flags (not an affine-shifted variant).
+            file_cs.enforce(
+                || format!("sum_active_init_is_zero_file{}", file_idx),
+                |lc| lc + sum_active.get_variable(),
+                |lc| lc + CS::one(),
+                |lc| lc,
+            );
             for (j, flag) in active_flags.iter().enumerate() {
                 let new_sum = AllocatedNum::alloc(
                     file_cs.namespace(|| format!("sum_active_file{}_lvl{}", file_idx, j)),
@@ -336,6 +418,15 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
                         Ok(cur + if bit_val { F::ONE } else { F::ZERO })
                     },
                 )?;
+
+                // Enforce running sum transition:
+                // new_sum = sum_active + flag
+                file_cs.enforce(
+                    || format!("sum_active_transition_file{}_lvl{}", file_idx, j),
+                    |lc| lc + sum_active.get_variable() + &flag.lc(CS::one(), F::ONE),
+                    |lc| lc + CS::one(),
+                    |lc| lc + new_sum.get_variable(),
+                );
                 sum_active = new_sum;
             }
 
@@ -356,6 +447,15 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
             &computed_file_root,
             &depth_num,
         )?;
+
+        // Enforce challenge binding in-circuit:
+        // each active slot must match the challenge-derived expected root commitment.
+        file_cs.enforce(
+            || "expected_rc_matches_gated",
+            |lc| lc + &gate_for_slot.lc(CS::one(), F::ONE),
+            |lc| lc + rc.get_variable() - expected_rc_public[file_idx].get_variable(),
+            |lc| lc,
+        );
 
         if aggregated_tree_depth > 0 {
             // Multi-file case: verify rc is in aggregated tree at public ledger_index
@@ -481,6 +581,12 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
     let root_out = AllocatedNum::alloc(cs.namespace(|| "root_out"), || {
         root.get_value().ok_or(SynthesisError::AssignmentMissing)
     })?;
+    cs.enforce(
+        || "root_out_equals_root",
+        |lc| lc + root_out.get_variable() - root.get_variable(),
+        |lc| lc + CS::one(),
+        |lc| lc,
+    );
 
     // Carry forward all ledger indices
     let mut ledger_indices_out = Vec::new();
@@ -489,6 +595,12 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
             AllocatedNum::alloc(cs.namespace(|| format!("ledger_index_out_{}", i)), || {
                 idx.get_value().ok_or(SynthesisError::AssignmentMissing)
             })?;
+        cs.enforce(
+            || format!("ledger_index_out_equals_in_{}", i),
+            |lc| lc + idx_out.get_variable() - idx.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         ledger_indices_out.push(idx_out);
     }
@@ -499,6 +611,12 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         let depth_out = AllocatedNum::alloc(cs.namespace(|| format!("depth_out_{}", i)), || {
             depth.get_value().ok_or(SynthesisError::AssignmentMissing)
         })?;
+        cs.enforce(
+            || format!("depth_out_equals_in_{}", i),
+            |lc| lc + depth_out.get_variable() - depth.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         depths_out.push(depth_out);
     }
@@ -509,15 +627,41 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         let seed_out = AllocatedNum::alloc(cs.namespace(|| format!("seed_out_{}", i)), || {
             seed.get_value().ok_or(SynthesisError::AssignmentMissing)
         })?;
+        cs.enforce(
+            || format!("seed_out_equals_in_{}", i),
+            |lc| lc + seed_out.get_variable() - seed.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         seeds_out.push(seed_out);
     }
 
-    // Build output vector: [root_out, current_state, ledger_indices..., depths..., seeds..., leaves...]
+    // Carry forward all expected RCs
+    let mut expected_rc_out = Vec::new();
+    for (i, expected_rc) in expected_rc_public.iter().enumerate() {
+        let expected_rc_i_out =
+            AllocatedNum::alloc(cs.namespace(|| format!("expected_rc_out_{}", i)), || {
+                expected_rc
+                    .get_value()
+                    .ok_or(SynthesisError::AssignmentMissing)
+            })?;
+        cs.enforce(
+            || format!("expected_rc_out_equals_in_{}", i),
+            |lc| lc + expected_rc_i_out.get_variable() - expected_rc.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
+
+        expected_rc_out.push(expected_rc_i_out);
+    }
+
+    // Build output vector: [root_out, current_state, ledger_indices..., depths..., seeds..., expected_rcs..., leaves...]
     let mut outputs = vec![root_out, current_state];
     outputs.extend(ledger_indices_out);
     outputs.extend(depths_out);
     outputs.extend(seeds_out);
+    outputs.extend(expected_rc_out);
     outputs.extend(public_leaf_values);
 
     Ok(outputs)

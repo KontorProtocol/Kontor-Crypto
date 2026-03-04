@@ -66,3 +66,11 @@ perf.data.old
 # Custom/project-specific
 claude
 .nvimlog
+
+# CI / analysis artifacts
+artifacts/
+
+# cargo-fuzz
+fuzz/artifacts/
+fuzz/coverage/
+fuzz/target/

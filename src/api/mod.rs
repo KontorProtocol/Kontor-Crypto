@@ -118,7 +118,8 @@ use tracing::debug_span;
 /// # ID Generation
 ///
 /// - `object_id = object_<SHA256(data)>` - content-based, not unique, for file discovery
-/// - `file_id = file_<SHA256(data || nonce)>` - unique per upload, for storage protocol
+/// - `file_id = file_<SHA256(domain || len(data) || data || len(nonce) || nonce)>`
+///   - unique per upload, for storage protocol
 pub fn prepare_file(
     data: &[u8],
     filename: &str,
@@ -131,6 +132,32 @@ pub fn prepare_file(
             operation: "prepare_file".to_string(),
         });
     }
+    if data.len() > crate::config::MAX_FILE_SIZE_BYTES {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "prepare_file input size {} exceeds maximum {}",
+            data.len(),
+            crate::config::MAX_FILE_SIZE_BYTES
+        )));
+    }
+    if filename.is_empty() {
+        return Err(KontorPoRError::InvalidInput(
+            "prepare_file filename must be non-empty".to_string(),
+        ));
+    }
+    if filename.len() > crate::config::MAX_FILENAME_LEN_BYTES {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "prepare_file filename length {} exceeds maximum {}",
+            filename.len(),
+            crate::config::MAX_FILENAME_LEN_BYTES
+        )));
+    }
+    if nonce.len() > crate::config::MAX_NONCE_LEN_BYTES {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "prepare_file nonce length {} exceeds maximum {}",
+            nonce.len(),
+            crate::config::MAX_NONCE_LEN_BYTES
+        )));
+    }
 
     // 1a. Calculate object ID: object_<SHA256(data)> - content-based, for file discovery
     let mut object_hasher = Sha256::new();
@@ -138,8 +165,15 @@ pub fn prepare_file(
     let object_id = format!("obj_{:x}", object_hasher.finalize());
 
     // 1b. Calculate file ID: file_<SHA256(data || nonce)> - unique per upload
+    //
+    // Include explicit tuple framing to avoid boundary-collision ambiguities such as:
+    // (data="AB", nonce="C") vs (data="A", nonce="BC"), both of which concatenate to "ABC".
+    const FILE_ID_DOMAIN_V1: &[u8] = b"kontor.file_id.v1";
     let mut file_hasher = Sha256::new();
+    file_hasher.update(FILE_ID_DOMAIN_V1);
+    file_hasher.update((data.len() as u64).to_le_bytes());
     file_hasher.update(data);
+    file_hasher.update((nonce.len() as u64).to_le_bytes());
     file_hasher.update(nonce);
     let file_id = format!("file_{:x}", file_hasher.finalize());
 
@@ -164,6 +198,7 @@ pub fn prepare_file(
         original_size: data.len(),
         filename: filename.to_string(),
     };
+    metadata.validate()?;
 
     // 6. Create prepared file
     let prepared_file = types::PreparedFile {
@@ -221,6 +256,8 @@ pub fn reconstruct_file(
     symbols: &[Option<Vec<u8>>],
     metadata: &types::FileMetadata,
 ) -> Result<Vec<u8>> {
+    metadata.validate()?;
+
     let mut mutable_symbols = symbols.to_vec();
 
     crate::erasure::decode_file_symbols(

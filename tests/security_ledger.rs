@@ -1,28 +1,15 @@
 //! Security tests for the FileLedger component.
 
-use kontor_crypto::api::{self, FieldElement, FileMetadata};
+use kontor_crypto::api::{self, FieldElement};
 use rand::Rng;
 use std::collections::BTreeMap;
 
 mod common;
-use common::fixtures::{create_test_data, setup_test_scenario, TestConfig};
+use common::fixtures::{create_test_data, setup_test_scenario, synthetic_metadata, TestConfig};
 use kontor_crypto::KontorPoRError;
 
 fn historical_root_total(ledger: &kontor_crypto::ledger::FileLedger) -> usize {
     ledger.historical_roots.len()
-}
-
-/// Helper to create a synthetic FileMetadata for testing.
-fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> FileMetadata {
-    FileMetadata {
-        root,
-        object_id: format!("object_{}", file_id),
-        file_id: file_id.to_string(),
-        nonce: vec![],
-        padded_len: 1 << depth, // 2^depth
-        original_size: 100,
-        filename: "synthetic.dat".to_string(),
-    }
 }
 
 // =============================================================================
@@ -674,6 +661,38 @@ fn test_ledger_tamper_detected_on_load() {
     assert!(result.is_err(), "Tampered ledger should fail to load");
 
     println!("✓ Tampered ledger correctly rejected");
+}
+
+#[test]
+fn test_ledger_trailing_bytes_rejected_on_load() {
+    // Verify that load rejects ledger blobs with trailing bytes.
+    println!("Testing ledger trailing-bytes rejection");
+
+    let mut ledger = kontor_crypto::ledger::FileLedger::new();
+    ledger
+        .add_file(&synthetic_metadata("file1", FieldElement::from(100u64), 3))
+        .unwrap();
+    ledger
+        .add_file(&synthetic_metadata("file2", FieldElement::from(200u64), 3))
+        .unwrap();
+
+    let temp_path = std::env::temp_dir().join("test_trailing_ledger.bin");
+    ledger.save(&temp_path).expect("Should save ledger");
+
+    // Append extra bytes that should be rejected by strict deserialization.
+    let mut ledger_bytes = std::fs::read(&temp_path).expect("Should read ledger file");
+    ledger_bytes.extend_from_slice(b"TRAILING_BYTES");
+    std::fs::write(&temp_path, ledger_bytes).expect("Should write tampered file");
+
+    let result = kontor_crypto::ledger::FileLedger::load(&temp_path);
+    std::fs::remove_file(&temp_path).ok();
+
+    assert!(
+        result.is_err(),
+        "Ledger with trailing bytes should be rejected"
+    );
+
+    println!("✓ Ledger trailing bytes correctly rejected");
 }
 
 #[test]

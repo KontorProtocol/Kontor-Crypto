@@ -5,10 +5,10 @@
 
 use super::{
     plan::Plan,
-    types::{Challenge, FieldElement, Proof},
+    types::{Challenge, Proof},
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
-use ff::Field;
+use std::collections::HashSet;
 use tracing::{debug, info_span};
 
 /// Verifies a proof against one or more challenges.
@@ -62,6 +62,37 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         return Err(KontorPoRError::InvalidInput(
             "Must provide at least one challenge".to_string(),
         ));
+    }
+
+    // Validate challenge structure/metadata invariants before any cryptographic checks.
+    for challenge in challenges.iter() {
+        challenge.validate()?;
+    }
+
+    // Reject duplicate challenges up front.
+    let mut seen = HashSet::with_capacity(challenges.len());
+    for challenge in challenges.iter() {
+        let challenge_id = challenge.id();
+        if !seen.insert(challenge_id) {
+            return Err(KontorPoRError::InvalidInput(
+                "verify: duplicate challenge detected".to_string(),
+            ));
+        }
+    }
+
+    // Bind proof to the exact challenge set (including non-circuit fields such as
+    // block_height/prover_id) so callers of verify_raw() cannot bypass this check.
+    let expected_ids: Vec<_> = challenges.iter().map(|c| c.id()).collect();
+    if proof.challenge_ids.len() != expected_ids.len() {
+        return Ok(false);
+    }
+    if proof
+        .challenge_ids
+        .iter()
+        .zip(expected_ids.iter())
+        .any(|(a, b)| a != b)
+    {
+        return Ok(false);
     }
 
     // Create unified preprocessing plan (derives root internally for security)
@@ -192,9 +223,11 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // Build z0_primary with proof's values for root/indices
     let z0_primary = plan.public_io_layout.build_z0_primary(
         proof.ledger_root,
+        plan.initial_state,
         &proof.ledger_indices,
         &plan.depths,
         &plan.seeds,
+        &plan.expected_rcs,
     );
     debug!("VERIFIER z0_primary: {:?}", z0_primary);
 
@@ -212,7 +245,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     debug!("  - Number of files: {}", plan.sorted_challenges.len());
     debug!("  - Number of iterations to verify: {}", num_iterations);
     debug!("  - z0_primary[0] aggregated_root: {:?}", proof.ledger_root);
-    debug!("  - z0_primary[1] initial_state: {:?}", FieldElement::ZERO);
+    debug!("  - z0_primary[1] initial_state: {:?}", plan.initial_state);
     for (i, idx) in proof.ledger_indices.iter().enumerate() {
         debug!("  - z0_primary[{}] ledger_index_{}: {}", 2 + i, i, idx);
     }
@@ -245,3 +278,6 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         ))),
     }
 }
+
+// Unit tests for constraint-level statement binding live under `tests/` to avoid
+// slow proof-generation in library unit tests.
