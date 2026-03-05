@@ -73,10 +73,10 @@ fn test_batch_add_single_file() {
     assert_eq!(ledger.files.len(), 1);
     assert!(ledger.files.contains_key("only_file"));
     assert_eq!(
-        ledger.files.get("only_file").unwrap().root,
+        ledger.files.get("only_file").unwrap().entry.root,
         FieldElement::from(999u64)
     );
-    assert_eq!(ledger.files.get("only_file").unwrap().depth, 5);
+    assert_eq!(ledger.files.get("only_file").unwrap().entry.depth, 5);
 }
 
 // ===========================================
@@ -120,10 +120,10 @@ fn test_batch_add_equivalent_to_individual_adds() {
             .files
             .get(key)
             .expect("File should exist in batch ledger");
-        assert_eq!(entry_individual.root, entry_batch.root);
-        assert_eq!(entry_individual.depth, entry_batch.depth);
+        assert_eq!(entry_individual.entry.root, entry_batch.entry.root);
+        assert_eq!(entry_individual.entry.depth, entry_batch.entry.depth);
         assert_eq!(
-            entry_individual.rc, entry_batch.rc,
+            entry_individual.entry.rc, entry_batch.entry.rc,
             "Root commitments must match for {}",
             key
         );
@@ -132,7 +132,7 @@ fn test_batch_add_equivalent_to_individual_adds() {
 
 #[test]
 fn test_batch_add_order_independence() {
-    // BTreeMap ensures deterministic ordering regardless of insertion order
+    // With append-only stable indices, insertion order defines index assignment.
     let files_order1 = vec![
         dummy_metadata("zebra", 1, 3),
         dummy_metadata("apple", 2, 3),
@@ -151,16 +151,20 @@ fn test_batch_add_order_independence() {
     let mut ledger2 = FileLedger::new();
     ledger2.add_files(&files_order2).unwrap();
 
-    assert_eq!(
+    assert_ne!(
         ledger1.tree.root(),
         ledger2.tree.root(),
-        "Different insertion orders must produce identical root (BTreeMap sorts by key)"
+        "Different insertion orders should produce different roots with append-only indices"
     );
 
-    // Verify canonical indices are the same
-    assert_eq!(ledger1.lookup("apple").unwrap().0, 0);
-    assert_eq!(ledger1.lookup("mango").unwrap().0, 1);
-    assert_eq!(ledger1.lookup("zebra").unwrap().0, 2);
+    // Verify index assignment tracks insertion order.
+    assert_eq!(ledger1.lookup("zebra").unwrap().0, 0);
+    assert_eq!(ledger1.lookup("apple").unwrap().0, 1);
+    assert_eq!(ledger1.lookup("mango").unwrap().0, 2);
+
+    assert_eq!(ledger2.lookup("apple").unwrap().0, 0);
+    assert_eq!(ledger2.lookup("mango").unwrap().0, 1);
+    assert_eq!(ledger2.lookup("zebra").unwrap().0, 2);
 }
 
 // ===========================================
@@ -185,11 +189,14 @@ fn test_batch_add_with_duplicates_in_batch() {
     // The last duplicate should win
     let dup_entry = ledger.files.get("dup_file").unwrap();
     assert_eq!(
-        dup_entry.root,
+        dup_entry.entry.root,
         FieldElement::from(999u64),
         "Last duplicate root should be used"
     );
-    assert_eq!(dup_entry.depth, 5, "Last duplicate depth should be used");
+    assert_eq!(
+        dup_entry.entry.depth, 5,
+        "Last duplicate depth should be used"
+    );
 }
 
 #[test]
@@ -210,7 +217,7 @@ fn test_batch_add_overwrites_existing_files() {
 
     assert_eq!(ledger.files.len(), 2);
     assert_eq!(
-        ledger.files.get("existing").unwrap().root,
+        ledger.files.get("existing").unwrap().entry.root,
         FieldElement::from(999u64),
         "Existing file should be overwritten"
     );
@@ -503,8 +510,8 @@ fn test_batch_add_with_real_files() {
     // Verify each file is correctly stored
     for metadata in &metadatas {
         let entry = ledger_batch.files.get(&metadata.file_id).unwrap();
-        assert_eq!(entry.root, metadata.root);
-        assert_eq!(entry.depth, metadata.depth());
+        assert_eq!(entry.entry.root, metadata.root);
+        assert_eq!(entry.entry.depth, metadata.depth());
     }
 }
 

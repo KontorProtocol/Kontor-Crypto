@@ -6,14 +6,11 @@
 //!
 //! ## Canonical Index Ordering
 //!
-//! **INVARIANT**: Canonical file indices are determined by lexicographic ordering
-//! of file identifiers in the `BTreeMap`. This ensures deterministic, stable indices:
-//! - Index 0 = first file in lexicographic order
-//! - Index i = i-th file in sorted key order
-//! - Indices remain stable as long as files aren't removed
+//! **INVARIANT**: Canonical file indices are explicit, stable, append-only ledger indices.
+//! A file's index does not change when new files are added.
 //!
-//! The aggregated tree is built from rc values in this same key order, ensuring
-//! that `get_canonical_index_for_rc()` returns the correct tree position.
+//! The aggregated tree is built from rc values ordered by `ledger_index`, padded with zeros
+//! for any missing slots. This keeps verifier-side index derivation deterministic.
 
 use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTree, F};
 use crate::poseidon::calculate_root_commitment;
@@ -21,7 +18,7 @@ use crate::KontorPoRError;
 use bincode::Options;
 use ff::Field;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -36,6 +33,12 @@ pub trait FileDescriptor {
     fn root(&self) -> F;
     /// Returns the depth of this file's Merkle tree.
     fn depth(&self) -> usize;
+    /// Returns this file's stable ledger index if known.
+    ///
+    /// Implementations that do not supply an index use append-only assignment.
+    fn ledger_index(&self) -> Option<usize> {
+        None
+    }
 }
 
 /// Retention policy for historical roots used during proof validation.
@@ -64,6 +67,15 @@ pub struct FileLedgerEntry {
     pub rc: F,
 }
 
+/// Entry with explicit stable ledger index.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexedFileLedgerEntry {
+    /// Stable append-only ledger index for this file.
+    pub ledger_index: usize,
+    /// File commitment data.
+    pub entry: FileLedgerEntry,
+}
+
 impl<T: FileDescriptor> From<&T> for FileLedgerEntry {
     fn from(entry: &T) -> Self {
         let rc = calculate_root_commitment(entry.root(), F::from(entry.depth() as u64));
@@ -81,7 +93,7 @@ struct LedgerData {
     /// Format version for forward compatibility
     version: u16,
     /// The actual ledger data (unified file entries)
-    files: BTreeMap<String, FileLedgerEntry>,
+    files: BTreeMap<String, IndexedFileLedgerEntry>,
     /// Stored root for validation on load
     root: F,
     #[serde(default)]
@@ -108,7 +120,7 @@ struct LedgerData {
 pub struct FileLedger {
     /// Unified map from file identifier to complete file information.
     /// BTreeMap ensures deterministic ordering for canonical ledger construction.
-    pub files: BTreeMap<String, FileLedgerEntry>,
+    pub files: BTreeMap<String, IndexedFileLedgerEntry>,
     /// The aggregated Merkle tree built from rc values (not raw roots).
     #[serde(skip)]
     pub tree: MerkleTree,
@@ -124,6 +136,12 @@ pub struct FileLedger {
     /// Historical-root retention policy.
     #[serde(default)]
     pub historical_root_policy: HistoricalRootPolicy,
+    /// Runtime cache: ledger index -> file_id, used for O(1) uniqueness checks.
+    #[serde(skip)]
+    index_to_file_id: HashMap<usize, String>,
+    /// Runtime cache: next append-only ledger index.
+    #[serde(skip)]
+    next_ledger_index: usize,
 }
 
 impl Default for FileLedger {
@@ -135,6 +153,8 @@ impl Default for FileLedger {
             },
             historical_roots: Vec::new(),
             historical_root_policy: HistoricalRootPolicy::default(),
+            index_to_file_id: HashMap::new(),
+            next_ledger_index: 0,
         }
     }
 }
@@ -221,9 +241,29 @@ impl FileLedger {
     /// ledger.add_file(&metadata).unwrap();
     /// ```
     pub fn add_file(&mut self, entry: &impl FileDescriptor) -> Result<(), KontorPoRError> {
-        // Insert the new file
-        self.files
-            .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
+        self.ensure_runtime_index_cache_initialized()?;
+
+        let file_id = entry.file_id().to_string();
+        let resolved_index = self.resolve_ledger_index(&file_id, entry.ledger_index())?;
+
+        if let Some(owner) = self.index_to_file_id.get(&resolved_index) {
+            if owner != &file_id {
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "Ledger index {} already assigned to file '{}'",
+                    resolved_index, owner
+                )));
+            }
+        }
+
+        self.files.insert(
+            file_id.clone(),
+            IndexedFileLedgerEntry {
+                ledger_index: resolved_index,
+                entry: FileLedgerEntry::from(entry),
+            },
+        );
+        self.index_to_file_id.insert(resolved_index, file_id);
+        self.next_ledger_index = self.next_ledger_index.max(resolved_index.saturating_add(1));
 
         // Rebuild tree
         self.rebuild_tree()?;
@@ -256,9 +296,30 @@ impl FileLedger {
         &mut self,
         files: impl IntoIterator<Item = &'a T>,
     ) -> Result<(), KontorPoRError> {
+        self.ensure_runtime_index_cache_initialized()?;
+
         for entry in files {
-            self.files
-                .insert(entry.file_id().to_string(), FileLedgerEntry::from(entry));
+            let file_id = entry.file_id().to_string();
+            let resolved_index = self.resolve_ledger_index(&file_id, entry.ledger_index())?;
+
+            if let Some(owner) = self.index_to_file_id.get(&resolved_index) {
+                if owner != &file_id {
+                    return Err(KontorPoRError::InvalidInput(format!(
+                        "Ledger index {} already assigned to file '{}'",
+                        resolved_index, owner
+                    )));
+                }
+            }
+
+            self.files.insert(
+                file_id.clone(),
+                IndexedFileLedgerEntry {
+                    ledger_index: resolved_index,
+                    entry: FileLedgerEntry::from(entry),
+                },
+            );
+            self.index_to_file_id.insert(resolved_index, file_id);
+            self.next_ledger_index = self.next_ledger_index.max(resolved_index.saturating_add(1));
         }
 
         self.rebuild_tree()
@@ -268,13 +329,26 @@ impl FileLedger {
     /// The tree is built from rc = Poseidon(TAG_RC, root, depth) for each file,
     /// padded to the next power of two to ensure a fixed depth.
     fn rebuild_tree(&mut self) -> Result<(), KontorPoRError> {
-        // Collect rc values in sorted key order (BTreeMap is deterministic)
-        let rc_values: Vec<F> = self.files.values().map(|entry| entry.rc).collect();
-
-        if rc_values.is_empty() {
+        if self.files.is_empty() {
             // An empty ledger has a tree with a single zero leaf.
             self.tree = build_tree_from_leaves(&[F::ZERO])?;
             return Ok(());
+        }
+
+        let max_index = self
+            .files
+            .values()
+            .map(|entry| entry.ledger_index)
+            .max()
+            .ok_or_else(|| KontorPoRError::LedgerValidation {
+                reason: "Failed to determine max ledger index".to_string(),
+            })?;
+        let leaf_count = max_index
+            .checked_add(1)
+            .ok_or_else(|| KontorPoRError::InvalidInput("Ledger index overflow".to_string()))?;
+        let mut rc_values = vec![F::ZERO; leaf_count];
+        for indexed in self.files.values() {
+            rc_values[indexed.ledger_index] = indexed.entry.rc;
         }
 
         let padded_len = rc_values.len().next_power_of_two();
@@ -285,11 +359,73 @@ impl FileLedger {
         Ok(())
     }
 
+    fn resolve_ledger_index(
+        &self,
+        file_id: &str,
+        requested_index: Option<usize>,
+    ) -> Result<usize, KontorPoRError> {
+        if let Some(existing) = self.files.get(file_id) {
+            if let Some(idx) = requested_index {
+                if idx != existing.ledger_index {
+                    return Err(KontorPoRError::InvalidInput(format!(
+                        "File '{}' already has ledger index {}, got conflicting index {}",
+                        file_id, existing.ledger_index, idx
+                    )));
+                }
+            }
+            return Ok(existing.ledger_index);
+        }
+
+        Ok(requested_index.unwrap_or(self.next_ledger_index))
+    }
+
+    fn ensure_runtime_index_cache_initialized(&mut self) -> Result<(), KontorPoRError> {
+        if self.files.is_empty() {
+            self.index_to_file_id.clear();
+            self.next_ledger_index = 0;
+            return Ok(());
+        }
+
+        if self.index_to_file_id.len() == self.files.len() && self.next_ledger_index > 0 {
+            return Ok(());
+        }
+
+        self.rebuild_runtime_index_cache()
+    }
+
+    fn rebuild_runtime_index_cache(&mut self) -> Result<(), KontorPoRError> {
+        self.index_to_file_id.clear();
+        let mut next = 0usize;
+        for (file_id, entry) in &self.files {
+            if let Some(existing_owner) = self
+                .index_to_file_id
+                .insert(entry.ledger_index, file_id.clone())
+            {
+                return Err(KontorPoRError::LedgerValidation {
+                    reason: format!(
+                        "Duplicate ledger_index {} for files '{}' and '{}'",
+                        entry.ledger_index, existing_owner, file_id
+                    ),
+                });
+            }
+            next = next.max(entry.ledger_index.saturating_add(1));
+        }
+        self.next_ledger_index = next;
+        Ok(())
+    }
+
+    /// Returns the next append-only ledger index that will be assigned.
+    pub fn next_ledger_index(&self) -> usize {
+        self.next_ledger_index
+    }
+
     /// Get the canonical ledger index for a specific rc value.
     /// This allows checking if a file with specific (root, depth) exists in the ledger.
     pub fn get_canonical_index_for_rc(&self, rc: F) -> Option<usize> {
-        // Find position by file_id order (same as rebuild_tree) - BTreeMap iteration is deterministic
-        self.files.values().position(|entry| entry.rc == rc)
+        self.files
+            .values()
+            .find(|entry| entry.entry.rc == rc)
+            .map(|entry| entry.ledger_index)
     }
 
     /// Saves the `FileLedger` to the specified path using bincode serialization.
@@ -372,7 +508,10 @@ impl FileLedger {
             tree: MerkleTree::default(),
             historical_roots: data.historical_roots,
             historical_root_policy: data.historical_root_policy,
+            index_to_file_id: HashMap::new(),
+            next_ledger_index: 0,
         };
+        ledger.rebuild_runtime_index_cache()?;
         ledger.rebuild_tree()?;
         ledger.prune_historical_roots();
 
@@ -391,17 +530,11 @@ impl FileLedger {
     }
 
     /// Looks up a file by its ID and returns its canonical index and leaf value (rc).
-    /// The index is its lexicographical rank among all file IDs in the ledger.
+    /// The index is its stable append-only ledger index.
     pub fn lookup(&self, file_id: &str) -> Option<(usize, F)> {
-        if let Some(entry) = self.files.get(file_id) {
-            // The index is the position in the BTreeMap's sorted keys. O(n) but simple.
-            self.files
-                .keys()
-                .position(|k| k == file_id)
-                .map(|index| (index, entry.rc))
-        } else {
-            None
-        }
+        self.files
+            .get(file_id)
+            .map(|entry| (entry.ledger_index, entry.entry.rc))
     }
 
     /// Returns the Merkle proof of inclusion for a given file ID in the aggregated tree.

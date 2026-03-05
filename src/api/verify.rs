@@ -80,21 +80,6 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         }
     }
 
-    // Bind proof to the exact challenge set (including non-circuit fields such as
-    // block_height/prover_id) so callers of verify_raw() cannot bypass this check.
-    let expected_ids: Vec<_> = challenges.iter().map(|c| c.id()).collect();
-    if proof.challenge_ids.len() != expected_ids.len() {
-        return Ok(false);
-    }
-    if proof
-        .challenge_ids
-        .iter()
-        .zip(expected_ids.iter())
-        .any(|(a, b)| a != b)
-    {
-        return Ok(false);
-    }
-
     // Create unified preprocessing plan (derives root internally for security)
     let plan = Plan::make_plan(challenges, ledger)?;
 
@@ -118,14 +103,6 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         ));
     }
 
-    if proof.ledger_indices.len() != plan.files_per_step {
-        return Err(KontorPoRError::InvalidInput(format!(
-            "Proof ledger_indices length {} does not match circuit files_per_step {}",
-            proof.ledger_indices.len(),
-            plan.files_per_step
-        )));
-    }
-
     if is_multi_file {
         let max_leaf_count = 1usize
             .checked_shl(proof.aggregated_tree_depth as u32)
@@ -136,10 +113,10 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
                 ))
             })?;
 
-        for (i, idx) in proof.ledger_indices.iter().enumerate() {
+        for (i, idx) in plan.ledger_indices.iter().enumerate() {
             if *idx >= max_leaf_count {
                 return Err(KontorPoRError::InvalidInput(format!(
-                    "Proof ledger_indices[{}] = {} is out of range for aggregated_tree_depth {} (max {})",
+                    "Derived ledger_indices[{}] = {} is out of range for aggregated_tree_depth {} (max {})",
                     i,
                     idx,
                     proof.aggregated_tree_depth,
@@ -212,19 +189,17 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         }
     }
 
-    // Build public inputs using:
-    // - proof.ledger_root and proof.ledger_indices (from proof, enables historical validation)
-    // - depths and seeds from plan (derived from challenges)
-    debug!("Verify: building z0_primary from proof + challenges");
+    // Build public inputs using verifier-derived indices, depths, seeds, and expected_rcs.
+    debug!("Verify: building z0_primary from proof root + derived challenge inputs");
     debug!("  - Using proof.ledger_root: {:?}", proof.ledger_root);
-    debug!("  - Using proof.ledger_indices: {:?}", proof.ledger_indices);
+    debug!("  - Derived ledger_indices: {:?}", plan.ledger_indices);
     debug!("  - Depths from challenges: {:?}", plan.depths);
 
-    // Build z0_primary with proof's values for root/indices
+    // Build z0_primary with proof's root and verifier-derived indices.
     let z0_primary = plan.public_io_layout.build_z0_primary(
         proof.ledger_root,
         plan.initial_state,
-        &proof.ledger_indices,
+        &plan.ledger_indices,
         &plan.depths,
         &plan.seeds,
         &plan.expected_rcs,
@@ -246,7 +221,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     debug!("  - Number of iterations to verify: {}", num_iterations);
     debug!("  - z0_primary[0] aggregated_root: {:?}", proof.ledger_root);
     debug!("  - z0_primary[1] initial_state: {:?}", plan.initial_state);
-    for (i, idx) in proof.ledger_indices.iter().enumerate() {
+    for (i, idx) in plan.ledger_indices.iter().enumerate() {
         debug!("  - z0_primary[{}] ledger_index_{}: {}", 2 + i, i, idx);
     }
     for (i, depth) in plan.depths.iter().enumerate() {
