@@ -111,7 +111,7 @@ struct LedgerData {
 /// ## Historical Root Tracking
 ///
 /// The ledger maintains a set of historical roots for proof validation.
-/// When files are added, the pre-modification root is appended to `historical_roots`.
+/// When files are added, the post-update root is appended to `historical_roots`.
 /// Verifiers check that a proof's `ledger_root` is in this set before accepting it.
 /// This enables cross-block aggregation without proof regeneration.
 ///
@@ -174,8 +174,8 @@ impl FileLedger {
 
     /// Records the current root as a valid historical root.
     ///
-    /// Call this before modifying the ledger (e.g., before adding files) to preserve the
-    /// old root for proof validation.
+    /// The ledger uses this to retain roots that were previously current so that verifiers can
+    /// accept proofs generated against older ledger states (cross-block aggregation).
     pub fn record_current_root(&mut self) {
         use ff::PrimeField;
         let root = self.tree.root();

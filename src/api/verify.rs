@@ -23,9 +23,9 @@ use tracing::{debug, info_span};
 /// aggregation: proofs generated against older ledger states remain valid as long as
 /// the root is in the historical set.
 ///
-/// The proof includes the ledger indices at proof generation time. The SNARK proves
-/// these indices are correct for the claimed root, so the verifier doesn't need to
-/// recompute them from the current ledger state.
+    /// The proof does not carry prover-supplied ledger indices. The verifier derives the
+    /// canonical ledger indices from protocol/ledger state and supplies them as public inputs,
+    /// binding the SNARK statement to the verifier's notion of which files are being challenged.
 ///
 /// For single-file proofs (k = 1), the ledger root check is skipped because the circuit
 /// uses the file's Merkle root directly instead of the ledger root.
@@ -41,7 +41,7 @@ use tracing::{debug, info_span};
 /// # Arguments
 ///
 /// * `challenges` - Vector of challenges to verify against
-/// * `proof` - The proof to verify (includes ledger_root and ledger_indices)
+/// * `proof` - The proof to verify (includes ledger_root and aggregated_tree_depth)
 /// * `ledger` - The file ledger (used for historical root validation, not index computation)
 ///
 /// # Returns

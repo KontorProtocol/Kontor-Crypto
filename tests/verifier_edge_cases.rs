@@ -2,13 +2,12 @@
 
 use kontor_crypto::api::{self, Challenge, FieldElement};
 use kontor_crypto::KontorPoRError;
-use rand::RngCore;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
-fn random_nonce() -> [u8; 16] {
-    let mut nonce = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut nonce);
-    nonce
+fn nonce(label: &str) -> [u8; 16] {
+    let digest = Sha256::digest(label.as_bytes());
+    digest[..16].try_into().expect("slice is 16 bytes")
 }
 
 #[test]
@@ -18,9 +17,9 @@ fn test_verifier_rejects_out_of_range_ledger_index() {
     let data_a = vec![1u8; 100];
     let data_b = vec![2u8; 100];
     let data_c = vec![3u8; 100];
-    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a.dat", &random_nonce()).unwrap();
-    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b.dat", &random_nonce()).unwrap();
-    let (prepared_c, meta_c) = api::prepare_file(&data_c, "c.dat", &random_nonce()).unwrap();
+    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a.dat", &nonce("a")).unwrap();
+    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b.dat", &nonce("b")).unwrap();
+    let (prepared_c, meta_c) = api::prepare_file(&data_c, "c.dat", &nonce("c")).unwrap();
 
     let mut ledger = kontor_crypto::FileLedger::new();
     ledger.add_file(&meta_a).unwrap();
