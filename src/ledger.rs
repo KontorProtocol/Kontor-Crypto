@@ -22,6 +22,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
+/// Max allowed gap between the highest `ledger_index` and the number of files.
+///
+/// This prevents adversarial or corrupted inputs (e.g. during `load`) from forcing the
+/// ledger to allocate a vector sized to an arbitrarily large index while holding only
+/// a small number of files.
+const MAX_LEDGER_INDEX_SPARSITY_GAP: usize = 1024;
+
 /// Trait for types that can be added to a [`FileLedger`].
 ///
 /// This trait decouples the ledger from any specific file metadata type,
@@ -255,6 +262,10 @@ impl FileLedger {
             }
         }
 
+        let previous_entry = self.files.get(&file_id).cloned();
+        let previous_owner = self.index_to_file_id.get(&resolved_index).cloned();
+        let previous_next = self.next_ledger_index;
+
         self.files.insert(
             file_id.clone(),
             IndexedFileLedgerEntry {
@@ -265,8 +276,27 @@ impl FileLedger {
         self.index_to_file_id.insert(resolved_index, file_id);
         self.next_ledger_index = self.next_ledger_index.max(resolved_index.saturating_add(1));
 
-        // Rebuild tree
-        self.rebuild_tree()?;
+        // Rebuild tree (roll back state on error so tree/caches remain consistent).
+        if let Err(err) = self.rebuild_tree() {
+            match previous_entry {
+                Some(old) => {
+                    self.files.insert(entry.file_id().to_string(), old);
+                }
+                None => {
+                    self.files.remove(entry.file_id());
+                }
+            }
+            match previous_owner {
+                Some(owner) => {
+                    self.index_to_file_id.insert(resolved_index, owner);
+                }
+                None => {
+                    self.index_to_file_id.remove(&resolved_index);
+                }
+            }
+            self.next_ledger_index = previous_next;
+            return Err(err);
+        }
 
         // Record the new root as a historical root (every valid state is tracked)
         self.record_current_root();
@@ -298,31 +328,151 @@ impl FileLedger {
     ) -> Result<(), KontorPoRError> {
         self.ensure_runtime_index_cache_initialized()?;
 
+        // Phase 1: validate + compute indices without mutating self (last entry wins).
+        let mut planned: BTreeMap<String, IndexedFileLedgerEntry> = BTreeMap::new();
+        let mut planned_indices: HashMap<usize, String> = HashMap::new();
+        let mut next_index = self.next_ledger_index;
+
         for entry in files {
             let file_id = entry.file_id().to_string();
-            let resolved_index = self.resolve_ledger_index(&file_id, entry.ledger_index())?;
 
-            if let Some(owner) = self.index_to_file_id.get(&resolved_index) {
+            // If the file is already present, its ledger_index is stable.
+            if let Some(existing) = self.files.get(&file_id) {
+                if let Some(requested) = entry.ledger_index() {
+                    if requested != existing.ledger_index {
+                        return Err(KontorPoRError::InvalidInput(format!(
+                            "File '{}' already exists with ledger_index {}, but entry requested {}",
+                            file_id, existing.ledger_index, requested
+                        )));
+                    }
+                }
+
+                let idx = existing.ledger_index;
+                if let Some(owner) = self.index_to_file_id.get(&idx) {
+                    if owner != &file_id {
+                        return Err(KontorPoRError::InvalidInput(format!(
+                            "Ledger index {} already assigned to file '{}'",
+                            idx, owner
+                        )));
+                    }
+                }
+                if let Some(owner) = planned_indices.get(&idx) {
+                    if owner != &file_id {
+                        return Err(KontorPoRError::InvalidInput(format!(
+                            "Ledger index {} already assigned to file '{}' in batch",
+                            idx, owner
+                        )));
+                    }
+                }
+
+                planned.insert(
+                    file_id.clone(),
+                    IndexedFileLedgerEntry {
+                        ledger_index: idx,
+                        entry: FileLedgerEntry::from(entry),
+                    },
+                );
+                planned_indices.insert(idx, file_id);
+                continue;
+            }
+
+            // If the file already appeared earlier in this batch, keep its assigned index.
+            if let Some(existing) = planned.get(&file_id) {
+                planned.insert(
+                    file_id,
+                    IndexedFileLedgerEntry {
+                        ledger_index: existing.ledger_index,
+                        entry: FileLedgerEntry::from(entry),
+                    },
+                );
+                continue;
+            }
+
+            // New file: either honor an explicit index or append at next_index.
+            let idx = match entry.ledger_index() {
+                Some(explicit) => explicit,
+                None => {
+                    let idx = next_index;
+                    next_index = next_index.saturating_add(1);
+                    idx
+                }
+            };
+
+            if let Some(owner) = self.index_to_file_id.get(&idx) {
                 if owner != &file_id {
                     return Err(KontorPoRError::InvalidInput(format!(
                         "Ledger index {} already assigned to file '{}'",
-                        resolved_index, owner
+                        idx, owner
+                    )));
+                }
+            }
+            if let Some(owner) = planned_indices.get(&idx) {
+                if owner != &file_id {
+                    return Err(KontorPoRError::InvalidInput(format!(
+                        "Ledger index {} already assigned to file '{}' in batch",
+                        idx, owner
                     )));
                 }
             }
 
-            self.files.insert(
+            planned.insert(
                 file_id.clone(),
                 IndexedFileLedgerEntry {
-                    ledger_index: resolved_index,
+                    ledger_index: idx,
                     entry: FileLedgerEntry::from(entry),
                 },
             );
-            self.index_to_file_id.insert(resolved_index, file_id);
-            self.next_ledger_index = self.next_ledger_index.max(resolved_index.saturating_add(1));
+            planned_indices.insert(idx, file_id);
+            next_index = next_index.max(idx.saturating_add(1));
         }
 
-        self.rebuild_tree()
+        // Phase 2: apply mutations with rollback on rebuild failure.
+        let previous_next = self.next_ledger_index;
+        let mut previous_files: Vec<(String, Option<IndexedFileLedgerEntry>)> = Vec::new();
+        let mut previous_owners: Vec<(usize, Option<String>)> = Vec::new();
+
+        for (file_id, entry) in planned.iter() {
+            previous_files.push((file_id.clone(), self.files.get(file_id).cloned()));
+            previous_owners.push((
+                entry.ledger_index,
+                self.index_to_file_id.get(&entry.ledger_index).cloned(),
+            ));
+        }
+
+        for (file_id, entry) in planned.into_iter() {
+            self.files.insert(file_id, entry);
+        }
+        for (idx, owner) in planned_indices.into_iter() {
+            self.index_to_file_id.insert(idx, owner);
+        }
+        self.next_ledger_index = next_index;
+
+        if let Err(err) = self.rebuild_tree() {
+            for (file_id, prior) in previous_files {
+                match prior {
+                    Some(old) => {
+                        self.files.insert(file_id, old);
+                    }
+                    None => {
+                        self.files.remove(&file_id);
+                    }
+                }
+            }
+            for (idx, prior) in previous_owners {
+                match prior {
+                    Some(owner) => {
+                        self.index_to_file_id.insert(idx, owner);
+                    }
+                    None => {
+                        self.index_to_file_id.remove(&idx);
+                    }
+                }
+            }
+            self.next_ledger_index = previous_next;
+            return Err(err);
+        }
+
+        Ok(())
     }
 
     /// Rebuilds the aggregated Merkle tree from rc values (root commitments).
@@ -346,6 +496,15 @@ impl FileLedger {
         let leaf_count = max_index
             .checked_add(1)
             .ok_or_else(|| KontorPoRError::InvalidInput("Ledger index overflow".to_string()))?;
+
+        let files_len = self.files.len();
+        if leaf_count > files_len.saturating_add(MAX_LEDGER_INDEX_SPARSITY_GAP) {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "Ledger indices too sparse: max_index={} implies leaf_count={} for only {} files",
+                max_index, leaf_count, files_len
+            )));
+        }
+
         let mut rc_values = vec![F::ZERO; leaf_count];
         for indexed in self.files.values() {
             rc_values[indexed.ledger_index] = indexed.entry.rc;
