@@ -67,14 +67,9 @@ pub fn prove(
     let compressed_snark = CompressedSNARK::prove(&params.pp, &params.keys.pk, &recursive_snark)
         .map_err(|e| KontorPoRError::Snark(format!("Proof compression failed: {e:?}")))?;
 
-    // Collect challenge IDs in order
-    let challenge_ids: Vec<super::types::ChallengeID> = challenges.iter().map(|c| c.id()).collect();
-
     Ok(super::types::Proof {
         compressed_snark,
-        challenge_ids,
         ledger_root: plan.aggregated_root,
-        ledger_indices: plan.ledger_indices.clone(),
         aggregated_tree_depth: plan.aggregated_tree_depth,
     })
 }

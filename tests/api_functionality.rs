@@ -172,10 +172,14 @@ fn test_proof_serialization_roundtrip() {
     let is_valid = system.verify(&deserialized, &[challenge]).unwrap();
     assert!(is_valid, "Deserialized proof should verify successfully");
 
-    // Test that challenge IDs are preserved
+    // Test that proof metadata is preserved
     assert_eq!(
-        proof.challenge_ids, deserialized.challenge_ids,
-        "Challenge IDs should be preserved through serialization"
+        proof.ledger_root, deserialized.ledger_root,
+        "Ledger root should be preserved through serialization"
+    );
+    assert_eq!(
+        proof.aggregated_tree_depth, deserialized.aggregated_tree_depth,
+        "Aggregated tree depth should be preserved through serialization"
     );
 
     println!("  ✓ Proof serialization round-trip successful");
@@ -314,16 +318,11 @@ fn test_porsystem_challenge_id_matching() {
         Challenge::new_test(metadata.clone(), 1000, 2, FieldElement::from(778u64));
     let result = system.verify(&proof, &[different_challenge]);
 
-    match result {
-        Err(kontor_crypto::KontorPoRError::InvalidInput(msg)) => {
-            assert!(
-                msg.contains("Challenge ID mismatch"),
-                "Should report challenge ID mismatch"
-            );
-            println!("  ✓ Challenge ID mismatch correctly detected");
-        }
-        _ => panic!("Expected InvalidInput error for mismatched challenge IDs"),
-    }
+    assert!(
+        matches!(result, Ok(false)),
+        "Mismatched challenge should fail cryptographic verification"
+    );
+    println!("  ✓ Mismatched challenge correctly rejected by SNARK verification");
 }
 
 #[test]

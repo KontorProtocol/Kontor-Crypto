@@ -792,7 +792,7 @@ fn test_ledger_duplicate_file_updates_entry() {
     let result1 = ledger.add_file(&synthetic_metadata(file_id, root1, 3));
     assert!(result1.is_ok(), "First add should succeed");
 
-    let original_root = ledger.files.get(file_id).unwrap().root;
+    let original_root = ledger.files.get(file_id).unwrap().entry.root;
     assert_eq!(original_root, root1, "Initial root should be root1");
 
     // Add the same file again with a different root - this should UPDATE
@@ -801,7 +801,7 @@ fn test_ledger_duplicate_file_updates_entry() {
 
     assert!(result2.is_ok(), "Second add should succeed (update)");
     assert_eq!(
-        ledger.files.get(file_id).unwrap().root,
+        ledger.files.get(file_id).unwrap().entry.root,
         root2,
         "Root MUST be updated to new value - ledger uses insert semantics"
     );
@@ -857,7 +857,7 @@ fn test_duplicate_file_with_different_content_records_historical_root() {
 
     // File entry should have the new root
     assert_eq!(
-        ledger.files.get(file_id).unwrap().root,
+        ledger.files.get(file_id).unwrap().entry.root,
         FieldElement::from(200u64),
         "File should have updated root"
     );
@@ -926,13 +926,13 @@ fn test_duplicate_file_with_different_depth_records_historical_root() {
     let meta_depth3 = synthetic_metadata(file_id, FieldElement::from(100u64), 3);
     ledger.add_file(&meta_depth3).unwrap();
     let root_depth3 = ledger.root();
-    let rc_depth3 = ledger.files.get(file_id).unwrap().rc;
+    let rc_depth3 = ledger.files.get(file_id).unwrap().entry.rc;
 
     // Update to depth 5 (same root value, different depth)
     let meta_depth5 = synthetic_metadata(file_id, FieldElement::from(100u64), 5);
     ledger.add_file(&meta_depth5).unwrap();
     let root_depth5 = ledger.root();
-    let rc_depth5 = ledger.files.get(file_id).unwrap().rc;
+    let rc_depth5 = ledger.files.get(file_id).unwrap().entry.rc;
 
     // RC should change because rc = H(TAG_RC, root, depth)
     assert_ne!(rc_depth3, rc_depth5, "RC must change when depth changes");
@@ -985,7 +985,7 @@ fn test_multiple_updates_to_same_file_accumulate_historical_roots() {
 
     // File has the last update's root
     assert_eq!(
-        ledger.files.get(file_id).unwrap().root,
+        ledger.files.get(file_id).unwrap().entry.root,
         FieldElement::from(400u64)
     );
 
@@ -1027,8 +1027,8 @@ fn test_batch_add_produces_identical_cryptographic_commitments() {
 
     // Verify each file's rc (root commitment) is identical
     for file_id in ["file_alpha", "file_beta", "file_gamma"] {
-        let rc_individual = ledger_individual.files.get(file_id).unwrap().rc;
-        let rc_batch = ledger_batch.files.get(file_id).unwrap().rc;
+        let rc_individual = ledger_individual.files.get(file_id).unwrap().entry.rc;
+        let rc_batch = ledger_batch.files.get(file_id).unwrap().entry.rc;
         assert_eq!(
             rc_individual, rc_batch,
             "SECURITY VIOLATION: RC for {} must be identical",
@@ -1183,7 +1183,7 @@ fn test_batch_add_save_load_roundtrip() {
     for (file_id, entry) in &ledger.files {
         let loaded_entry = loaded.files.get(file_id).expect("File should exist");
         assert_eq!(
-            entry.rc, loaded_entry.rc,
+            entry.entry.rc, loaded_entry.entry.rc,
             "SECURITY VIOLATION: RC must be preserved for {}",
             file_id
         );
@@ -1194,9 +1194,10 @@ fn test_batch_add_save_load_roundtrip() {
 
 #[test]
 fn test_batch_add_canonical_ordering_security() {
-    // SECURITY: Canonical ordering must be deterministic regardless of batch order.
-    // Non-deterministic ordering could lead to proof failures or index confusion attacks.
-    println!("Testing canonical ordering security with batch add");
+    // SECURITY: Stable append-only indices must deterministically follow insertion order.
+    // Different insertion orders should produce different roots/indices, preventing
+    // accidental assumptions about lexicographic canonicalization.
+    println!("Testing insertion-order index assignment with batch add");
 
     // Same files in different batch orders
     let files_order1 = vec![
@@ -1217,35 +1218,40 @@ fn test_batch_add_canonical_ordering_security() {
     let mut ledger2 = kontor_crypto::ledger::FileLedger::new();
     ledger2.add_files(&files_order2).unwrap();
 
-    // Roots must be identical
-    assert_eq!(
+    // Roots should differ because insertion order differs.
+    assert_ne!(
         ledger1.tree.root(),
         ledger2.tree.root(),
-        "SECURITY VIOLATION: Different batch orders must produce same root"
+        "SECURITY VIOLATION: Different batch orders unexpectedly produced same root"
     );
 
-    // Canonical indices must be identical
+    // RCs must match per file, but indices must differ for at least one file.
+    let mut observed_index_difference = false;
     for file_id in ["apple", "mango", "zebra"] {
         let (idx1, rc1) = ledger1.lookup(file_id).unwrap();
         let (idx2, rc2) = ledger2.lookup(file_id).unwrap();
-        assert_eq!(
-            idx1, idx2,
-            "SECURITY VIOLATION: Canonical index for {} must be identical",
-            file_id
-        );
         assert_eq!(
             rc1, rc2,
             "SECURITY VIOLATION: RC for {} must be identical",
             file_id
         );
+        observed_index_difference |= idx1 != idx2;
     }
+    assert!(
+        observed_index_difference,
+        "SECURITY VIOLATION: Expected at least one index difference across insertion orders"
+    );
 
-    // Verify expected canonical order (alphabetical)
-    assert_eq!(ledger1.lookup("apple").unwrap().0, 0);
-    assert_eq!(ledger1.lookup("mango").unwrap().0, 1);
-    assert_eq!(ledger1.lookup("zebra").unwrap().0, 2);
+    // Verify order-specific index assignment.
+    assert_eq!(ledger1.lookup("zebra").unwrap().0, 0);
+    assert_eq!(ledger1.lookup("apple").unwrap().0, 1);
+    assert_eq!(ledger1.lookup("mango").unwrap().0, 2);
 
-    println!("✓ Batch add maintains deterministic canonical ordering");
+    assert_eq!(ledger2.lookup("mango").unwrap().0, 0);
+    assert_eq!(ledger2.lookup("zebra").unwrap().0, 1);
+    assert_eq!(ledger2.lookup("apple").unwrap().0, 2);
+
+    println!("✓ Batch add enforces deterministic insertion-order indices");
 }
 
 #[test]
@@ -1348,12 +1354,12 @@ fn test_batch_add_rc_computation_consistency() {
     // Add via individual method
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
     ledger_individual.add_file(&metadata).unwrap();
-    let rc_individual = ledger_individual.files.get("test_file").unwrap().rc;
+    let rc_individual = ledger_individual.files.get("test_file").unwrap().entry.rc;
 
     // Add via batch method
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
     ledger_batch.add_files([&metadata]).unwrap();
-    let rc_batch = ledger_batch.files.get("test_file").unwrap().rc;
+    let rc_batch = ledger_batch.files.get("test_file").unwrap().entry.rc;
 
     assert_eq!(
         rc_individual, rc_batch,
@@ -1459,10 +1465,10 @@ fn test_batch_add_with_real_files_proof_equivalence() {
 
 #[test]
 fn test_batch_add_canonical_indices_match_individual_adds() {
-    // SECURITY: The canonical index for each file must be identical whether
+    // SECURITY: The stable index for each file must be identical whether
     // the ledger was built via batch add or individual adds.
-    // Different indices would break proof verification.
-    println!("Testing canonical index equivalence between batch and individual adds");
+    // Different indices for identical insertion order would break proof verification.
+    println!("Testing stable index equivalence between batch and individual adds");
 
     // Create files with names that will sort in a specific order
     let files = vec![
@@ -1482,8 +1488,8 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
     ledger_batch.add_files(&files).unwrap();
 
-    // Verify canonical indices are identical
-    let expected_order = ["alpha", "beta", "delta", "gamma"]; // Alphabetical
+    // Verify stable indices are identical and follow insertion order.
+    let expected_order = ["delta", "alpha", "gamma", "beta"];
 
     for (expected_idx, file_id) in expected_order.iter().enumerate() {
         let (idx_individual, rc_individual) = ledger_individual
@@ -1495,12 +1501,12 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
 
         assert_eq!(
             idx_individual, expected_idx,
-            "SECURITY VIOLATION: {} should be at index {} in individual ledger, got {}",
+            "SECURITY VIOLATION: {} should be at insertion index {} in individual ledger, got {}",
             file_id, expected_idx, idx_individual
         );
         assert_eq!(
             idx_batch, expected_idx,
-            "SECURITY VIOLATION: {} should be at index {} in batch ledger, got {}",
+            "SECURITY VIOLATION: {} should be at insertion index {} in batch ledger, got {}",
             file_id, expected_idx, idx_batch
         );
         assert_eq!(
@@ -1517,7 +1523,7 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
 
     // Also verify via get_canonical_index_for_rc
     for file_id in &expected_order {
-        let rc = ledger_individual.files.get(*file_id).unwrap().rc;
+        let rc = ledger_individual.files.get(*file_id).unwrap().entry.rc;
         let idx_individual = ledger_individual.get_canonical_index_for_rc(rc);
         let idx_batch = ledger_batch.get_canonical_index_for_rc(rc);
 
@@ -1528,7 +1534,7 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
         );
     }
 
-    println!("✓ Canonical indices are identical between batch and individual adds");
+    println!("✓ Stable indices are identical between batch and individual adds");
 }
 
 // =============================================================================

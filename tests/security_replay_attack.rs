@@ -149,8 +149,8 @@ fn test_verify_raw_rejects_rebinding_non_circuit_challenge_fields() {
 }
 
 #[test]
-fn test_verify_raw_rejects_rebinding_even_with_rewritten_proof_challenge_ids() {
-    // A malicious prover can rewrite proof.challenge_ids. Verification must still
+fn test_verify_raw_rejects_rebinding_after_proof_serialization_roundtrip() {
+    // Even after re-encoding/re-decoding proof bytes, verify_raw must still
     // reject rebinding of non-circuit challenge fields.
     let setup = setup_test_scenario(&TestConfig::default()).unwrap();
     let file_refs = setup.file_refs();
@@ -159,22 +159,24 @@ fn test_verify_raw_rejects_rebinding_even_with_rewritten_proof_challenge_ids() {
         .expect("Ledger should be available for unified API");
     let system = kontor_crypto::api::PorSystem::new(ledger);
     let files_vec: Vec<&_> = file_refs.values().copied().collect();
-    let mut proof = system
+    let proof = system
         .prove(files_vec, &setup.challenges)
         .expect("Should generate valid proof");
+    let proof_bytes = proof
+        .to_bytes()
+        .expect("proof serialization should succeed");
+    let proof =
+        kontor_crypto::api::Proof::from_bytes(&proof_bytes).expect("proof decode should succeed");
 
     let mut tampered_challenges = setup.challenges.clone();
     tampered_challenges[0].block_height = tampered_challenges[0].block_height.saturating_add(1);
-
-    // Simulate attacker rewriting proof metadata to match tampered challenges.
-    proof.challenge_ids = tampered_challenges.iter().map(|c| c.id()).collect();
 
     let result = kontor_crypto::api::verify_raw(&tampered_challenges, &proof, ledger)
         .expect("Verification should complete");
 
     assert!(
         !result,
-        "SECURITY VIOLATION: verify_raw accepted proof after rebinding + challenge_ids rewrite"
+        "SECURITY VIOLATION: verify_raw accepted proof after rebinding post-serialization"
     );
 }
 
@@ -188,13 +190,12 @@ fn test_verify_raw_rejects_non_member_file_id_even_with_matching_root() {
         .expect("Ledger should be available for unified API");
     let system = kontor_crypto::api::PorSystem::new(ledger);
     let files_vec: Vec<&_> = file_refs.values().copied().collect();
-    let mut proof = system
+    let proof = system
         .prove(files_vec, &setup.challenges)
         .expect("Should generate valid proof");
 
     let mut tampered_challenges = setup.challenges.clone();
     tampered_challenges[0].file_metadata.file_id = "file_non_member".to_string();
-    proof.challenge_ids = tampered_challenges.iter().map(|c| c.id()).collect();
 
     let result = kontor_crypto::api::verify_raw(&tampered_challenges, &proof, ledger);
     match result {

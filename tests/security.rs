@@ -167,11 +167,8 @@ fn test_proof_replay_with_different_files_is_rejected() {
     // to answer a verifier's challenge for files {A, C}.
     //
     // Security is enforced at two levels:
-    // 1. API level: proof.challenge_ids must match the challenges being verified
+    // 1. Verifier-derived challenge set binding (initial_state + sorted challenge IDs)
     // 2. Cryptographic level: SNARK proves indices are correct for the claimed root
-    //
-    // The challenge_ids binding ensures a proof can only answer the specific
-    // challenges it was generated for.
     use kontor_crypto::api::PorSystem;
     use std::collections::BTreeMap;
 
@@ -224,18 +221,16 @@ fn test_proof_replay_with_different_files_is_rejected() {
     ];
 
     // Attempt to verify the proof generated for {A, B} against challenges for {A, C}
-    // This should fail because proof.challenge_ids won't match challenges_ac
+    // This should fail because verifier-derived challenge binding changes initial_state/indices.
     let verification_result = system.verify(&proof_for_ab, &challenges_ac);
 
-    // The verification should return an error because challenge IDs don't match
+    // The verification should fail (returns false under ProofVerifyError).
     assert!(
-        verification_result.is_err(),
-        "Proof for files A,B should NOT verify against challenges for files A,C - challenge_ids mismatch prevents replay!"
+        matches!(verification_result, Ok(false)),
+        "Proof for files A,B should NOT verify against challenges for files A,C"
     );
 
-    println!(
-        "✓ Proof replay attack correctly rejected - challenge_ids binding working as intended"
-    );
+    println!("✓ Proof replay attack correctly rejected by verifier-derived challenge binding");
 
     // Sanity check: Verify that the original proof still works for the original challenges
     let original_verification = system
