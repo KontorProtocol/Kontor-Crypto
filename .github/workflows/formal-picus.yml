@@ -59,6 +59,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7
+        with:
+          toolchain: stable
 
       - name: Cache Cargo
         uses: actions/cache@v4
