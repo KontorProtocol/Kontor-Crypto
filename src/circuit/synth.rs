@@ -58,7 +58,6 @@ pub fn synthesize_por_circuit<F: PrimeField + PrimeFieldBits, CS: ConstraintSyst
         aggregated_tree_depth,
         witness,
         None,
-        false,
     )
 }
 
@@ -84,35 +83,6 @@ pub fn synthesize_por_circuit_with_trace<
         aggregated_tree_depth,
         witness,
         trace.take(),
-        false,
-    )
-}
-
-/// Synthesize a monolithic positive-control mutant for formal verification.
-///
-/// The mutant intentionally emits an unconstrained output vector with the correct arity so
-/// Picus should quickly report `unsafe`.
-pub fn synthesize_por_circuit_carry_forward_mutant<
-    F: PrimeField + PrimeFieldBits,
-    CS: ConstraintSystem<F>,
->(
-    cs: &mut CS,
-    z: &[AllocatedNum<F>],
-    files_per_step: usize,
-    file_tree_depth: usize,
-    aggregated_tree_depth: usize,
-    witness: Option<&CircuitWitness<F>>,
-    trace: Option<&mut PorWitnessTrace>,
-) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
-    synthesize_por_circuit_impl(
-        cs,
-        z,
-        files_per_step,
-        file_tree_depth,
-        aggregated_tree_depth,
-        witness,
-        trace,
-        true,
     )
 }
 
@@ -125,7 +95,6 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
     aggregated_tree_depth: usize,
     witness: Option<&CircuitWitness<F>>,
     mut trace: Option<&mut PorWitnessTrace>,
-    drop_carry_forward_equalities: bool,
 ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
     fn aux_index<F: PrimeField>(num: &AllocatedNum<F>) -> Result<usize, SynthesisError> {
         match num.get_variable().get_unchecked() {
@@ -163,23 +132,6 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
         breakdown.leaves,
         z.len()
     );
-
-    if drop_carry_forward_equalities {
-        // Fast positive-control mutant for formal tooling.
-        let mut outputs = Vec::with_capacity(layout.arity());
-        for i in 0..layout.arity() {
-            let out =
-                AllocatedNum::alloc(cs.namespace(|| format!("mutant_out_{i}")), || Ok(F::ZERO))?;
-            outputs.push(out);
-        }
-        cs.enforce(
-            || "mutant_tautology",
-            |lc| lc + CS::one(),
-            |lc| lc + CS::one(),
-            |lc| lc + CS::one(),
-        );
-        return Ok(outputs);
-    }
 
     // Deconstruct the public input vector using centralized layout
     let root = &z[layout.idx_agg_root()]; // The public root (aggregated tree root)
@@ -758,15 +710,13 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
     let root_out = AllocatedNum::alloc(cs.namespace(|| "root_out"), || {
         root.get_value().ok_or(SynthesisError::AssignmentMissing)
     })?;
-    if !drop_carry_forward_equalities {
-        // Enforce: root_out = root.
-        cs.enforce(
-            || "root_out_equals_root",
-            |lc| lc + root_out.get_variable() - root.get_variable(),
-            |lc| lc + CS::one(),
-            |lc| lc,
-        );
-    }
+    // Enforce: root_out = root.
+    cs.enforce(
+        || "root_out_equals_root",
+        |lc| lc + root_out.get_variable() - root.get_variable(),
+        |lc| lc + CS::one(),
+        |lc| lc,
+    );
 
     // Carry forward all ledger indices
     let mut ledger_indices_out = Vec::new();
@@ -775,15 +725,13 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
             AllocatedNum::alloc(cs.namespace(|| format!("ledger_index_out_{}", i)), || {
                 idx.get_value().ok_or(SynthesisError::AssignmentMissing)
             })?;
-        if !drop_carry_forward_equalities {
-            // Enforce: idx_out = idx
-            cs.enforce(
-                || format!("ledger_index_out_equals_public_{}", i),
-                |lc| lc + idx_out.get_variable() - idx.get_variable(),
-                |lc| lc + CS::one(),
-                |lc| lc,
-            );
-        }
+        // Enforce: idx_out = idx
+        cs.enforce(
+            || format!("ledger_index_out_equals_public_{}", i),
+            |lc| lc + idx_out.get_variable() - idx.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         ledger_indices_out.push(idx_out);
     }
@@ -794,15 +742,13 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
         let depth_out = AllocatedNum::alloc(cs.namespace(|| format!("depth_out_{}", i)), || {
             depth.get_value().ok_or(SynthesisError::AssignmentMissing)
         })?;
-        if !drop_carry_forward_equalities {
-            // Enforce: depth_out = depth
-            cs.enforce(
-                || format!("depth_out_equals_public_{}", i),
-                |lc| lc + depth_out.get_variable() - depth.get_variable(),
-                |lc| lc + CS::one(),
-                |lc| lc,
-            );
-        }
+        // Enforce: depth_out = depth
+        cs.enforce(
+            || format!("depth_out_equals_public_{}", i),
+            |lc| lc + depth_out.get_variable() - depth.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         depths_out.push(depth_out);
     }
@@ -813,15 +759,13 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
         let seed_out = AllocatedNum::alloc(cs.namespace(|| format!("seed_out_{}", i)), || {
             seed.get_value().ok_or(SynthesisError::AssignmentMissing)
         })?;
-        if !drop_carry_forward_equalities {
-            // Enforce: seed_out = seed
-            cs.enforce(
-                || format!("seed_out_equals_public_{}", i),
-                |lc| lc + seed_out.get_variable() - seed.get_variable(),
-                |lc| lc + CS::one(),
-                |lc| lc,
-            );
-        }
+        // Enforce: seed_out = seed
+        cs.enforce(
+            || format!("seed_out_equals_public_{}", i),
+            |lc| lc + seed_out.get_variable() - seed.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc,
+        );
 
         seeds_out.push(seed_out);
     }

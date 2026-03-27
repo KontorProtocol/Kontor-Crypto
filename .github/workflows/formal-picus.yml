@@ -14,6 +14,9 @@ concurrency:
   group: formal-picus-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   picus_matrix:
     name: Picus ${{ matrix.lane_name }}
@@ -55,7 +58,9 @@ jobs:
           path: Picus
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7
+        with:
+          toolchain: stable
 
       - name: Cache Cargo
         uses: actions/cache@v4

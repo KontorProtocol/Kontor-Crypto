@@ -10,12 +10,12 @@ use crate::api::{prepare_file, tree_depth_from_metadata, Challenge, FieldElement
 use crate::circuit::formal_components::{
     synthesize_aggregation_merkle_component, synthesize_carry_forward_component,
     synthesize_challenge_component, synthesize_file_merkle_component,
-    synthesize_state_update_component, AggregationMerkleComponentCircuit,
-    AggregationMerkleMutantComponentCircuit, CarryForwardComponentCircuit,
-    CarryForwardMutantComponentCircuit, ChallengeDerivationComponentCircuit,
-    ChallengeDerivationMutantComponentCircuit, ComponentWitnessTrace, FileMerkleComponentCircuit,
-    FileMerkleMutantComponentCircuit, StateUpdateComponentCircuit,
-    StateUpdateMutantComponentCircuit,
+    synthesize_full_carry_forward_mutant, synthesize_state_update_component,
+    AggregationMerkleComponentCircuit, AggregationMerkleMutantComponentCircuit,
+    CarryForwardComponentCircuit, CarryForwardMutantComponentCircuit,
+    ChallengeDerivationComponentCircuit, ChallengeDerivationMutantComponentCircuit,
+    ComponentWitnessTrace, FileMerkleComponentCircuit, FileMerkleMutantComponentCircuit,
+    StateUpdateComponentCircuit, StateUpdateMutantComponentCircuit,
 };
 #[cfg(feature = "formal-dev")]
 use crate::circuit::lite::{
@@ -23,9 +23,7 @@ use crate::circuit::lite::{
     PorCircuitLiteMerklePoseidonDet, PorCircuitLiteMul, PorCircuitLitePoseidonBits,
     PorCircuitLitePoseidonStateOnly,
 };
-use crate::circuit::synth::{
-    synthesize_por_circuit_carry_forward_mutant, synthesize_por_circuit_with_trace, PorWitnessTrace,
-};
+use crate::circuit::synth::{synthesize_por_circuit_with_trace, PorWitnessTrace};
 use crate::circuit::PorCircuit;
 use crate::config::{self, PublicIOLayout};
 use crate::ledger::FileLedger;
@@ -487,14 +485,10 @@ fn export_fixture_impl(
                         Some(witnesses_vec.clone()),
                     );
                     if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        synthesize_por_circuit_carry_forward_mutant(
+                        synthesize_full_carry_forward_mutant(
                             &mut shape_cs,
                             &z_shape,
                             plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            None,
                         )
                         .map_err(circuit_err)?
                     } else {
@@ -677,14 +671,10 @@ fn export_fixture_impl(
                         Some(witnesses_vec.clone()),
                     );
                     if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        synthesize_por_circuit_carry_forward_mutant(
+                        synthesize_full_carry_forward_mutant(
                             &mut shape_cs,
                             &z_shape,
                             plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            None,
                         )
                         .map_err(circuit_err)?
                     } else {
@@ -835,14 +825,10 @@ fn export_fixture_impl(
                 if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
                     let mut trace = PorWitnessTrace::default();
                     if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        let _ = synthesize_por_circuit_carry_forward_mutant(
+                        let _ = synthesize_full_carry_forward_mutant(
                             &mut sat_cs,
                             &z_sat,
                             plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            Some(&mut trace),
                         )
                         .map_err(circuit_err)?;
                     } else {
@@ -859,14 +845,10 @@ fn export_fixture_impl(
                     }
                     por_trace = Some(trace);
                 } else if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                    let _ = synthesize_por_circuit_carry_forward_mutant(
+                    let _ = synthesize_full_carry_forward_mutant(
                         &mut sat_cs,
                         &z_sat,
                         plan.files_per_step,
-                        plan.file_tree_depth,
-                        plan.aggregated_tree_depth,
-                        circuit.witness.as_ref(),
-                        None,
                     )
                     .map_err(circuit_err)?;
                 } else {
@@ -1064,14 +1046,10 @@ fn export_fixture_impl(
                 if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
                     let mut trace = PorWitnessTrace::default();
                     if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        let _ = synthesize_por_circuit_carry_forward_mutant(
+                        let _ = synthesize_full_carry_forward_mutant(
                             &mut sat_cs,
                             &z_sat,
                             plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            Some(&mut trace),
                         )
                         .map_err(circuit_err)?;
                     } else {
@@ -1088,14 +1066,10 @@ fn export_fixture_impl(
                     }
                     por_trace = Some(trace);
                 } else if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                    let _ = synthesize_por_circuit_carry_forward_mutant(
+                    let _ = synthesize_full_carry_forward_mutant(
                         &mut sat_cs,
                         &z_sat,
                         plan.files_per_step,
-                        plan.file_tree_depth,
-                        plan.aggregated_tree_depth,
-                        circuit.witness.as_ref(),
-                        None,
                     )
                     .map_err(circuit_err)?;
                 } else {
@@ -2060,7 +2034,7 @@ fn hex_to_le_bytes(hex: &str) -> Result<Vec<u8>> {
     let clean = hex.trim_start_matches('0');
     let normalized = if clean.is_empty() {
         String::from("00")
-    } else if clean.len().is_multiple_of(2) {
+    } else if clean.len() % 2 == 0 {
         clean.to_string()
     } else {
         format!("0{}", clean)
