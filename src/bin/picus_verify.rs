@@ -640,7 +640,7 @@ fn classify_picus_result(
         let msgs = merged_msgs.to_ascii_lowercase();
         if msgs.contains("not properly constrained")
             || msgs.contains("underconstrained")
-            || msgs.contains("exiting picus with the code 9")
+            || msgs.contains("exiting picus with the code 9\n")
         {
             return Ok((
                 FixtureStatus::Violation,
@@ -650,7 +650,7 @@ fn classify_picus_result(
         if msgs.contains("cannot determine")
             || msgs.contains("unknown")
             || msgs.contains("timeout")
-            || msgs.contains("exiting picus with the code 0")
+            || msgs.contains("exiting picus with the code 0\n")
         {
             return Ok((
                 FixtureStatus::Inconclusive,
@@ -658,7 +658,7 @@ fn classify_picus_result(
             ));
         }
         if msgs.contains("the circuit is properly constrained")
-            || msgs.contains("exiting picus with the code 8")
+            || msgs.contains("exiting picus with the code 8\n")
         {
             return Ok((
                 FixtureStatus::Pass,
