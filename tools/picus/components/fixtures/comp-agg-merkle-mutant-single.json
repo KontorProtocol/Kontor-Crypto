@@ -1,0 +1,32 @@
+{
+  "fixture_id": "comp-agg-merkle-mutant-single",
+  "description": "Aggregation-Merkle mutant (tiny shape) should be underconstrained",
+  "scenario_kind": "tiny_merkle",
+  "circuit_kind": "component_aggregation_merkle_mutant",
+  "challenge_count": 1,
+  "seed": 12345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": false,
+  "file_specs": [
+    {
+      "size": 31,
+      "seed": 101,
+      "toy_padded_len": 1
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 1,
+    "aggregated_tree_depth": 0
+  },
+  "expected_result": "unsafe",
+  "tags": [
+    "component",
+    "aggregation_merkle",
+    "single",
+    "mutant",
+    "tiny"
+  ],
+  "expected_num_constraints": 1
+}

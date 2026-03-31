@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "fixtures": [
+    "comp-challenge-single",
+    "comp-challenge-multi",
+    "comp-challenge-mutant-single",
+    "comp-file-merkle-single",
+    "comp-file-merkle-multi",
+    "comp-file-merkle-mutant-single",
+    "comp-agg-merkle-single",
+    "comp-agg-merkle-multi",
+    "comp-agg-merkle-mutant-single",
+    "comp-state-update-single",
+    "comp-state-update-multi",
+    "comp-state-update-mutant-single",
+    "comp-carry-forward-single",
+    "comp-carry-forward-multi",
+    "comp-carry-forward-mutant-single"
+  ]
+}

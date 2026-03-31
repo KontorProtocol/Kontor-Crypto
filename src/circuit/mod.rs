@@ -11,7 +11,10 @@
 
 #[cfg(debug_assertions)]
 pub mod debug;
+pub mod formal_components;
 pub mod gadgets;
+#[cfg(feature = "formal-dev")]
+pub mod lite;
 pub mod synth;
 pub mod witness;
 

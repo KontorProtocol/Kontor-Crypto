@@ -65,7 +65,11 @@ perf.data.old
 
 # Custom/project-specific
 claude
+.claude/settings.local.json
+.claude/*.local.*
 .nvimlog
+artifacts/
+artifacts/picus/
 
 # CI / analysis artifacts
 artifacts/

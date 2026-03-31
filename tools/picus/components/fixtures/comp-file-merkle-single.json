@@ -1,0 +1,28 @@
+{
+  "fixture_id": "comp-file-merkle-single",
+  "description": "File-Merkle component on single-file shape",
+  "scenario_kind": "single_file",
+  "circuit_kind": "component_file_merkle",
+  "challenge_count": 2,
+  "seed": 12345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": false,
+  "file_specs": [
+    {
+      "size": 64,
+      "seed": 101
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 8,
+    "aggregated_tree_depth": 0
+  },
+  "tags": [
+    "component",
+    "file_merkle",
+    "single"
+  ],
+  "expected_num_constraints": 4580
+}

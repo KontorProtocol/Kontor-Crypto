@@ -1,0 +1,32 @@
+{
+  "fixture_id": "comp-file-merkle-mutant-single",
+  "description": "File-Merkle mutant (tiny shape) should be underconstrained",
+  "scenario_kind": "tiny_merkle",
+  "circuit_kind": "component_file_merkle_mutant",
+  "challenge_count": 1,
+  "seed": 12345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": false,
+  "file_specs": [
+    {
+      "size": 31,
+      "seed": 101,
+      "toy_padded_len": 1
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 1,
+    "aggregated_tree_depth": 0
+  },
+  "expected_result": "unsafe",
+  "tags": [
+    "component",
+    "file_merkle",
+    "single",
+    "mutant",
+    "tiny"
+  ],
+  "expected_num_constraints": 1
+}

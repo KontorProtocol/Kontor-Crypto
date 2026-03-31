@@ -1,0 +1,47 @@
+{
+  "fixture_id": "multi-file-padding",
+  "description": "Three-file fixture to exercise files_per_step padding to four",
+  "scenario_kind": "padding",
+  "challenge_count": 2,
+  "seed": 52345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "expected_result": "safe",
+  "verification": {
+    "scope": "leafpath",
+    "output_prefix_len": 0,
+    "solver_policy": {
+      "primary": "cvc5",
+      "fallbacks": [
+        "z3"
+      ]
+    },
+    "timeout_secs": 1200,
+    "hard_timeout_grace_secs": 120
+  },
+  "distinct_seeds": true,
+  "file_specs": [
+    {
+      "size": 64,
+      "seed": 501
+    },
+    {
+      "size": 96,
+      "seed": 502
+    },
+    {
+      "size": 128,
+      "seed": 503
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 4,
+    "file_tree_depth": 8,
+    "aggregated_tree_depth": 2
+  },
+  "tags": [
+    "multi",
+    "padding"
+  ],
+  "expected_num_constraints": 31013
+}

@@ -1,0 +1,36 @@
+{
+  "fixture_id": "comp-state-update-multi",
+  "description": "State-update component on multi-file padded shape",
+  "scenario_kind": "padding",
+  "circuit_kind": "component_state_update",
+  "challenge_count": 2,
+  "seed": 52345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "distinct_seeds": true,
+  "file_specs": [
+    {
+      "size": 64,
+      "seed": 501
+    },
+    {
+      "size": 96,
+      "seed": 502
+    },
+    {
+      "size": 128,
+      "seed": 503
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 4,
+    "file_tree_depth": 8,
+    "aggregated_tree_depth": 2
+  },
+  "tags": [
+    "component",
+    "state_update",
+    "multi"
+  ],
+  "expected_num_constraints": 3974
+}

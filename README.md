@@ -173,3 +173,40 @@ Key error variants surfaced at API boundaries (see `KontorPoRError`):
 
 - **[Protocol Specification](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/PROTOCOL.md)** - Network protocol, glossary, data types, and challenge lifecycle
 - **[Library Architecture](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/ARCHITECTURE.md)** - Implementation details and circuit design
+- **[Formal Verification (Picus)](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/README.md)** - Purpose/scope/success criteria + how to run
+- **[Determinism Statement](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/determinism.md)** - What Picus is checking (and what it is not)
+- **[Component Contracts](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/components.md)** - Component boundaries and interface contract checks
+- **[Picus Runbook](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/docs/formal/picus.md)** - Operational details for running Picus here
+
+## Formal Verification (Picus)
+
+Comprehensive formal verification is provided for deterministic underconstraint checks in:
+- component sub-circuits built from production gadgets,
+- monolithic `PorCircuit` broad production fixtures.
+
+Blocking controls include:
+- mutation fixtures expected `unsafe` across all 5 component families,
+- a monolithic carry-forward mutant expected `unsafe`,
+- fixture-pinned `expected_num_constraints` regression checks during export.
+
+Quick start (Dockerized Picus):
+
+```bash
+# sanity-check Dockerized run-picus
+tools/picus/check-docker.sh
+
+# run component blocking lane (defaults to component manifest/artifacts)
+tools/picus/run.sh --all --scope leafpath --simplify safe
+```
+
+If `run-picus` is not on image `PATH`, mount your Picus checkout (the wrapper auto-uses `/Picus/run-picus`):
+
+```bash
+PICUS_SOURCE_DIR=/path/to/Picus \
+tools/picus/run.sh --all --scope leafpath --simplify safe
+```
+
+Canonical export/verify commands (component + monolithic), solver/toolchain notes, and CI profile details are maintained in `docs/formal/picus.md`.
+The PyPI package `picus==0.0.5` is unrelated to Veridise Picus and does not support this flow.
+
+Current verification results are tracked in `docs/formal/results.md`.

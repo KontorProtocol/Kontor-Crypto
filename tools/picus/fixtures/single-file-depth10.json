@@ -1,0 +1,39 @@
+{
+  "fixture_id": "single-file-depth10",
+  "description": "Single-file deeper tree to validate shape scaling",
+  "scenario_kind": "single_file",
+  "challenge_count": 2,
+  "seed": 22345,
+  "block_height": 1000,
+  "prover_id": "formal_node",
+  "expected_result": "safe",
+  "verification": {
+    "scope": "leafpath",
+    "output_prefix_len": 0,
+    "solver_policy": {
+      "primary": "cvc5",
+      "fallbacks": [
+        "z3"
+      ]
+    },
+    "timeout_secs": 1200,
+    "hard_timeout_grace_secs": 120
+  },
+  "distinct_seeds": false,
+  "file_specs": [
+    {
+      "size": 15000,
+      "seed": 202
+    }
+  ],
+  "expected_shape": {
+    "files_per_step": 1,
+    "file_tree_depth": 10,
+    "aggregated_tree_depth": 0
+  },
+  "tags": [
+    "single",
+    "depth"
+  ],
+  "expected_num_constraints": 7028
+}
