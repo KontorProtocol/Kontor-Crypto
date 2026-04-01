@@ -50,11 +50,10 @@ sequenceDiagram
     Prover->>Prover: Select a set of Open Challenges to answer
     Prover->>Prover: Fetch corresponding PreparedFiles
     Prover->>Prover: PorSystem.prove(files, challenges) → Proof
-    Note over Prover: Proof object internally contains challenge_ids
+    Note over Prover: Proof object carries compressed SNARK + ledger_root + aggregated_tree_depth
 
     Prover-->>Verifier: Broadcast Proof to the network
-    Verifier->>Verifier: On receiving Proof, extract challenge_ids
-    Verifier->>Verifier: Fetch full Challenge objects from local database by ID
+    Verifier->>Verifier: On receiving Proof, look up the claimed Challenge set out-of-band
     Verifier->>Verifier: PorSystem.verify(proof, challenges) → bool
     alt is valid
         Verifier->>Verifier: Mark covered Open challenges as Resolved
@@ -66,13 +65,14 @@ sequenceDiagram
 ## Ledger & Aggregation
 
 -   A `FileLedger` binds the set of files via an aggregated Merkle tree built over root commitments `rc = H(TAG_RC, root, depth)`.
--   Files are ordered canonically by `file_id` (lexicographic, e.g., `BTreeMap` order). Public ledger indices refer to this canonical ordering.
+-   Files are committed at explicit stable append-only ledger indices. The `files` map is key-sorted for lookup, but the aggregated tree is built by `ledger_index`, not lexicographic `file_id` order.
 -   Multi-file proofs pin the ledger root as the aggregated root; single-file proofs pin the file root.
--   The verifier provides public ledger indices; the circuit trusts these (no range checks in circuit).
+-   The verifier re-derives public ledger indices from its own ledger state and rejects statements whose derived indices do not fit the claimed aggregated tree depth.
 
 ## Determinism & Canonical Ordering
 
--   Any set of files is treated deterministically by sorting by `file_id` whenever an order is required.
+-   Challenge sets are ordered canonically by `(file_id, challenge_id)` when a proof statement is built.
+-   Ledger reconstruction is deterministic only when explicit stable indices are preserved.
 -   The map from `file_id` → `PreparedFile` is derived internally from `Vec<PreparedFile>` to avoid user ordering mistakes.
 -   Seeds differ per file; domain separation prevents cross-file bias (multi-batch aggregation supported).
 
@@ -82,7 +82,9 @@ sequenceDiagram
 // Public commitment to a file
 pub struct FileMetadata {
     pub root: FieldElement,
-    pub file_id: String,            // hex(SHA256(data))
+    pub object_id: String,          // obj_<SHA256(data)>
+    pub file_id: String,            // file_<SHA256(domain || len(data) || data || len(nonce) || nonce)>
+    pub nonce: Vec<u8>,             // upload-specific nonce used in file_id derivation
     pub padded_len: usize,          // Total Merkle leaves (power of 2)
     pub original_size: usize,       // Original file size in bytes
     pub filename: String,
@@ -110,14 +112,25 @@ pub struct Challenge {
 // Deterministic identity for a Challenge.
 pub struct ChallengeID([u8; 32]);
 
-// Final succinct proof that includes its coverage set.
+// Final succinct proof with constant-size metadata.
 pub struct Proof {
     // existing CompressedSNARK payload
-    pub challenge_ids: Vec<ChallengeID>, // Exact ordered set of challenges covered
+    pub ledger_root: FieldElement,
+    pub aggregated_tree_depth: usize,
 }
 
 // Derivation for ChallengeID (using stable, cryptographic fields only)
-challenge_id = H(TAG_CHALLENGE_ID, encode(block_height) || encode(seed) || encode(file_id) || encode(root) || encode(depth) || encode(num_challenges) || [encode(prover_id)])
+challenge_id =
+    H(TAG_CHALLENGE_ID
+      || encode(block_height)
+      || encode(seed)
+      || len(file_id) || file_id
+      || len(nonce) || nonce
+      || encode(padded_len)
+      || encode(original_size)
+      || encode(root)
+      || encode(num_challenges)
+      || len(prover_id) || prover_id)
 ```
 
 ## Proof Serialization
@@ -129,11 +142,11 @@ let bytes = proof.to_bytes()?;
 let parsed = Proof::from_bytes(&bytes)?;
 ```
 
-The format is versioned, includes the `challenge_ids` vector, and rejects any trailing data.
+The format is versioned, rejects trailing data, and no longer serializes dynamic `challenge_ids` or `ledger_indices` vectors.
 
 ### Encoding Notes
 
 - Use a network-canonical encoding with explicit versioning and magic bytes.
 - Fixed-width, little-endian encodings for integers (e.g., `block_height: u64`).
 - Field elements are encoded in a canonical 32-byte form.
-- `challenge_ids` are serialized as a length-prefixed vector of 32-byte IDs.
+- Challenge coverage is supplied out-of-band to the verifier and rebound through verifier-constructed public inputs.

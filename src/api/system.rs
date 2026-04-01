@@ -100,6 +100,8 @@ impl<'a> PorSystem<'a> {
     /// Verify a proof against the Challenges it claims to answer.
     ///
     /// This method validates challenge inputs and performs SNARK verification.
+    /// The proof bytes are not self-describing coverage metadata; callers must supply
+    /// the exact `Challenge` objects they intend this proof to satisfy.
     ///
     /// # Arguments
     ///

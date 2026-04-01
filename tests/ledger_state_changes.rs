@@ -8,6 +8,7 @@ use kontor_crypto::{
 use std::collections::BTreeMap;
 
 mod common;
+use common::fixtures::collect_test_file_metadata_rows;
 
 #[test]
 fn test_file_removal_invalidates_proof() {
@@ -299,9 +300,9 @@ fn test_add_files_bulk_initialization() {
 
     // Bulk initialize ledger with all files at once
     let mut ledger = FileLedger::new();
-    ledger
-        .add_files(&[metadata1, metadata2, metadata3])
-        .expect("Bulk add should succeed");
+    let metadatas = vec![metadata1, metadata2, metadata3];
+    let indexed = collect_test_file_metadata_rows(metadatas.clone());
+    ledger.add_files(&indexed).expect("Bulk add should succeed");
 
     assert!(
         ledger.historical_roots.is_empty(),

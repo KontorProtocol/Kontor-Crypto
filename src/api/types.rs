@@ -56,8 +56,12 @@ mod proof_format {
     /// Magic bytes identifying Nova PoR proof format
     pub const MAGIC: &[u8] = b"NPOR";
 
-    /// Current format version for forward compatibility
-    pub const VERSION: u16 = 2;
+    /// Current format version for forward compatibility.
+    ///
+    /// Version 3 removes the serialized `challenge_ids` and `ledger_indices`
+    /// vectors from `Proof`, so older version-2 payloads must not decode as if
+    /// they were the new constant-size proof format.
+    pub const VERSION: u16 = 3;
 
     /// Header size in bytes: magic(4) + version(2) + length(4)
     pub const HEADER_SIZE: usize = 10;

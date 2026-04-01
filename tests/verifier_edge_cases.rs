@@ -53,7 +53,7 @@ fn test_verifier_rejects_out_of_range_ledger_index() {
 }
 
 #[test]
-fn test_verifier_rejects_ledger_indices_length_mismatch() {
+fn test_verifier_rejects_zero_aggregated_tree_depth_for_multifile() {
     // Verifier should reject multi-file proofs with aggregated_tree_depth = 0.
     let data_a = vec![3u8; 100];
     let data_b = vec![4u8; 100];
