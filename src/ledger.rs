@@ -42,7 +42,8 @@ pub trait FileDescriptor {
     fn depth(&self) -> usize;
     /// Returns this file's stable ledger index if known.
     ///
-    /// Implementations that do not supply an index use append-only assignment.
+    /// Implementations supplying persisted/reconstructed data must return `Some(index)`.
+    /// Fresh files appended via [`FileLedger::add_file`] must return `None`.
     fn ledger_index(&self) -> Option<usize> {
         None
     }
@@ -235,6 +236,10 @@ impl FileLedger {
     /// * `entry` - Any type that implements [`FileDescriptor`], providing
     ///   the file's ID, root, and depth.
     ///
+    /// [`Self::add_file`] is append-only: it only accepts fresh files and assigns the
+    /// next stable ledger index internally. Persisted/reconstructed entries must use
+    /// [`Self::add_files`] and provide explicit indices via [`FileDescriptor::ledger_index`].
+    ///
     /// # Example
     ///
     /// ```rust,no_run
@@ -251,7 +256,19 @@ impl FileLedger {
         self.ensure_runtime_index_cache_initialized()?;
 
         let file_id = entry.file_id().to_string();
-        let resolved_index = self.resolve_ledger_index(&file_id, entry.ledger_index())?;
+        if entry.ledger_index().is_some() {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "add_file does not accept explicit ledger_index for file '{}'; use add_files for reconstruction",
+                file_id
+            )));
+        }
+        if self.files.contains_key(&file_id) {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "File '{}' already exists in ledger; file_id is immutable",
+                file_id
+            )));
+        }
+        let resolved_index = self.next_ledger_index;
 
         if let Some(owner) = self.index_to_file_id.get(&resolved_index) {
             if owner != &file_id {
@@ -319,8 +336,11 @@ impl FileLedger {
     ///
     /// # Duplicate Handling
     ///
-    /// If a file with the same `file_id` already exists in the ledger or appears
-    /// multiple times in the batch, the last entry wins.
+    /// [`Self::add_files`] is the persisted/reconstruction path. Every entry must carry
+    /// an explicit stable index via [`FileDescriptor::ledger_index`].
+    ///
+    /// Duplicate `file_id`s are rejected, both against existing ledger contents and within
+    /// the batch itself, since `file_id` is immutable.
     ///
     pub fn add_files<'a, T: FileDescriptor + 'a>(
         &mut self,
@@ -328,91 +348,45 @@ impl FileLedger {
     ) -> Result<(), KontorPoRError> {
         self.ensure_runtime_index_cache_initialized()?;
 
-        // Phase 1: validate + compute indices without mutating self (last entry wins).
+        // Phase 1: validate + compute indices without mutating self.
         let mut planned: BTreeMap<String, IndexedFileLedgerEntry> = BTreeMap::new();
         let mut planned_indices: HashMap<usize, String> = HashMap::new();
         let mut next_index = self.next_ledger_index;
 
         for entry in files {
             let file_id = entry.file_id().to_string();
+            let idx = entry.ledger_index().ok_or_else(|| {
+                KontorPoRError::InvalidInput(format!(
+                    "add_files requires explicit ledger_index for file '{}'",
+                    file_id
+                ))
+            })?;
 
-            // If the file is already present, its ledger_index is stable.
-            if let Some(existing) = self.files.get(&file_id) {
-                if let Some(requested) = entry.ledger_index() {
-                    if requested != existing.ledger_index {
-                        return Err(KontorPoRError::InvalidInput(format!(
-                            "File '{}' already exists with ledger_index {}, but entry requested {}",
-                            file_id, existing.ledger_index, requested
-                        )));
-                    }
-                }
-
-                let idx = existing.ledger_index;
-                if let Some(owner) = self.index_to_file_id.get(&idx) {
-                    if owner != &file_id {
-                        return Err(KontorPoRError::InvalidInput(format!(
-                            "Ledger index {} already assigned to file '{}'",
-                            idx, owner
-                        )));
-                    }
-                }
-                if let Some(owner) = planned_indices.get(&idx) {
-                    if owner != &file_id {
-                        return Err(KontorPoRError::InvalidInput(format!(
-                            "Ledger index {} already assigned to file '{}' in batch",
-                            idx, owner
-                        )));
-                    }
-                }
-
-                planned.insert(
-                    file_id.clone(),
-                    IndexedFileLedgerEntry {
-                        ledger_index: idx,
-                        entry: FileLedgerEntry::from(entry),
-                    },
-                );
-                planned_indices.insert(idx, file_id);
-                continue;
+            if self.files.contains_key(&file_id) {
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "File '{}' already exists in ledger; file_id is immutable",
+                    file_id
+                )));
             }
 
-            // If the file already appeared earlier in this batch, keep its assigned index.
-            if let Some(existing) = planned.get(&file_id) {
-                planned.insert(
-                    file_id,
-                    IndexedFileLedgerEntry {
-                        ledger_index: existing.ledger_index,
-                        entry: FileLedgerEntry::from(entry),
-                    },
-                );
-                continue;
+            if planned.contains_key(&file_id) {
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "Duplicate file '{}' provided in add_files batch",
+                    file_id
+                )));
             }
-
-            // New file: either honor an explicit index or append at next_index.
-            let idx = match entry.ledger_index() {
-                Some(explicit) => explicit,
-                None => {
-                    let idx = next_index;
-                    next_index = next_index.saturating_add(1);
-                    idx
-                }
-            };
 
             if let Some(owner) = self.index_to_file_id.get(&idx) {
-                if owner != &file_id {
-                    return Err(KontorPoRError::InvalidInput(format!(
-                        "Ledger index {} already assigned to file '{}'",
-                        idx, owner
-                    )));
-                }
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "Ledger index {} already assigned to file '{}'",
+                    idx, owner
+                )));
             }
             if let Some(owner) = planned_indices.get(&idx) {
-                if owner != &file_id {
-                    return Err(KontorPoRError::InvalidInput(format!(
-                        "Ledger index {} already assigned to file '{}' in batch",
-                        idx, owner
-                    )));
-                }
+                return Err(KontorPoRError::InvalidInput(format!(
+                    "Ledger index {} already assigned to file '{}' in batch",
+                    idx, owner
+                )));
             }
 
             planned.insert(
@@ -516,26 +490,6 @@ impl FileLedger {
 
         self.tree = build_tree_from_leaves(&padded_rcs)?;
         Ok(())
-    }
-
-    fn resolve_ledger_index(
-        &self,
-        file_id: &str,
-        requested_index: Option<usize>,
-    ) -> Result<usize, KontorPoRError> {
-        if let Some(existing) = self.files.get(file_id) {
-            if let Some(idx) = requested_index {
-                if idx != existing.ledger_index {
-                    return Err(KontorPoRError::InvalidInput(format!(
-                        "File '{}' already has ledger index {}, got conflicting index {}",
-                        file_id, existing.ledger_index, idx
-                    )));
-                }
-            }
-            return Ok(existing.ledger_index);
-        }
-
-        Ok(requested_index.unwrap_or(self.next_ledger_index))
     }
 
     fn ensure_runtime_index_cache_initialized(&mut self) -> Result<(), KontorPoRError> {
@@ -688,7 +642,7 @@ impl FileLedger {
         self.tree.layers.len().saturating_sub(1)
     }
 
-    /// Looks up a file by its ID and returns its canonical index and leaf value (rc).
+    /// Looks up a file by its ID and returns its stable ledger index and leaf value (rc).
     /// The index is its stable append-only ledger index.
     pub fn lookup(&self, file_id: &str) -> Option<(usize, F)> {
         self.files
