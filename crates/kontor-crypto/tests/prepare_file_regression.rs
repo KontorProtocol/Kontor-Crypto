@@ -11,7 +11,7 @@ use kontor_crypto::utils::field_to_hex;
 fn prepare_file_hello_deterministic() {
     let data = b"hello";
     let filename = "test.txt";
-    let nonce: &[u8] = b"";
+    let nonce: &[u8] = b""; // lgtm[rust/hard-coded-cryptographic-value]
 
     let (prepared, metadata) = prepare_file(data, filename, nonce).unwrap();
 
@@ -21,7 +21,7 @@ fn prepare_file_hello_deterministic() {
     );
     assert_eq!(
         metadata.file_id,
-        "file_2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        "file_78f9691e17c086afe6b54bfbf3dc845f8f169dd61b9e1b3d5774eef89c651d42"
     );
     assert_eq!(metadata.original_size, 5);
     assert_eq!(metadata.filename, "test.txt");
@@ -42,14 +42,14 @@ fn prepare_file_with_nonce_changes_file_id() {
     let data = b"hello";
     let filename = "test.txt";
 
-    let (_, meta1) = prepare_file(data, filename, b"").unwrap();
-    let (_, meta2) = prepare_file(data, filename, b"nonce1").unwrap();
+    let (_, meta1) = prepare_file(data, filename, b"").unwrap(); // lgtm[rust/hard-coded-cryptographic-value]
+    let (_, meta2) = prepare_file(data, filename, b"nonce1").unwrap(); // lgtm[rust/hard-coded-cryptographic-value]
 
     assert_eq!(meta1.object_id, meta2.object_id);
     assert_ne!(meta1.file_id, meta2.file_id);
     assert_eq!(
         meta2.file_id,
-        "file_0e59fd3dd2853c2ff5a5d3726c1c816730ee60a0707f5543d5d11caa66225368"
+        "file_44f87b13abd124de5bcc42913647a61bbfe212135401f9fefb1d566ad1a87b43"
     );
     assert_eq!(meta1.root, meta2.root);
 }

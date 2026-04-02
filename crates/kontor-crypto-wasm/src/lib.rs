@@ -154,7 +154,10 @@ pub fn prepare_leaves(
     let object_id = format!("obj_{:x}", object_hasher.finalize());
 
     let mut file_hasher = Sha256::new();
+    file_hasher.update(b"kontor.file_id.v1");
+    file_hasher.update((file.len() as u64).to_le_bytes());
     file_hasher.update(file.as_ref());
+    file_hasher.update((nonce.len() as u64).to_le_bytes());
     file_hasher.update(nonce.as_ref());
     let file_id = format!("file_{:x}", file_hasher.finalize());
 
@@ -258,7 +261,7 @@ mod tests {
     fn prepare_file_metadata_consistency() {
         let file = b"hello";
         let filename = "test.txt";
-        let nonce: &[u8] = b"";
+        let nonce: &[u8] = b""; // lgtm[rust/hard-coded-cryptographic-value]
         let (prepared, metadata) = prepare_file(file, filename, nonce).unwrap();
         let meta_out = metadata_to_out(&metadata);
         let prep_out = prepared_file_to_out(&prepared);
@@ -290,13 +293,13 @@ mod tests {
 
     #[test]
     fn prepare_file_empty_input_returns_error() {
-        let result = prepare_file(b"", "empty.txt", b"");
+        let result = prepare_file(b"", "empty.txt", b""); // lgtm[rust/hard-coded-cryptographic-value]
         assert!(result.is_err(), "empty input must fail");
     }
 
     #[test]
     fn descriptor_root_matches_metadata_field_repr() {
-        let (_, metadata) = prepare_file(b"hello", "test.txt", b"").unwrap();
+        let (_, metadata) = prepare_file(b"hello", "test.txt", b"").unwrap(); // lgtm[rust/hard-coded-cryptographic-value]
         let desc = metadata_to_descriptor_out(&metadata);
         let meta_out = metadata_to_out(&metadata);
 
@@ -323,7 +326,7 @@ mod tests {
     #[test]
     fn prepare_file_multi_codeword() {
         let data = vec![42u8; 15_000];
-        let (prepared, metadata) = prepare_file(&data, "big.bin", b"nonce").unwrap();
+        let (prepared, metadata) = prepare_file(&data, "big.bin", b"nonce").unwrap(); // lgtm[rust/hard-coded-cryptographic-value]
         let meta_out = metadata_to_out(&metadata);
         let prep_out = prepared_file_to_out(&prepared);
 
@@ -350,8 +353,8 @@ mod tests {
 
     #[test]
     fn prepare_file_nonce_changes_file_id_not_root() {
-        let (_, m1) = prepare_file(b"data", "f.bin", b"").unwrap();
-        let (_, m2) = prepare_file(b"data", "f.bin", b"nonce").unwrap();
+        let (_, m1) = prepare_file(b"data", "f.bin", b"").unwrap(); // lgtm[rust/hard-coded-cryptographic-value]
+        let (_, m2) = prepare_file(b"data", "f.bin", b"nonce").unwrap(); // lgtm[rust/hard-coded-cryptographic-value]
 
         assert_eq!(m1.object_id, m2.object_id, "same content, same object_id");
         assert_ne!(m1.file_id, m2.file_id, "different nonce, different file_id");
@@ -366,7 +369,7 @@ mod tests {
         use kontor_crypto_core::poseidon::FieldElement;
 
         let data = vec![42u8; 15_000];
-        let (_, metadata) = prepare_file(&data, "test.bin", b"nonce").unwrap();
+        let (_, metadata) = prepare_file(&data, "test.bin", b"nonce").unwrap(); // lgtm[rust/hard-coded-cryptographic-value]
         let sequential_root = metadata.root;
 
         let all_symbols = encode_file_symbols(&data).unwrap();

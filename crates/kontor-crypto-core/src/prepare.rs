@@ -8,7 +8,7 @@ use crate::types::{FileMetadata, PreparedFile};
 use sha2::{Digest, Sha256};
 
 /// Prepares raw data into PreparedFile and FileMetadata.
-/// Algorithm: object_id = SHA256(data), file_id = SHA256(data||nonce),
+/// Algorithm: object_id = SHA256(data), file_id = SHA256(domain || len(data) || data || len(nonce) || nonce),
 /// encode_file_symbols, pad to power of two, build_tree, build metadata and prepared file.
 pub fn prepare_file(
     data: &[u8],
@@ -26,7 +26,10 @@ pub fn prepare_file(
     let object_id = format!("obj_{:x}", object_hasher.finalize());
 
     let mut file_hasher = Sha256::new();
+    file_hasher.update(b"kontor.file_id.v1");
+    file_hasher.update((data.len() as u64).to_le_bytes());
     file_hasher.update(data);
+    file_hasher.update((nonce.len() as u64).to_le_bytes());
     file_hasher.update(nonce);
     let file_id = format!("file_{:x}", file_hasher.finalize());
 
