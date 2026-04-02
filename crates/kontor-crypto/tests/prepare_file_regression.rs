@@ -11,8 +11,7 @@ use kontor_crypto::utils::field_to_hex;
 fn prepare_file_hello_deterministic() {
     let data = b"hello";
     let filename = "test.txt";
-    let nonce: &[u8] = b""; // lgtm[rust/hard-coded-cryptographic-value]
-
+    let nonce: &[u8] = b"";
     let (prepared, metadata) = prepare_file(data, filename, nonce).unwrap();
 
     assert_eq!(
@@ -42,9 +41,8 @@ fn prepare_file_with_nonce_changes_file_id() {
     let data = b"hello";
     let filename = "test.txt";
 
-    let (_, meta1) = prepare_file(data, filename, b"").unwrap(); // lgtm[rust/hard-coded-cryptographic-value]
-    let (_, meta2) = prepare_file(data, filename, b"nonce1").unwrap(); // lgtm[rust/hard-coded-cryptographic-value]
-
+    let (_, meta1) = prepare_file(data, filename, b"").unwrap();
+    let (_, meta2) = prepare_file(data, filename, b"nonce1").unwrap();
     assert_eq!(meta1.object_id, meta2.object_id);
     assert_ne!(meta1.file_id, meta2.file_id);
     assert_eq!(

@@ -1,0 +1,8 @@
+name: "Kontor Crypto CodeQL Config"
+
+paths-ignore:
+  - "**/tests/**"
+  - "**/tests/*.rs"
+  - "**/benches/**"
+  - "**/examples/**"
+  - "**/fuzz/**"
