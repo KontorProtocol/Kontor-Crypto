@@ -256,9 +256,9 @@ pub fn derive_shape(num_files: usize, max_depth: usize) -> (usize, usize) {
 // --- Hashing and Merkle Tree Parameters (re-exported from core) ---
 
 pub use kontor_crypto_core::config::{
-    CHUNK_SIZE_BYTES, DATA_SYMBOLS_PER_CODEWORD, MAX_FILENAME_LEN_BYTES,
-    MAX_FILE_SIZE_BYTES, MAX_IDENTIFIER_LEN_BYTES, MAX_NONCE_LEN_BYTES,
-    PARITY_SYMBOLS_PER_CODEWORD, TOTAL_SYMBOLS_PER_CODEWORD,
+    CHUNK_SIZE_BYTES, DATA_SYMBOLS_PER_CODEWORD, MAX_FILENAME_LEN_BYTES, MAX_FILE_SIZE_BYTES,
+    MAX_IDENTIFIER_LEN_BYTES, MAX_NONCE_LEN_BYTES, PARITY_SYMBOLS_PER_CODEWORD,
+    TOTAL_SYMBOLS_PER_CODEWORD,
 };
 
 // --- Erasure Coding Parameters ---
@@ -280,7 +280,6 @@ pub const MAX_LEDGER_SIZE_BYTES: usize = 100 * 1024 * 1024;
 /// Maximum accepted proof payload size during deserialization (50 MB).
 /// This bounds memory/CPU exposure from malformed or adversarial proof bytes.
 pub const MAX_PROOF_SIZE_BYTES: usize = 50 * 1024 * 1024;
-
 
 /// Default maximum number of historical roots retained by a ledger instance.
 /// Older roots are pruned when this cap is exceeded.

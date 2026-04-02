@@ -134,9 +134,7 @@ impl FileMetadata {
         let encoded_capacity = total_symbols
             .checked_mul(config::CHUNK_SIZE_BYTES)
             .ok_or_else(|| {
-                CoreError::InvalidInput(
-                    "FileMetadata encoded byte capacity overflow".to_string(),
-                )
+                CoreError::InvalidInput("FileMetadata encoded byte capacity overflow".to_string())
             })?;
         if self.original_size > encoded_capacity {
             return Err(CoreError::InvalidInput(format!(
