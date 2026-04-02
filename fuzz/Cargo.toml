@@ -11,7 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 
 [dependencies.kontor-crypto]
-path = ".."
+path = "../crates/kontor-crypto"
 
 [[bin]]
 name = "proof_from_bytes"

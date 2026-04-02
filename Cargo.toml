@@ -5,6 +5,7 @@ members = [
     "crates/kontor-crypto-core",
     "crates/kontor-crypto-wasm",
 ]
+exclude = ["fuzz"]
 
 [profile.dev]
 opt-level = 3
