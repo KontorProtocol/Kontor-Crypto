@@ -11,3 +11,15 @@ pub const PARITY_SYMBOLS_PER_CODEWORD: usize = 24;
 
 /// Total symbols per codeword (data + parity).
 pub const TOTAL_SYMBOLS_PER_CODEWORD: usize = 255;
+
+/// Maximum accepted raw file size for `prepare_file` (100 MB).
+pub const MAX_FILE_SIZE_BYTES: usize = 100 * 1024 * 1024;
+
+/// Maximum accepted filename length in bytes.
+pub const MAX_FILENAME_LEN_BYTES: usize = 1024;
+
+/// Maximum accepted file identifier / object identifier length in bytes.
+pub const MAX_IDENTIFIER_LEN_BYTES: usize = 1024;
+
+/// Maximum accepted nonce length in bytes.
+pub const MAX_NONCE_LEN_BYTES: usize = 4096;

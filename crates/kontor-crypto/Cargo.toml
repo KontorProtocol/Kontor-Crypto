@@ -61,6 +61,7 @@ clap = { version = "4.5.10", features = ["derive"] }
 rand = "0.8.5"
 statrs = "0.18.0"
 divan = { version = "4.1", package = "codspeed-divan-compat" }
+tempfile = "3"
 
 [features]
 default = []
