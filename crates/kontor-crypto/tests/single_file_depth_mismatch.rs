@@ -8,6 +8,7 @@ use kontor_crypto::{
     api::FieldElement,
     circuit::CircuitWitness,
     circuit::{FileProofWitness, PorCircuit},
+    poseidon::calculate_root_commitment,
 };
 use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 use nova_snark::traits::circuit::StepCircuit;
@@ -48,7 +49,11 @@ fn test_single_file_depth_mismatch_rejected() {
         FieldElement::from(42u64),  // seed
         &[0],                       // ledger_indices
         &[1],                       // depths: WRONG! claim depth=1 when actual=2
-        &[FieldElement::ZERO],      // leaves
+        &[calculate_root_commitment(
+            FieldElement::from(200u64),
+            FieldElement::from(2u64),
+        )],
+        &[FieldElement::ZERO], // leaves
     );
 
     // Synthesize the circuit
@@ -67,8 +72,10 @@ fn test_single_file_depth_mismatch_rejected() {
 
 #[test]
 fn test_single_file_zero_depth_accepted() {
-    // Test that a real single-file with depth=0 works correctly
-    println!("Testing single-file zero depth acceptance...");
+    // Depth=0 is used as the canonical "inactive/padding slot" marker.
+    // With statement-canonicalization enabled, all per-slot public inputs must be zero
+    // when depth=0. This test ensures the circuit remains satisfiable in that case.
+    println!("Testing single-file depth=0 (inactive slot) acceptance...");
 
     // Create a witness for a file with actual_depth = 0 (minimal case)
     let witness = FileProofWitness {
@@ -90,14 +97,15 @@ fn test_single_file_zero_depth_accepted() {
 
     let mut cs = TestConstraintSystem::<FieldElement>::new();
 
-    // Create public inputs with CORRECT depth=0
+    // Create public inputs with depth=0 and canonical zero per-slot fields.
     let z_in = create_circuit_public_inputs(
         &mut cs,
-        FieldElement::from(100u64), // aggregated_root (matches leaf for depth=0)
+        FieldElement::from(100u64), // aggregated_root (not checked when slot inactive)
         FieldElement::ZERO,         // state_in
-        FieldElement::from(42u64),  // seed
+        FieldElement::ZERO,         // seed (canonical for inactive)
         &[0],                       // ledger_indices
         &[0],                       // depths: CORRECT! depth=0 matches actual
+        &[FieldElement::ZERO],      // expected_rcs (canonical for inactive)
         &[FieldElement::ZERO],      // leaves
     );
 

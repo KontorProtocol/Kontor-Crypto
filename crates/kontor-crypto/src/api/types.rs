@@ -69,7 +69,7 @@ mod proof_format {
     pub const MAGIC: &[u8] = b"NPOR";
 
     /// Current format version for forward compatibility
-    pub const VERSION: u16 = 1;
+    pub const VERSION: u16 = 2;
 
     /// Header size in bytes: magic(4) + version(2) + length(4)
     pub const HEADER_SIZE: usize = 10;
@@ -98,13 +98,24 @@ impl Proof {
         let options = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .with_little_endian()
+            .with_limit(crate::config::MAX_PROOF_SIZE_BYTES as u64)
             .reject_trailing_bytes();
         let proof_bytes = options.serialize(self).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to serialize proof: {}", e))
         })?;
 
+        if proof_bytes.len() > crate::config::MAX_PROOF_SIZE_BYTES {
+            return Err(KontorPoRError::Serialization(format!(
+                "Proof size {} bytes exceeds maximum {} bytes",
+                proof_bytes.len(),
+                crate::config::MAX_PROOF_SIZE_BYTES
+            )));
+        }
+
         // Write length and data
-        let length = proof_bytes.len() as u32;
+        let length: u32 = proof_bytes.len().try_into().map_err(|_| {
+            KontorPoRError::Serialization("Proof size exceeds 32-bit length header".to_string())
+        })?;
         result.extend_from_slice(&length.to_le_bytes());
         result.extend_from_slice(&proof_bytes);
 
@@ -152,7 +163,19 @@ impl Proof {
         // Read length
         let length = u32::from_le_bytes([bytes[6], bytes[7], bytes[8], bytes[9]]) as usize;
 
-        let expected_len = proof_format::HEADER_SIZE + length;
+        if length > crate::config::MAX_PROOF_SIZE_BYTES {
+            return Err(KontorPoRError::Serialization(format!(
+                "Proof payload size {} bytes exceeds maximum {} bytes",
+                length,
+                crate::config::MAX_PROOF_SIZE_BYTES
+            )));
+        }
+
+        let expected_len = proof_format::HEADER_SIZE
+            .checked_add(length)
+            .ok_or_else(|| {
+                KontorPoRError::Serialization("Proof length header overflow".to_string())
+            })?;
         if bytes.len() < expected_len {
             return Err(KontorPoRError::Serialization(
                 "Proof bytes truncated".to_string(),
@@ -170,6 +193,7 @@ impl Proof {
         let options = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .with_little_endian()
+            .with_limit(crate::config::MAX_PROOF_SIZE_BYTES as u64)
             .reject_trailing_bytes();
         let proof = options.deserialize(proof_bytes).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to deserialize proof: {}", e))
@@ -288,6 +312,33 @@ impl Challenge {
         }
     }
 
+    /// Validate challenge structure and bounded fields.
+    pub fn validate(&self) -> crate::Result<()> {
+        use crate::{config, KontorPoRError};
+
+        self.file_metadata.validate()?;
+
+        if self.num_challenges == 0 || self.num_challenges > config::MAX_NUM_CHALLENGES {
+            return Err(KontorPoRError::InvalidChallengeCount {
+                count: self.num_challenges,
+            });
+        }
+        if self.prover_id.is_empty() {
+            return Err(KontorPoRError::InvalidInput(
+                "Challenge.prover_id must be non-empty".to_string(),
+            ));
+        }
+        if self.prover_id.len() > config::MAX_IDENTIFIER_LEN_BYTES {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "Challenge.prover_id length {} exceeds maximum {}",
+                self.prover_id.len(),
+                config::MAX_IDENTIFIER_LEN_BYTES
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Create a challenge with default test prover ID (convenience for testing)
     #[doc(hidden)]
     pub fn new_test(
@@ -310,6 +361,16 @@ impl Challenge {
         use crate::poseidon::domain_tags;
         use ff::PrimeField;
 
+        fn feed_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
+            let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+            hasher.update(len.to_le_bytes());
+            hasher.update(bytes);
+        }
+
+        fn usize_to_u64(value: usize) -> u64 {
+            u64::try_from(value).unwrap_or(u64::MAX)
+        }
+
         let mut hasher = Sha256::new();
 
         // Add domain tag for challenge ID
@@ -322,16 +383,18 @@ impl Challenge {
         // Add seed (field element as bytes)
         hasher.update(self.seed.to_repr());
 
-        // Add file metadata components
-        hasher.update(self.file_metadata.file_id.as_bytes());
+        // Add file metadata components with canonical, length-delimited encoding.
+        feed_len_prefixed(&mut hasher, self.file_metadata.file_id.as_bytes());
+        feed_len_prefixed(&mut hasher, self.file_metadata.nonce.as_slice());
+        hasher.update(usize_to_u64(self.file_metadata.padded_len).to_le_bytes());
+        hasher.update(usize_to_u64(self.file_metadata.original_size).to_le_bytes());
         hasher.update(self.file_metadata.root.to_repr());
-        hasher.update((self.file_metadata.padded_len.trailing_zeros() as u64).to_le_bytes()); // depth
 
         // Add num_challenges
-        hasher.update((self.num_challenges as u64).to_le_bytes());
+        hasher.update(usize_to_u64(self.num_challenges).to_le_bytes());
 
-        // Add prover_id
-        hasher.update(self.prover_id.as_bytes());
+        // Add prover_id with explicit length prefix.
+        feed_len_prefixed(&mut hasher, self.prover_id.as_bytes());
 
         let result = hasher.finalize();
         ChallengeID(result.into())

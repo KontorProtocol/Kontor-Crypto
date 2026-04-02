@@ -255,9 +255,24 @@ pub fn create_test_data(size: usize, seed: Option<u64>) -> Vec<u8> {
     data
 }
 
+/// Creates synthetic metadata for ledger-focused tests.
+pub fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> FileMetadata {
+    FileMetadata {
+        root,
+        object_id: format!("object_{}", file_id),
+        file_id: file_id.to_string(),
+        nonce: vec![],
+        padded_len: 1 << depth,
+        original_size: 100,
+        filename: format!("{}.dat", file_id),
+    }
+}
+
 /// Creates allocated public inputs (z0) for circuit testing.
 /// This centralizes the repetitive pattern of allocating z0 vectors.
-/// Phase 3: Updated for new public I/O schema [agg_root, state_in, seed, ledger_indices..., depths..., leaves...]
+/// Public I/O schema:
+/// [agg_root, state_in, ledger_indices..., depths..., seeds..., expected_rcs..., leaves...]
+#[allow(clippy::too_many_arguments)]
 pub fn create_circuit_public_inputs<F: PrimeField, CS: ConstraintSystem<F>>(
     cs: &mut CS,
     agg_root: F,
@@ -265,6 +280,7 @@ pub fn create_circuit_public_inputs<F: PrimeField, CS: ConstraintSystem<F>>(
     seed: F,
     ledger_indices: &[usize],
     depths: &[usize],
+    expected_rcs: &[F],
     leaf_values: &[F],
 ) -> Vec<AllocatedNum<F>> {
     let mut z = Vec::new();
@@ -296,6 +312,16 @@ pub fn create_circuit_public_inputs<F: PrimeField, CS: ConstraintSystem<F>>(
     // Seeds (per-file, same seed for all files in this helper for backward compat)
     for i in 0..ledger_indices.len() {
         z.push(AllocatedNum::alloc(cs.namespace(|| format!("seed_{}", i)), || Ok(seed)).unwrap());
+    }
+
+    // Expected RC values
+    for (i, &expected_rc) in expected_rcs.iter().enumerate() {
+        z.push(
+            AllocatedNum::alloc(cs.namespace(|| format!("expected_rc_{}", i)), || {
+                Ok(expected_rc)
+            })
+            .unwrap(),
+        );
     }
 
     // Leaf values

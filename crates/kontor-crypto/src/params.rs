@@ -13,8 +13,8 @@ use nova_snark::{
 };
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use tracing::{debug, info};
+use std::sync::{Arc, Mutex, MutexGuard};
+use tracing::{debug, info, warn};
 
 // Type aliases for readability
 type E1 = PallasEngine;
@@ -43,6 +43,13 @@ const MAX_CACHE_SIZE: usize = 50;
 /// Limited to MAX_CACHE_SIZE entries with LRU eviction.
 static MEMORY_CACHE: Lazy<Mutex<HashMap<ParamKey, PorParams>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn lock_memory_cache<'a>() -> MutexGuard<'a, HashMap<ParamKey, PorParams>> {
+    MEMORY_CACHE.lock().unwrap_or_else(|poisoned| {
+        warn!("Parameter cache mutex was poisoned; recovering cached entries");
+        poisoned.into_inner()
+    })
+}
 
 /// Generate new parameters for the given shape.
 fn generate_params_for_shape(
@@ -162,9 +169,7 @@ pub fn load_or_generate_params(
 
     // Check memory cache first
     {
-        let cache = MEMORY_CACHE
-            .lock()
-            .expect("Parameter cache mutex should not be poisoned");
+        let cache = lock_memory_cache();
         if let Some(params) = cache.get(&key) {
             debug!("Using memory-cached parameters for {:?}", key);
             return Ok(params.clone());
@@ -176,9 +181,7 @@ pub fn load_or_generate_params(
 
     // Store in memory cache with size limit
     {
-        let mut cache = MEMORY_CACHE
-            .lock()
-            .expect("Parameter cache mutex should not be poisoned");
+        let mut cache = lock_memory_cache();
 
         // Simple eviction: if at max size, remove an arbitrary entry
         if cache.len() >= MAX_CACHE_SIZE {
@@ -196,18 +199,14 @@ pub fn load_or_generate_params(
 
 /// Clear the in-memory cache. Useful for testing or memory management.
 pub fn clear_memory_cache() {
-    let mut cache = MEMORY_CACHE
-        .lock()
-        .expect("Parameter cache mutex should not be poisoned");
+    let mut cache = lock_memory_cache();
     cache.clear();
     debug!("Memory cache cleared");
 }
 
 /// Get the current memory cache size.
 pub fn memory_cache_size() -> usize {
-    let cache = MEMORY_CACHE
-        .lock()
-        .expect("Parameter cache mutex should not be poisoned");
+    let cache = lock_memory_cache();
     cache.len()
 }
 

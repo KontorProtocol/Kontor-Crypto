@@ -70,3 +70,11 @@ claude
 .nvimlog
 artifacts/
 artifacts/picus/
+
+# CI / analysis artifacts
+artifacts/
+
+# cargo-fuzz
+fuzz/artifacts/
+fuzz/coverage/
+fuzz/target/

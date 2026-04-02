@@ -168,14 +168,6 @@ pub fn synthesize_challenge_component<F: PrimeField + PrimeFieldBits, CS: Constr
     let state_in = &z[layout.idx_state_in()];
 
     for i in 0..files_per_step {
-        if mutant {
-            out[layout.idx_leaf(i)] = AllocatedNum::alloc(
-                cs.namespace(|| format!("challenge_unconstrained_{i}")),
-                || Ok(F::ZERO),
-            )?;
-            continue;
-        }
-
         let seed_public = &z[layout.idx_seed(i)];
         let file_idx_field = if aggregated_tree_depth > 0 {
             F::from(i as u64)
@@ -525,6 +517,26 @@ pub fn synthesize_carry_forward_component<
     mutant: bool,
 ) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
     copy_all_inputs_to_aux(cs, z, !mutant)
+}
+
+/// Monolithic positive-control mutant with the same public IO arity as `PorCircuit`.
+pub fn synthesize_full_carry_forward_mutant<
+    F: PrimeField + PrimeFieldBits,
+    CS: ConstraintSystem<F>,
+>(
+    cs: &mut CS,
+    z: &[AllocatedNum<F>],
+    files_per_step: usize,
+) -> Result<Vec<AllocatedNum<F>>, SynthesisError> {
+    let layout = PublicIOLayout::new(files_per_step);
+    assert_eq!(
+        z.len(),
+        layout.arity(),
+        "Public input count mismatch: expected {}, got {}",
+        layout.arity(),
+        z.len()
+    );
+    copy_all_inputs_to_aux(cs, z, false)
 }
 
 /// Component: challenge derivation only.

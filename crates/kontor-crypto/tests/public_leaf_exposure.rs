@@ -10,7 +10,9 @@ use ff::Field;
 use kontor_crypto::{
     api::{self, Challenge, FieldElement},
     circuit::PorCircuit,
-    leaf_to_bytes31, merkle, FileLedger,
+    leaf_to_bytes31, merkle,
+    poseidon::calculate_root_commitment,
+    FileLedger,
 };
 use nova_snark::frontend::util_cs::test_cs::TestConstraintSystem;
 use nova_snark::traits::circuit::StepCircuit;
@@ -69,6 +71,12 @@ fn test_public_leaf_binding() {
         FieldElement::from(42u64),
         &[0, 1, 2, 3], // ledger_indices
         &[2, 2, 0, 0], // depths (2 real files with depth 2, 2 padding with depth 0)
+        &[
+            calculate_root_commitment(FieldElement::from(100u64), FieldElement::from(2u64)),
+            calculate_root_commitment(FieldElement::from(200u64), FieldElement::from(2u64)),
+            FieldElement::ZERO,
+            FieldElement::ZERO,
+        ],
         &[FieldElement::ZERO; 4],
     );
 
@@ -76,8 +84,8 @@ fn test_public_leaf_binding() {
     let outputs = circuit.synthesize(&mut cs, &z).unwrap();
 
     // Check that the public leaf outputs match expectations
-    // Current schema: [2 fixed] + [4 ledger_indices] + [4 depths] + [4 seeds] + [4 leaves]
-    let leaf_start_idx = 2 + 4 + 4 + 4; // 14
+    // Current schema: [2 fixed] + [4 ledger_indices] + [4 depths] + [4 seeds] + [4 expected_rcs] + [4 leaves]
+    let leaf_start_idx = 2 + 4 + 4 + 4 + 4; // 18
 
     // First leaf should be 42 (real file)
     assert_eq!(

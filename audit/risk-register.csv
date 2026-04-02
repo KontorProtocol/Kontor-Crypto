@@ -1,0 +1,15 @@
+id,title,severity,status,owner,due_date,notes
+FND-001,Malformed symbol decode could panic or mis-handle inputs,High,Closed,security-engineering,2026-02-12,Added strict decode pre-validation and negative tests
+FND-002,Metadata invariants not enforced at API boundaries,High,Closed,security-engineering,2026-02-12,Added FileMetadata/Challenge validation and boundary enforcement
+FND-003,Duplicate challenge acceptance in prove/verify,Medium,Closed,security-engineering,2026-02-12,Rejected duplicates by ChallengeID
+FND-004,ChallengeID variable-field encoding ambiguity,Medium,Closed,security-engineering,2026-02-12,Added length-delimited canonical encoding and stronger field binding
+FND-005,Insufficient input guardrails for API boundary fields,Medium,Closed,security-engineering,2026-02-12,Added file size and field length limits
+FND-006,Non-circuit challenge fields not cryptographically bound in recursive state,High,Closed,security-engineering,2026-02-12,Bound initial recursive state to ordered ChallengeID set and added rebinding regression
+FND-007,Ledger membership in plan derivation accepted rc-only collisions,Medium,Closed,security-engineering,2026-02-12,Switched to exact file_id lookup with rc consistency check and added regression
+FND-008,Parameter cache mutex poisoning caused panic-based denial of service,Low,Closed,security-engineering,2026-02-12,Recovered poisoned mutex state and continued safely with warning log
+RES-001,Fuzzing coverage incomplete,Low,Closed,security-engineering,2026-02-12,Implemented cargo-fuzz targets plus corpus seeds and CI smoke/extended jobs
+RES-002,Historical-root retention policy not codified,Low,Closed,protocol-ops,2026-02-12,Implemented policy enum with bounded retention and pruning tests
+RES-003,No CI fuzz corpus regression,Low,Closed,security-engineering,2026-02-12,Added PR smoke replay and scheduled extended fuzz workflow
+FND-009,CI workflows referenced unpinned GitHub Actions,Low,Closed,security-engineering,2026-02-13,Pinned actions/checkout and rust-toolchain usage to immutable SHAs; standardized rust-cache usage
+FND-010,Inactive-slot public inputs not forced to canonical zeros,Low,Closed,security-engineering,2026-02-13,Added explicit circuit constraints and regression tests to enforce canonical zeros for depth==0 slots
+FND-011,Active-flag Merkle depth gating allowed non-prefix patterns,Medium,Closed,security-engineering,2026-02-13,Added prefix-ones constraints for active_flags to prevent holey gating patterns; added regression asserting constraints are present

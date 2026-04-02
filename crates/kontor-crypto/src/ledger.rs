@@ -18,6 +18,7 @@
 use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTree, F};
 use crate::poseidon::calculate_root_commitment;
 use crate::KontorPoRError;
+use bincode::Options;
 use ff::Field;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -35,6 +36,21 @@ pub trait FileDescriptor {
     fn root(&self) -> F;
     /// Returns the depth of this file's Merkle tree.
     fn depth(&self) -> usize;
+}
+
+/// Retention policy for historical roots used during proof validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HistoricalRootPolicy {
+    /// Keep all historical roots.
+    Unlimited,
+    /// Keep at most `n` historical roots, pruning oldest entries first.
+    MaxRoots(usize),
+}
+
+impl Default for HistoricalRootPolicy {
+    fn default() -> Self {
+        HistoricalRootPolicy::MaxRoots(crate::config::DEFAULT_MAX_HISTORICAL_ROOTS)
+    }
 }
 
 /// Entry for a single file in the ledger, combining all file information.
@@ -70,6 +86,8 @@ struct LedgerData {
     root: F,
     #[serde(default)]
     historical_roots: Vec<[u8; 32]>,
+    #[serde(default)]
+    historical_root_policy: HistoricalRootPolicy,
 }
 
 /// The `FileLedger` manages the aggregated Merkle tree of all file roots.
@@ -103,6 +121,9 @@ pub struct FileLedger {
     /// Use [`Self::set_historical_roots`] to replace this list.
     #[serde(default)]
     pub historical_roots: Vec<[u8; 32]>,
+    /// Historical-root retention policy.
+    #[serde(default)]
+    pub historical_root_policy: HistoricalRootPolicy,
 }
 
 impl Default for FileLedger {
@@ -113,6 +134,7 @@ impl Default for FileLedger {
                 layers: vec![vec![]],
             },
             historical_roots: Vec::new(),
+            historical_root_policy: HistoricalRootPolicy::default(),
         }
     }
 }
@@ -139,6 +161,7 @@ impl FileLedger {
         let root = self.tree.root();
         let repr: [u8; 32] = root.to_repr().into();
         self.historical_roots.push(repr);
+        self.prune_historical_roots();
     }
 
     /// Checks if a root is valid (either current or in historical set).
@@ -159,6 +182,18 @@ impl FileLedger {
     /// This replaces any existing historical roots with the provided values.
     pub fn set_historical_roots(&mut self, roots: Vec<[u8; 32]>) {
         self.historical_roots = roots;
+        self.prune_historical_roots();
+    }
+
+    /// Returns the configured historical-root retention policy.
+    pub fn historical_root_policy(&self) -> HistoricalRootPolicy {
+        self.historical_root_policy
+    }
+
+    /// Sets the historical-root retention policy.
+    pub fn set_historical_root_policy(&mut self, policy: HistoricalRootPolicy) {
+        self.historical_root_policy = policy;
+        self.prune_historical_roots();
     }
 
     // --- File Management ---
@@ -264,9 +299,15 @@ impl FileLedger {
             files: self.files.clone(),
             root: self.tree.root(),
             historical_roots: self.historical_roots.clone(),
+            historical_root_policy: self.historical_root_policy,
         };
 
-        let encoded = bincode::serialize(&data).map_err(|e| {
+        // Pin ledger wire encoding to fixed-width ints + LE endianness so the
+        // save/load format stays stable even if bincode defaults change.
+        let options = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_little_endian();
+        let encoded = options.serialize(&data).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to serialize ledger: {}", e))
         })?;
 
@@ -305,7 +346,16 @@ impl FileLedger {
             )));
         }
 
-        let data: LedgerData = bincode::deserialize(&encoded).map_err(|e| {
+        // Match save() encoding and reject trailing bytes to harden file parsing.
+        //
+        // `with_limit` is a safety guard against allocation DoS via attacker-controlled
+        // container lengths inside the bincode payload.
+        let options = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_little_endian()
+            .with_limit(crate::config::MAX_LEDGER_SIZE_BYTES as u64)
+            .reject_trailing_bytes();
+        let data: LedgerData = options.deserialize(&encoded).map_err(|e| {
             KontorPoRError::Serialization(format!("Failed to deserialize ledger: {}", e))
         })?;
 
@@ -321,8 +371,10 @@ impl FileLedger {
             files: data.files,
             tree: MerkleTree::default(),
             historical_roots: data.historical_roots,
+            historical_root_policy: data.historical_root_policy,
         };
         ledger.rebuild_tree()?;
+        ledger.prune_historical_roots();
 
         if ledger.tree.root() != data.root {
             return Err(KontorPoRError::LedgerValidation {
@@ -362,5 +414,62 @@ impl FileLedger {
 
         let depth = self.depth();
         get_padded_proof_for_leaf(&self.tree, index, depth).ok()
+    }
+
+    fn prune_historical_roots(&mut self) {
+        match self.historical_root_policy {
+            HistoricalRootPolicy::Unlimited => {}
+            HistoricalRootPolicy::MaxRoots(max_roots) => {
+                if self.historical_roots.len() > max_roots {
+                    let drop_count = self.historical_roots.len() - max_roots;
+                    self.historical_roots.drain(0..drop_count);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+
+    #[test]
+    fn regression_ledger_load_rejects_oversized_historical_roots_len() {
+        use ff::PrimeField;
+        use tempfile::NamedTempFile;
+
+        // Build a valid encoded LedgerData first...
+        let root = F::from(123u64);
+        let data = LedgerData {
+            version: crate::config::LEDGER_FORMAT_VERSION,
+            files: BTreeMap::new(),
+            root,
+            historical_roots: vec![],
+            historical_root_policy: HistoricalRootPolicy::Unlimited,
+        };
+
+        let options = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_little_endian();
+        let mut encoded = options.serialize(&data).expect("serialize LedgerData");
+
+        // ...then corrupt the `historical_roots` vec length (u64 under fixint encoding).
+        // We find it by locating the serialized root bytes and patching the next 8 bytes.
+        let root_repr: [u8; 32] = root.to_repr().into();
+        let root_pos = encoded
+            .windows(root_repr.len())
+            .position(|w| w == root_repr)
+            .expect("serialized root bytes should appear in LedgerData encoding");
+        let len_pos = root_pos + root_repr.len();
+        encoded[len_pos..len_pos + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+
+        let tmp = NamedTempFile::new().expect("tempfile");
+        std::fs::write(tmp.path(), &encoded).expect("write tampered ledger bytes");
+
+        let err = FileLedger::load(tmp.path()).expect_err("must reject oversized vec length");
+        match err {
+            KontorPoRError::Serialization(_) => {}
+            other => panic!("unexpected error variant: {other:?}"),
+        }
     }
 }

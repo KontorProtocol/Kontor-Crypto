@@ -10,12 +10,12 @@ use crate::api::{prepare_file, tree_depth_from_metadata, Challenge, FieldElement
 use crate::circuit::formal_components::{
     synthesize_aggregation_merkle_component, synthesize_carry_forward_component,
     synthesize_challenge_component, synthesize_file_merkle_component,
-    synthesize_state_update_component, AggregationMerkleComponentCircuit,
-    AggregationMerkleMutantComponentCircuit, CarryForwardComponentCircuit,
-    CarryForwardMutantComponentCircuit, ChallengeDerivationComponentCircuit,
-    ChallengeDerivationMutantComponentCircuit, ComponentWitnessTrace, FileMerkleComponentCircuit,
-    FileMerkleMutantComponentCircuit, StateUpdateComponentCircuit,
-    StateUpdateMutantComponentCircuit,
+    synthesize_full_carry_forward_mutant, synthesize_state_update_component,
+    AggregationMerkleComponentCircuit, AggregationMerkleMutantComponentCircuit,
+    CarryForwardComponentCircuit, CarryForwardMutantComponentCircuit,
+    ChallengeDerivationComponentCircuit, ChallengeDerivationMutantComponentCircuit,
+    ComponentWitnessTrace, FileMerkleComponentCircuit, FileMerkleMutantComponentCircuit,
+    StateUpdateComponentCircuit, StateUpdateMutantComponentCircuit,
 };
 #[cfg(feature = "formal-dev")]
 use crate::circuit::lite::{
@@ -23,9 +23,7 @@ use crate::circuit::lite::{
     PorCircuitLiteMerklePoseidonDet, PorCircuitLiteMul, PorCircuitLitePoseidonBits,
     PorCircuitLitePoseidonStateOnly,
 };
-use crate::circuit::synth::{
-    synthesize_por_circuit_carry_forward_mutant, synthesize_por_circuit_with_trace, PorWitnessTrace,
-};
+use crate::circuit::synth::{synthesize_por_circuit_with_trace, PorWitnessTrace};
 use crate::circuit::PorCircuit;
 use crate::config::{self, PublicIOLayout};
 use crate::ledger::FileLedger;
@@ -278,10 +276,12 @@ struct DerivedPlan {
     file_tree_depth: usize,
     aggregated_tree_depth: usize,
     aggregated_root: FieldElement,
+    initial_state: FieldElement,
     sorted_challenges: Vec<Challenge>,
     ledger_indices: Vec<usize>,
     depths: Vec<usize>,
     seeds: Vec<FieldElement>,
+    expected_rcs: Vec<FieldElement>,
     public_io_layout: PublicIOLayout,
 }
 
@@ -454,7 +454,7 @@ fn export_fixture_impl(
         &scenario.ledger,
         plan.file_tree_depth,
         plan.file_tree_depth,
-        FieldElement::ZERO,
+        plan.initial_state,
         plan.aggregated_tree_depth,
         0,
         &plan.ledger_indices,
@@ -464,9 +464,11 @@ fn export_fixture_impl(
 
     let z0_primary = plan.public_io_layout.build_z0_primary(
         plan.aggregated_root,
+        plan.initial_state,
         &plan.ledger_indices,
         &plan.depths,
         &plan.seeds,
+        &plan.expected_rcs,
     );
 
     let mut shape_cs: ShapeCS<E1> = ShapeCS::new();
@@ -483,14 +485,10 @@ fn export_fixture_impl(
                         Some(witnesses_vec.clone()),
                     );
                     if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        synthesize_por_circuit_carry_forward_mutant(
+                        synthesize_full_carry_forward_mutant(
                             &mut shape_cs,
                             &z_shape,
                             plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            None,
                         )
                         .map_err(circuit_err)?
                     } else {
@@ -673,14 +671,10 @@ fn export_fixture_impl(
                         Some(witnesses_vec.clone()),
                     );
                     if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        synthesize_por_circuit_carry_forward_mutant(
+                        synthesize_full_carry_forward_mutant(
                             &mut shape_cs,
                             &z_shape,
                             plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            None,
                         )
                         .map_err(circuit_err)?
                     } else {
@@ -831,14 +825,10 @@ fn export_fixture_impl(
                 if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
                     let mut trace = PorWitnessTrace::default();
                     if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        let _ = synthesize_por_circuit_carry_forward_mutant(
+                        let _ = synthesize_full_carry_forward_mutant(
                             &mut sat_cs,
                             &z_sat,
                             plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            Some(&mut trace),
                         )
                         .map_err(circuit_err)?;
                     } else {
@@ -855,14 +845,10 @@ fn export_fixture_impl(
                     }
                     por_trace = Some(trace);
                 } else if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                    let _ = synthesize_por_circuit_carry_forward_mutant(
+                    let _ = synthesize_full_carry_forward_mutant(
                         &mut sat_cs,
                         &z_sat,
                         plan.files_per_step,
-                        plan.file_tree_depth,
-                        plan.aggregated_tree_depth,
-                        circuit.witness.as_ref(),
-                        None,
                     )
                     .map_err(circuit_err)?;
                 } else {
@@ -1060,14 +1046,10 @@ fn export_fixture_impl(
                 if picus_precondition == PicusPreconditionKind::InputsPlusLeafPathOnly {
                     let mut trace = PorWitnessTrace::default();
                     if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                        let _ = synthesize_por_circuit_carry_forward_mutant(
+                        let _ = synthesize_full_carry_forward_mutant(
                             &mut sat_cs,
                             &z_sat,
                             plan.files_per_step,
-                            plan.file_tree_depth,
-                            plan.aggregated_tree_depth,
-                            circuit.witness.as_ref(),
-                            Some(&mut trace),
                         )
                         .map_err(circuit_err)?;
                     } else {
@@ -1084,14 +1066,10 @@ fn export_fixture_impl(
                     }
                     por_trace = Some(trace);
                 } else if fixture.circuit_kind == CircuitKind::FullCarryForwardMutant {
-                    let _ = synthesize_por_circuit_carry_forward_mutant(
+                    let _ = synthesize_full_carry_forward_mutant(
                         &mut sat_cs,
                         &z_sat,
                         plan.files_per_step,
-                        plan.file_tree_depth,
-                        plan.aggregated_tree_depth,
-                        circuit.witness.as_ref(),
-                        None,
                     )
                     .map_err(circuit_err)?;
                 } else {
@@ -2339,10 +2317,12 @@ fn derive_plan(challenges: &[Challenge], ledger: &FileLedger) -> Result<DerivedP
             .cmp(&b.file_metadata.file_id)
             .then_with(|| a.id().0.cmp(&b.id().0))
     });
+    let initial_state = derive_initial_state(&sorted_challenges);
 
     let mut ledger_indices = vec![0usize; files_per_step];
     let mut depths = vec![0usize; files_per_step];
     let mut seeds = vec![FieldElement::ZERO; files_per_step];
+    let mut expected_rcs = vec![FieldElement::ZERO; files_per_step];
 
     for (i, challenge) in sorted_challenges.iter().enumerate() {
         let file_depth = tree_depth_from_metadata(&challenge.file_metadata);
@@ -2350,6 +2330,7 @@ fn derive_plan(challenges: &[Challenge], ledger: &FileLedger) -> Result<DerivedP
             challenge.file_metadata.root,
             FieldElement::from(file_depth as u64),
         );
+        expected_rcs[i] = rc;
 
         let ledger_idx = ledger.get_canonical_index_for_rc(rc).ok_or_else(|| {
             KontorPoRError::FileNotInLedger {
@@ -2369,12 +2350,39 @@ fn derive_plan(challenges: &[Challenge], ledger: &FileLedger) -> Result<DerivedP
         file_tree_depth,
         aggregated_tree_depth,
         aggregated_root,
+        initial_state,
         sorted_challenges,
         ledger_indices,
         depths,
         seeds,
+        expected_rcs,
         public_io_layout,
     })
+}
+
+fn derive_initial_state(sorted_challenges: &[Challenge]) -> FieldElement {
+    const DOMAIN_V1: &[u8] = b"kontor.challenge_set.initial_state.v1";
+    const DOMAIN_V1_EXPAND: &[u8] = b"kontor.challenge_set.initial_state.v1.expand";
+
+    let mut hasher = Sha256::new();
+    hasher.update(DOMAIN_V1);
+    let count = u64::try_from(sorted_challenges.len()).unwrap_or(u64::MAX);
+    hasher.update(count.to_le_bytes());
+    for challenge in sorted_challenges {
+        hasher.update(challenge.id().0);
+    }
+    let digest_a = hasher.finalize();
+
+    let mut expander = Sha256::new();
+    expander.update(DOMAIN_V1_EXPAND);
+    expander.update(digest_a);
+    let digest_b = expander.finalize();
+
+    let mut uniform_bytes = [0u8; 64];
+    uniform_bytes[..32].copy_from_slice(&digest_a);
+    uniform_bytes[32..].copy_from_slice(&digest_b);
+
+    crate::utils::field_from_uniform_bytes(&uniform_bytes)
 }
 
 fn alloc_z_inputs<CS: ConstraintSystem<F1>>(
@@ -2589,7 +2597,7 @@ mod tests {
             &scenario.ledger,
             plan.file_tree_depth,
             plan.file_tree_depth,
-            FieldElement::ZERO,
+            plan.initial_state,
             plan.aggregated_tree_depth,
             0,
             &plan.ledger_indices,
@@ -2600,9 +2608,11 @@ mod tests {
 
         let z0_primary = plan.public_io_layout.build_z0_primary(
             plan.aggregated_root,
+            plan.initial_state,
             &plan.ledger_indices,
             &plan.depths,
             &plan.seeds,
+            &plan.expected_rcs,
         );
 
         let mut shape_cs: ShapeCS<E1> = ShapeCS::new();

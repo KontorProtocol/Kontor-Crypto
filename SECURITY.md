@@ -105,19 +105,18 @@ State evolution one-way: `state_new = H(TAG_STATE_UPDATE, state_old, leaf)`. Cir
 
 ## Test Coverage
 
-| Property | Test File | Count |
-|----------|-----------|-------|
-| Malicious prover rejection | `security_malicious_prover.rs` | 9 |
-| Replay attack prevention | `security_replay_attack.rs` | 2 |
-| Input validation | `validation.rs` | 19 |
-| Cryptographic properties | `security_comprehensive.rs` | 4 |
-| Ledger security | `security_ledger*.rs` | 10 |
-| Circuit uniformity | `circuit_uniformity*.rs` | 8 |
-| Negative cases | `security_negative_cases.rs` | 5 |
-| **Total Security Tests** | | **57** |
-| **Total Project Tests** | | **183** |
+- Security and regression coverage spans dedicated suites in:
+  - `security_*.rs`, `validation.rs`, `verifier_edge_cases.rs`, `regression.rs`
+  - `circuit_*` tests for constraint/wiring/uniformity invariants
+  - `ledger_*` tests for state evolution and persistence security
+- Fuzzing coverage is implemented under `fuzz/` with corpus-backed targets for:
+  - proof parsing
+  - ledger loading
+  - symbol decoding
+  - challenge ID derivation
+- Current enumerated test cases (`cargo test --workspace -- --list`): **275**
 
-**Gaps:** fuzzing (infrastructure exists), concurrency, timing analysis, malformed serialization fuzzing.
+**Remaining gaps:** concurrency stress testing, timing/side-channel analysis.
 
 ## Parameter Generation
 
@@ -164,4 +163,3 @@ Verifier generates parameters from challenge shape independently. If prover used
 **Testing:** `cargo nextest run` clean, 57+ security tests, edge cases, regressions, circuit uniformity.
 
 **Dependencies:** `cargo audit` clean, versions pinned, licenses compatible, critical deps audited.
-

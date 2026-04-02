@@ -9,4 +9,4 @@ pub mod fixtures;
 
 // Re-export commonly used test helpers
 #[allow(unused_imports)] // These are used across many test files
-pub use fixtures::{create_multi_file_ledger, create_single_file_ledger};
+pub use fixtures::{create_multi_file_ledger, create_single_file_ledger, synthetic_metadata};

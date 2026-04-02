@@ -14,21 +14,43 @@ pub const MAX_NUM_CHALLENGES: usize = 10_000;
 // --- Circuit and Proof Parameters ---
 
 /// The base arity of the primary `PorCircuit` (fixed fields only).
-/// Layout: `[aggregated_root, state_in, ledger_index_0, ..., actual_depth_0, ..., seed_0, ..., leaf_0, ...]`.
-/// Total arity = BASE_CIRCUIT_ARITY + ledger_indices + depths + seeds + leaves
+/// Layout: `[aggregated_root, state_in, ledger_index_0, ..., actual_depth_0, ..., seed_0, ..., expected_rc_0, ..., leaf_0, ...]`.
+/// Total arity = BASE_CIRCUIT_ARITY + ledger_indices + depths + seeds + expected_rcs + leaves
 pub const BASE_CIRCUIT_ARITY: usize = 2;
 
 /// Compute the full circuit arity for a given number of files per step.
-/// arity = fixed_fields + ledger_indices + depths + seeds + leaves
+/// arity = fixed_fields + ledger_indices + depths + seeds + expected_rcs + leaves
 #[inline]
 pub fn circuit_arity(files_per_step: usize) -> usize {
-    BASE_CIRCUIT_ARITY + files_per_step + files_per_step + files_per_step + files_per_step
+    PublicIOLayout::new(files_per_step).arity()
+}
+
+/// Canonical section-by-section arity breakdown for public IO layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PublicIOArityBreakdown {
+    pub fixed: usize,
+    pub ledger_indices: usize,
+    pub depths: usize,
+    pub seeds: usize,
+    pub expected_rcs: usize,
+    pub leaves: usize,
+}
+
+impl PublicIOArityBreakdown {
+    pub fn total(&self) -> usize {
+        self.fixed
+            + self.ledger_indices
+            + self.depths
+            + self.seeds
+            + self.expected_rcs
+            + self.leaves
+    }
 }
 
 /// Public input/output layout helper to centralize index management.
 ///
 /// This prevents bugs from manually managing indices in multiple places.
-/// Layout: [fixed_fields, ledger_indices, depths, seeds, leaf_outputs]
+/// Layout: [fixed_fields, ledger_indices, depths, seeds, expected_rcs, leaf_outputs]
 #[derive(Debug, Clone)]
 pub struct PublicIOLayout {
     pub files_per_step: usize,
@@ -43,13 +65,25 @@ impl PublicIOLayout {
         Self { files_per_step }
     }
 
+    /// Arity breakdown for each public section.
+    pub fn arity_breakdown(&self) -> PublicIOArityBreakdown {
+        PublicIOArityBreakdown {
+            fixed: Self::FIXED,
+            ledger_indices: self.files_per_step,
+            depths: self.files_per_step,
+            seeds: self.files_per_step,
+            expected_rcs: self.files_per_step,
+            leaves: self.files_per_step,
+        }
+    }
+
     /// Total arity: fixed + ledger indices + depths + seeds + leaf outputs
     pub fn arity(&self) -> usize {
-        Self::FIXED + 4 * self.files_per_step
+        self.arity_breakdown().total()
     }
 
     /// Helper: compute the start index of a per-file section
-    /// Section 0 = ledger_indices, 1 = depths, 2 = seeds, 3 = leaves
+    /// Section 0 = ledger_indices, 1 = depths, 2 = seeds, 3 = expected_rcs, 4 = leaves
     fn section_start(&self, section: usize) -> usize {
         Self::FIXED + section * self.files_per_step
     }
@@ -102,26 +136,40 @@ impl PublicIOLayout {
         self.section_start(2)..self.section_start(3)
     }
 
+    // --- Expected RC section ---
+
+    /// Index of expected_rc_i field
+    pub fn idx_expected_rc(&self, i: usize) -> usize {
+        self.section_start(3) + i
+    }
+
+    /// Range of all expected RC fields
+    pub fn expected_rcs_range(&self) -> std::ops::Range<usize> {
+        self.section_start(3)..self.section_start(4)
+    }
+
     // --- Leaf output section ---
 
     /// Index of leaf_i output field
     pub fn idx_leaf(&self, i: usize) -> usize {
-        self.section_start(3) + i
+        self.section_start(4) + i
     }
 
     /// Range of all leaf outputs
     pub fn leaf_outputs_range(&self) -> std::ops::Range<usize> {
-        self.section_start(3)..self.section_start(4)
+        self.section_start(4)..self.section_start(5)
     }
 
     /// Build the initial z0_primary vector for proving/verification
-    /// Layout: [aggregated_root, state_in, ledger_indices..., depths..., seeds..., leaves...]
+    /// Layout: [aggregated_root, state_in, ledger_indices..., depths..., seeds..., expected_rcs..., leaves...]
     pub fn build_z0_primary(
         &self,
         aggregated_root: crate::api::FieldElement,
+        state_in: crate::api::FieldElement,
         ledger_indices: &[usize],
         depths: &[usize],
         seeds: &[crate::api::FieldElement],
+        expected_rcs: &[crate::api::FieldElement],
     ) -> Vec<crate::api::FieldElement> {
         use crate::api::FieldElement;
 
@@ -129,7 +177,7 @@ impl PublicIOLayout {
 
         // Fixed fields
         z0_primary.push(aggregated_root); // [0]
-        z0_primary.push(FieldElement::ZERO); // [1] state_in
+        z0_primary.push(state_in); // [1] state_in
 
         // Ledger indices
         for &idx in ledger_indices.iter() {
@@ -156,6 +204,21 @@ impl PublicIOLayout {
         // Pad seeds if needed
         while z0_primary.len()
             < Self::FIXED + self.files_per_step + self.files_per_step + self.files_per_step
+        {
+            z0_primary.push(FieldElement::ZERO);
+        }
+
+        // Expected RCs
+        for &expected_rc in expected_rcs.iter() {
+            z0_primary.push(expected_rc);
+        }
+        // Pad expected RCs if needed
+        while z0_primary.len()
+            < Self::FIXED
+                + self.files_per_step
+                + self.files_per_step
+                + self.files_per_step
+                + self.files_per_step
         {
             z0_primary.push(FieldElement::ZERO);
         }
@@ -213,6 +276,27 @@ pub const DEFAULT_ERASURE_PARITY_SHARDS: usize = 1;
 /// Maximum size for serialized ledger files (100 MB)
 pub const MAX_LEDGER_SIZE_BYTES: usize = 100 * 1024 * 1024;
 
+/// Maximum accepted proof payload size during deserialization (50 MB).
+/// This bounds memory/CPU exposure from malformed or adversarial proof bytes.
+pub const MAX_PROOF_SIZE_BYTES: usize = 50 * 1024 * 1024;
+
+/// Maximum accepted raw file size for `api::prepare_file` (100 MB).
+/// This bounds memory/CPU exposure from untrusted file inputs.
+pub const MAX_FILE_SIZE_BYTES: usize = 100 * 1024 * 1024;
+
+/// Maximum accepted filename length in bytes.
+pub const MAX_FILENAME_LEN_BYTES: usize = 1024;
+
+/// Maximum accepted file identifier/object identifier/prover identifier length in bytes.
+pub const MAX_IDENTIFIER_LEN_BYTES: usize = 1024;
+
+/// Maximum accepted nonce length in bytes.
+pub const MAX_NONCE_LEN_BYTES: usize = 4096;
+
+/// Default maximum number of historical roots retained by a ledger instance.
+/// Older roots are pruned when this cap is exceeded.
+pub const DEFAULT_MAX_HISTORICAL_ROOTS: usize = 4096;
+
 /// Current ledger format version
 pub const LEDGER_FORMAT_VERSION: u16 = 1;
 
@@ -249,3 +333,23 @@ pub const S_CHAL: usize = 100;
 
 /// Proof submission window
 pub const W_PROOF: u64 = 2016;
+
+#[cfg(test)]
+mod tests {
+    use super::{circuit_arity, PublicIOLayout};
+
+    #[test]
+    fn test_public_io_breakdown_matches_total_arity() {
+        let layout = PublicIOLayout::new(4);
+        let breakdown = layout.arity_breakdown();
+
+        assert_eq!(breakdown.fixed, PublicIOLayout::FIXED);
+        assert_eq!(breakdown.ledger_indices, 4);
+        assert_eq!(breakdown.depths, 4);
+        assert_eq!(breakdown.seeds, 4);
+        assert_eq!(breakdown.expected_rcs, 4);
+        assert_eq!(breakdown.leaves, 4);
+        assert_eq!(breakdown.total(), layout.arity());
+        assert_eq!(breakdown.total(), circuit_arity(4));
+    }
+}

@@ -113,7 +113,8 @@ use tracing::debug_span;
 /// # ID Generation
 ///
 /// - `object_id = object_<SHA256(data)>` - content-based, not unique, for file discovery
-/// - `file_id = file_<SHA256(data || nonce)>` - unique per upload, for storage protocol
+/// - `file_id = file_<SHA256(domain || len(data) || data || len(nonce) || nonce)>`
+///   - unique per upload, for storage protocol
 pub fn prepare_file(
     data: &[u8],
     filename: &str,
