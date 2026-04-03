@@ -236,10 +236,83 @@ impl Clone for PorParams {
     }
 }
 
-/// File metadata is shared directly from `kontor-crypto-core` (single source of truth).
-/// If the main crate ever needs additional proof-related fields beyond what core provides,
-/// replace this re-export with a wrapper struct (similar to `PreparedFile` below).
-pub use kontor_crypto_core::types::FileMetadata;
+/// Public commitment to a file.
+///
+/// This is a thin wrapper around `kontor_crypto_core::types::FileMetadata` so that
+/// `validate()` returns `Result<(), KontorPoRError>` (the crate-level error) instead
+/// of leaking `CoreError` through the public API.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileMetadata {
+    pub root: FieldElement,
+    pub object_id: String,
+    pub file_id: String,
+    pub nonce: Vec<u8>,
+    pub padded_len: usize,
+    pub original_size: usize,
+    pub filename: String,
+}
+
+impl FileMetadata {
+    pub fn num_data_symbols(&self) -> usize {
+        self.original_size.div_ceil(crate::config::CHUNK_SIZE_BYTES)
+    }
+
+    pub fn num_codewords(&self) -> usize {
+        self.num_data_symbols()
+            .div_ceil(crate::config::DATA_SYMBOLS_PER_CODEWORD)
+    }
+
+    pub fn total_symbols(&self) -> usize {
+        self.num_codewords()
+            .saturating_mul(crate::config::TOTAL_SYMBOLS_PER_CODEWORD)
+    }
+
+    pub fn depth(&self) -> usize {
+        if self.padded_len == 0 {
+            0
+        } else {
+            self.padded_len.trailing_zeros() as usize
+        }
+    }
+
+    /// Validate metadata consistency and security bounds.
+    ///
+    /// Delegates to the core validation logic and converts the error to
+    /// `KontorPoRError` so callers only need to handle the crate-level error type.
+    pub fn validate(&self) -> crate::Result<()> {
+        let core: kontor_crypto_core::types::FileMetadata = self.into();
+        core.validate()?;
+        Ok(())
+    }
+}
+
+impl From<kontor_crypto_core::types::FileMetadata> for FileMetadata {
+    fn from(c: kontor_crypto_core::types::FileMetadata) -> Self {
+        Self {
+            root: c.root,
+            object_id: c.object_id,
+            file_id: c.file_id,
+            nonce: c.nonce,
+            padded_len: c.padded_len,
+            original_size: c.original_size,
+            filename: c.filename,
+        }
+    }
+}
+
+impl From<&FileMetadata> for kontor_crypto_core::types::FileMetadata {
+    fn from(m: &FileMetadata) -> Self {
+        Self {
+            root: m.root,
+            object_id: m.object_id.clone(),
+            file_id: m.file_id.clone(),
+            nonce: m.nonce.clone(),
+            padded_len: m.padded_len,
+            original_size: m.original_size,
+            filename: m.filename.clone(),
+        }
+    }
+}
 
 impl crate::ledger::FileDescriptor for FileMetadata {
     fn file_id(&self) -> &str {
@@ -251,7 +324,7 @@ impl crate::ledger::FileDescriptor for FileMetadata {
     }
 
     fn depth(&self) -> usize {
-        self.depth() // Delegates to FileMetadata::depth()
+        self.depth()
     }
 }
 

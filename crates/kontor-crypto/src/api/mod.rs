@@ -122,9 +122,9 @@ pub fn prepare_file(
 ) -> Result<(types::PreparedFile, types::FileMetadata)> {
     let _span = debug_span!("prepare_file", data_size = data.len(), filename).entered();
 
-    let (core_pf, metadata) = kontor_crypto_core::prepare_file(data, filename, nonce)?;
+    let (core_pf, core_metadata) = kontor_crypto_core::prepare_file(data, filename, nonce)?;
 
-    Ok((core_pf.into(), metadata))
+    Ok((core_pf.into(), core_metadata.into()))
 }
 
 /// Computes the Merkle tree depth implied by `FileMetadata`.
@@ -174,5 +174,9 @@ pub fn reconstruct_file(
     symbols: &[Option<Vec<u8>>],
     metadata: &types::FileMetadata,
 ) -> Result<Vec<u8>> {
-    Ok(kontor_crypto_core::reconstruct_file(symbols, metadata)?)
+    let core_metadata: kontor_crypto_core::types::FileMetadata = metadata.into();
+    Ok(kontor_crypto_core::reconstruct_file(
+        symbols,
+        &core_metadata,
+    )?)
 }
