@@ -25,14 +25,20 @@ pub fn compute_file_id(data: &[u8], nonce: &[u8]) -> String {
     format!("file_{:x}", h.finalize())
 }
 
-/// Prepares raw data into PreparedFile and FileMetadata.
-/// Algorithm: object_id = SHA256(data), file_id = SHA256(domain || len(data) || data || len(nonce) || nonce),
-/// encode_file_symbols, pad to power of two, build_tree, build metadata and prepared file.
-pub fn prepare_file(
-    data: &[u8],
-    filename: &str,
-    nonce: &[u8],
-) -> Result<(PreparedFile, FileMetadata)> {
+/// Intermediate result after input validation, erasure encoding, and
+/// power-of-two padding — the shared pipeline used by both `prepare_file`
+/// and the WASM `prepareLeaves` entry point.
+pub struct EncodedFile {
+    pub object_id: String,
+    pub file_id: String,
+    pub padded_symbols: Vec<Vec<u8>>,
+    pub padded_len: usize,
+    pub original_size: usize,
+}
+
+/// Validates inputs, computes content/file IDs, erasure-encodes data,
+/// and pads to a power-of-two number of symbols.
+pub fn validate_and_encode(data: &[u8], filename: &str, nonce: &[u8]) -> Result<EncodedFile> {
     if data.is_empty() {
         return Err(CoreError::EmptyData {
             operation: "prepare_file".to_string(),
@@ -73,22 +79,41 @@ pub fn prepare_file(
     let mut padded_symbols = all_symbols;
     padded_symbols.resize(padded_len, vec![0; config::CHUNK_SIZE_BYTES]);
 
-    let (tree, root) = merkle::build_tree(&padded_symbols)?;
+    Ok(EncodedFile {
+        object_id,
+        file_id,
+        padded_symbols,
+        padded_len,
+        original_size: data.len(),
+    })
+}
+
+/// Prepares raw data into PreparedFile and FileMetadata.
+/// Algorithm: object_id = SHA256(data), file_id = SHA256(domain || len(data) || data || len(nonce) || nonce),
+/// encode_file_symbols, pad to power of two, build_tree, build metadata and prepared file.
+pub fn prepare_file(
+    data: &[u8],
+    filename: &str,
+    nonce: &[u8],
+) -> Result<(PreparedFile, FileMetadata)> {
+    let encoded = validate_and_encode(data, filename, nonce)?;
+
+    let (tree, root) = merkle::build_tree(&encoded.padded_symbols)?;
 
     let metadata = FileMetadata {
         root,
-        object_id,
-        file_id: file_id.clone(),
+        object_id: encoded.object_id,
+        file_id: encoded.file_id.clone(),
         nonce: nonce.to_vec(),
-        padded_len,
-        original_size: data.len(),
+        padded_len: encoded.padded_len,
+        original_size: encoded.original_size,
         filename: filename.to_string(),
     };
     metadata.validate()?;
 
     let prepared_file = PreparedFile {
         tree,
-        file_id,
+        file_id: encoded.file_id,
         root,
     };
 

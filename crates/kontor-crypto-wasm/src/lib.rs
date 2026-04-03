@@ -140,50 +140,14 @@ pub fn prepare_leaves(
     filename: &str,
     nonce: Box<[u8]>,
 ) -> Result<JsValue, JsValue> {
-    use kontor_crypto_core::config;
-    use kontor_crypto_core::erasure::encode_file_symbols;
     use kontor_crypto_core::merkle::get_leaf_hash;
-    use kontor_crypto_core::{compute_file_id, compute_object_id};
+    use kontor_crypto_core::validate_and_encode;
 
-    if file.is_empty() {
-        return Err(JsValue::from_str("empty file"));
-    }
-    if file.len() > config::MAX_FILE_SIZE_BYTES {
-        return Err(JsValue::from_str(&format!(
-            "prepare_file input size {} exceeds maximum {}",
-            file.len(),
-            config::MAX_FILE_SIZE_BYTES
-        )));
-    }
-    if filename.is_empty() {
-        return Err(JsValue::from_str("prepare_file filename must be non-empty"));
-    }
-    if filename.len() > config::MAX_FILENAME_LEN_BYTES {
-        return Err(JsValue::from_str(&format!(
-            "prepare_file filename length {} exceeds maximum {}",
-            filename.len(),
-            config::MAX_FILENAME_LEN_BYTES
-        )));
-    }
-    if nonce.len() > config::MAX_NONCE_LEN_BYTES {
-        return Err(JsValue::from_str(&format!(
-            "prepare_file nonce length {} exceeds maximum {}",
-            nonce.len(),
-            config::MAX_NONCE_LEN_BYTES
-        )));
-    }
+    let encoded = validate_and_encode(file.as_ref(), filename, nonce.as_ref())
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-    let object_id = compute_object_id(file.as_ref());
-    let file_id = compute_file_id(file.as_ref(), nonce.as_ref());
-
-    let all_symbols =
-        encode_file_symbols(file.as_ref()).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let padded_len = all_symbols.len().next_power_of_two();
-    let mut padded_symbols = all_symbols;
-    padded_symbols.resize(padded_len, vec![0; config::CHUNK_SIZE_BYTES]);
-
-    let mut leaf_bytes = Vec::with_capacity(padded_len * 32);
-    for chunk in &padded_symbols {
+    let mut leaf_bytes = Vec::with_capacity(encoded.padded_len * 32);
+    for chunk in &encoded.padded_symbols {
         let fe = get_leaf_hash(chunk).map_err(|e| JsValue::from_str(&e.to_string()))?;
         leaf_bytes.extend_from_slice(fe.to_repr().as_ref());
     }
@@ -191,17 +155,25 @@ pub fn prepare_leaves(
     let result = js_sys::Object::new();
     let leaf_arr = js_sys::Uint8Array::from(leaf_bytes.as_slice());
     js_sys::Reflect::set(&result, &"leafBytes".into(), &leaf_arr)?;
-    js_sys::Reflect::set(&result, &"objectId".into(), &JsValue::from_str(&object_id))?;
-    js_sys::Reflect::set(&result, &"fileId".into(), &JsValue::from_str(&file_id))?;
+    js_sys::Reflect::set(
+        &result,
+        &"objectId".into(),
+        &JsValue::from_str(&encoded.object_id),
+    )?;
+    js_sys::Reflect::set(
+        &result,
+        &"fileId".into(),
+        &JsValue::from_str(&encoded.file_id),
+    )?;
     js_sys::Reflect::set(
         &result,
         &"paddedLen".into(),
-        &JsValue::from_f64(padded_len as f64),
+        &JsValue::from_f64(encoded.padded_len as f64),
     )?;
     js_sys::Reflect::set(
         &result,
         &"originalSize".into(),
-        &JsValue::from_f64(file.len() as f64),
+        &JsValue::from_f64(encoded.original_size as f64),
     )?;
     js_sys::Reflect::set(&result, &"filename".into(), &JsValue::from_str(filename))?;
     let nonce_arr = js_sys::Uint8Array::from(nonce.as_ref());
@@ -378,21 +350,18 @@ mod tests {
 
     #[test]
     fn parallel_root_matches_sequential() {
-        use kontor_crypto_core::config;
-        use kontor_crypto_core::erasure::encode_file_symbols;
         use kontor_crypto_core::merkle::{build_tree_from_leaves, get_leaf_hash, hash_node};
         use kontor_crypto_core::poseidon::FieldElement;
+        use kontor_crypto_core::validate_and_encode;
 
         let data = vec![42u8; 15_000];
         let (_, metadata) = prepare_file(&data, "test.bin", b"nonce").unwrap();
         let sequential_root = metadata.root;
 
-        let all_symbols = encode_file_symbols(&data).unwrap();
-        let padded_len = all_symbols.len().next_power_of_two();
-        let mut padded_symbols = all_symbols;
-        padded_symbols.resize(padded_len, vec![0; config::CHUNK_SIZE_BYTES]);
+        let encoded = validate_and_encode(&data, "test.bin", b"nonce").unwrap();
 
-        let leaves: Vec<FieldElement> = padded_symbols
+        let leaves: Vec<FieldElement> = encoded
+            .padded_symbols
             .iter()
             .map(|chunk| get_leaf_hash(chunk).unwrap())
             .collect();

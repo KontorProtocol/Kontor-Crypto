@@ -60,9 +60,11 @@ export function init(): Promise<void> {
 const HEX: string[] = [];
 for (let i = 0; i < 256; i++) HEX[i] = i.toString(16).padStart(2, "0");
 
-function bytesToHex(bytes: Uint8Array): string {
+/** Encode a 32-byte field element repr as big-endian hex (MSB-first),
+ *  matching Rust `field_to_hex` which iterates `.iter().rev()`. */
+function fieldBytesToHex(bytes: Uint8Array, offset = 0, len = 32): string {
   let hex = "";
-  for (let i = 0; i < bytes.length; i++) hex += HEX[bytes[i]];
+  for (let j = offset + len - 1; j >= offset; j--) hex += HEX[bytes[j]];
   return hex;
 }
 
@@ -310,7 +312,7 @@ export async function prepareFile(
     }
 
     const rootBytes = roots[0];
-    const rootHex = bytesToHex(rootBytes);
+    const rootHex = fieldBytesToHex(rootBytes);
 
     const treeLeavesHex: string[] = new Array(leavesCount);
     const hexBatchSize = 8192;
@@ -319,10 +321,7 @@ export async function prepareFile(
     for (let batch = 0; batch < leavesCount; batch += hexBatchSize) {
       const end = Math.min(batch + hexBatchSize, leavesCount);
       for (let i = batch; i < end; i++) {
-        const off = i * 32;
-        let h = "";
-        for (let j = 0; j < 32; j++) h += HEX[leafBytes[off + j]];
-        treeLeavesHex[i] = h;
+        treeLeavesHex[i] = fieldBytesToHex(leafBytes, i * 32);
       }
       onProgress?.(
         PHASE_MERKLE +
