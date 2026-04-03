@@ -43,7 +43,10 @@ jobs:
         run: cargo build -p kontor-crypto-wasm --target wasm32-unknown-unknown --release
 
       - name: Install wasm-pack
-        run: cargo install wasm-pack --locked --version 0.14.0
+        run: |
+          if ! command -v wasm-pack >/dev/null; then
+            cargo install wasm-pack --locked --version 0.14.0
+          fi
 
       - name: Test WASM
         run: wasm-pack test --node crates/kontor-crypto-wasm
