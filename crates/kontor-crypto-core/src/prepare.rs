@@ -7,6 +7,24 @@ use crate::merkle;
 use crate::types::{FileMetadata, PreparedFile};
 use sha2::{Digest, Sha256};
 
+/// Content-addressed object identifier: `obj_<SHA256(data)>`.
+pub fn compute_object_id(data: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(data);
+    format!("obj_{:x}", h.finalize())
+}
+
+/// Unique file identifier: `file_<SHA256(domain || len(data) || data || len(nonce) || nonce)>`.
+pub fn compute_file_id(data: &[u8], nonce: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(b"kontor.file_id.v1");
+    h.update((data.len() as u64).to_le_bytes());
+    h.update(data);
+    h.update((nonce.len() as u64).to_le_bytes());
+    h.update(nonce);
+    format!("file_{:x}", h.finalize())
+}
+
 /// Prepares raw data into PreparedFile and FileMetadata.
 /// Algorithm: object_id = SHA256(data), file_id = SHA256(domain || len(data) || data || len(nonce) || nonce),
 /// encode_file_symbols, pad to power of two, build_tree, build metadata and prepared file.
@@ -20,18 +38,35 @@ pub fn prepare_file(
             operation: "prepare_file".to_string(),
         });
     }
+    if data.len() > config::MAX_FILE_SIZE_BYTES {
+        return Err(CoreError::InvalidInput(format!(
+            "prepare_file input size {} exceeds maximum {}",
+            data.len(),
+            config::MAX_FILE_SIZE_BYTES
+        )));
+    }
+    if filename.is_empty() {
+        return Err(CoreError::InvalidInput(
+            "prepare_file filename must be non-empty".to_string(),
+        ));
+    }
+    if filename.len() > config::MAX_FILENAME_LEN_BYTES {
+        return Err(CoreError::InvalidInput(format!(
+            "prepare_file filename length {} exceeds maximum {}",
+            filename.len(),
+            config::MAX_FILENAME_LEN_BYTES
+        )));
+    }
+    if nonce.len() > config::MAX_NONCE_LEN_BYTES {
+        return Err(CoreError::InvalidInput(format!(
+            "prepare_file nonce length {} exceeds maximum {}",
+            nonce.len(),
+            config::MAX_NONCE_LEN_BYTES
+        )));
+    }
 
-    let mut object_hasher = Sha256::new();
-    object_hasher.update(data);
-    let object_id = format!("obj_{:x}", object_hasher.finalize());
-
-    let mut file_hasher = Sha256::new();
-    file_hasher.update(b"kontor.file_id.v1");
-    file_hasher.update((data.len() as u64).to_le_bytes());
-    file_hasher.update(data);
-    file_hasher.update((nonce.len() as u64).to_le_bytes());
-    file_hasher.update(nonce);
-    let file_id = format!("file_{:x}", file_hasher.finalize());
+    let object_id = compute_object_id(data);
+    let file_id = compute_file_id(data, nonce);
 
     let all_symbols = encode_file_symbols(data)?;
     let padded_len = all_symbols.len().next_power_of_two();
@@ -49,6 +84,7 @@ pub fn prepare_file(
         original_size: data.len(),
         filename: filename.to_string(),
     };
+    metadata.validate()?;
 
     let prepared_file = PreparedFile {
         tree,
@@ -61,6 +97,7 @@ pub fn prepare_file(
 
 /// Reconstructs the original file from erasure-coded symbols and metadata.
 pub fn reconstruct_file(symbols: &[Option<Vec<u8>>], metadata: &FileMetadata) -> Result<Vec<u8>> {
+    metadata.validate()?;
     let mut mutable = symbols.to_vec();
     decode_file_symbols(
         &mut mutable,

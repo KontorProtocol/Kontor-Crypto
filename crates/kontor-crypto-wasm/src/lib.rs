@@ -143,23 +143,14 @@ pub fn prepare_leaves(
     use kontor_crypto_core::config;
     use kontor_crypto_core::erasure::encode_file_symbols;
     use kontor_crypto_core::merkle::get_leaf_hash;
-    use sha2::{Digest, Sha256};
+    use kontor_crypto_core::{compute_file_id, compute_object_id};
 
     if file.is_empty() {
         return Err(JsValue::from_str("empty file"));
     }
 
-    let mut object_hasher = Sha256::new();
-    object_hasher.update(file.as_ref());
-    let object_id = format!("obj_{:x}", object_hasher.finalize());
-
-    let mut file_hasher = Sha256::new();
-    file_hasher.update(b"kontor.file_id.v1");
-    file_hasher.update((file.len() as u64).to_le_bytes());
-    file_hasher.update(file.as_ref());
-    file_hasher.update((nonce.len() as u64).to_le_bytes());
-    file_hasher.update(nonce.as_ref());
-    let file_id = format!("file_{:x}", file_hasher.finalize());
+    let object_id = compute_object_id(file.as_ref());
+    let file_id = compute_file_id(file.as_ref(), nonce.as_ref());
 
     let all_symbols =
         encode_file_symbols(file.as_ref()).map_err(|e| JsValue::from_str(&e.to_string()))?;

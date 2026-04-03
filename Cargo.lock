@@ -802,7 +802,6 @@ dependencies = [
  "kontor-crypto-core",
  "serde",
  "serde-wasm-bindgen",
- "sha2",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]

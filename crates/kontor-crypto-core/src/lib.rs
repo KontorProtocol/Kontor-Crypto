@@ -12,5 +12,5 @@ pub mod prepare;
 pub mod types;
 pub mod utils;
 
-pub use prepare::{prepare_file, reconstruct_file};
+pub use prepare::{compute_file_id, compute_object_id, prepare_file, reconstruct_file};
 pub use types::{FileMetadata, PreparedFile};

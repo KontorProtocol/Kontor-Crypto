@@ -17,7 +17,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 ff = "0.13"
 js-sys = "0.3"
-sha2 = "0.10.6"
 # Required for wasm32 so that pasta_curves/ff use JS randomness when needed
 getrandom = { version = "0.2", features = ["js"] }
 

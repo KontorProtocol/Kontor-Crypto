@@ -126,11 +126,11 @@
       };
       try {
         const result = await prepareFile(selectedFile, undefined, undefined, onProgress);
-        const ms = (performance.now() - t0).toFixed(1);
+        const elapsed = performance.now() - t0;
         progressFill.style.width = '100%';
-        progressPhase.textContent = `Done · ${(ms / 1000).toFixed(1)}s`;
+        progressPhase.textContent = `Done · ${(elapsed / 1000).toFixed(1)}s`;
         out.className = 'ok';
-        out.textContent = `OK (${ms} ms)\n\n` + JSON.stringify({
+        out.textContent = `OK (${elapsed.toFixed(1)} ms)\n\n` + JSON.stringify({
           metadata: { ...result.metadata, root: result.metadata.root.slice(0, 32) + '…' },
           treeLeavesCount: result.preparedFile.treeLeavesHex.length,
           descriptorRootLen: result.descriptor.root.length,
