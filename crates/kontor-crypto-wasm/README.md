@@ -105,7 +105,8 @@ const result = prepareFile(file, 'filename.dat', new Uint8Array(0));
     - **preparedFile**: `{ root, fileId, treeLeavesHex }`  
       - `treeLeavesHex`: array of hex strings (for prover)
     - **descriptor**: `{ fileId, objectId, nonce, root, paddedLen, originalSize, filename }`
-      - `root`: 32-byte array (`Uint8Array` after serde-wasm-bindgen conversion)
+      - `nonce`: JS `Array` of numbers (byte values)
+      - `root`: JS `Array` of 32 numbers (canonical field-element bytes)
       - Shape matches the `RawFileDescriptor` required by filestorage `create_agreement`.
 
 Throws if input is empty or encoding fails.

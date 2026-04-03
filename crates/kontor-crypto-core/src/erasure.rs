@@ -53,6 +53,52 @@ pub fn decode_file_symbols(
     num_codewords: usize,
     original_size: usize,
 ) -> Result<Vec<u8>> {
+    if num_codewords == 0 {
+        return Err(CoreError::InvalidInput(
+            "decode_file_symbols: num_codewords must be > 0".to_string(),
+        ));
+    }
+
+    let expected_symbols = num_codewords
+        .checked_mul(config::TOTAL_SYMBOLS_PER_CODEWORD)
+        .ok_or_else(|| {
+            CoreError::InvalidInput("decode_file_symbols: symbol count overflow".to_string())
+        })?;
+    if symbols.len() != expected_symbols {
+        return Err(CoreError::InvalidInput(format!(
+            "decode_file_symbols: symbol vector length {} does not match expected {}",
+            symbols.len(),
+            expected_symbols
+        )));
+    }
+
+    for (i, sym) in symbols.iter().enumerate() {
+        if let Some(bytes) = sym {
+            if bytes.len() != config::CHUNK_SIZE_BYTES {
+                return Err(CoreError::InvalidInput(format!(
+                    "decode_file_symbols: symbol {} has invalid length {} (expected {})",
+                    i,
+                    bytes.len(),
+                    config::CHUNK_SIZE_BYTES
+                )));
+            }
+        }
+    }
+
+    let encoded_capacity = expected_symbols
+        .checked_mul(config::CHUNK_SIZE_BYTES)
+        .ok_or_else(|| {
+            CoreError::InvalidInput(
+                "decode_file_symbols: encoded byte capacity overflow".to_string(),
+            )
+        })?;
+    if original_size > encoded_capacity {
+        return Err(CoreError::InvalidInput(format!(
+            "decode_file_symbols: original_size {} exceeds encoded capacity {}",
+            original_size, encoded_capacity
+        )));
+    }
+
     let rs = ReedSolomon::new(
         config::DATA_SYMBOLS_PER_CODEWORD,
         config::PARITY_SYMBOLS_PER_CODEWORD,
@@ -61,17 +107,20 @@ pub fn decode_file_symbols(
         details: format!("Reed-Solomon setup failed: {e}"),
     })?;
 
-    let mut reconstructed = Vec::new();
+    let mut reconstructed = Vec::with_capacity(original_size);
     for cw_idx in 0..num_codewords {
         let start = cw_idx * config::TOTAL_SYMBOLS_PER_CODEWORD;
-        let end = std::cmp::min(start + config::TOTAL_SYMBOLS_PER_CODEWORD, symbols.len());
+        let end = start + config::TOTAL_SYMBOLS_PER_CODEWORD;
         let mut codeword_symbols = symbols[start..end].to_vec();
         rs.reconstruct(&mut codeword_symbols)
             .map_err(|e| CoreError::ErasureCoding {
                 details: format!("RS decode failed for codeword {}: {e}", cw_idx),
             })?;
-        let data_end = std::cmp::min(config::DATA_SYMBOLS_PER_CODEWORD, codeword_symbols.len());
-        for sym in codeword_symbols.iter().take(data_end).flatten() {
+        for sym in codeword_symbols
+            .iter()
+            .take(config::DATA_SYMBOLS_PER_CODEWORD)
+            .flatten()
+        {
             reconstructed.extend_from_slice(sym);
         }
     }

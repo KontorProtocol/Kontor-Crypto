@@ -50,8 +50,8 @@ pub struct RawFileDescriptorOut {
     pub nonce: Vec<u8>,
     /// Canonical field bytes (`to_repr`) expected by host `from_raw` (exactly 32 bytes).
     pub root: Vec<u8>,
-    pub padded_len: u64,
-    pub original_size: u64,
+    pub padded_len: usize,
+    pub original_size: usize,
     pub filename: String,
 }
 
@@ -87,8 +87,8 @@ fn metadata_to_descriptor_out(m: &FileMetadata) -> RawFileDescriptorOut {
         object_id: m.object_id.clone(),
         nonce: m.nonce.clone(),
         root: m.root.to_repr().as_ref().to_vec(),
-        padded_len: m.padded_len as u64,
-        original_size: m.original_size as u64,
+        padded_len: m.padded_len,
+        original_size: m.original_size,
         filename: m.filename.clone(),
     }
 }
@@ -275,8 +275,8 @@ mod tests {
         assert_eq!(desc.file_id, meta_out.file_id);
         assert_eq!(desc.object_id, meta_out.object_id);
         assert_eq!(desc.nonce, meta_out.nonce);
-        assert_eq!(desc.padded_len, meta_out.padded_len as u64);
-        assert_eq!(desc.original_size, meta_out.original_size as u64);
+        assert_eq!(desc.padded_len, meta_out.padded_len);
+        assert_eq!(desc.original_size, meta_out.original_size);
         assert_eq!(desc.filename, meta_out.filename);
         assert_eq!(desc.root.len(), 32, "descriptor.root must be 32 bytes");
     }
@@ -327,7 +327,7 @@ mod tests {
             "15 KB needs 3 codewords (765 symbols), padded to next power of two"
         );
         assert!(
-            (meta_out.padded_len as u64).is_power_of_two(),
+            meta_out.padded_len.is_power_of_two(),
             "padded_len must be power of two"
         );
         assert_eq!(meta_out.original_size, 15_000);
@@ -340,7 +340,7 @@ mod tests {
 
         let desc = metadata_to_descriptor_out(&metadata);
         assert_eq!(desc.original_size, 15_000);
-        assert_eq!(desc.padded_len, meta_out.padded_len as u64);
+        assert_eq!(desc.padded_len, meta_out.padded_len);
     }
 
     #[test]

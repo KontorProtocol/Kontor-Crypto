@@ -82,10 +82,14 @@ function spawnWorker(): { worker: Worker; blobUrl: string } {
     let _buildMerkleRoot;
     self.onmessage = async (e) => {
       if (e.data.type === 'init') {
-        const mod = await import(e.data.jsUrl);
-        await mod.default(e.data.wasmUrl);
-        _buildMerkleRoot = mod.buildMerkleRoot;
-        self.postMessage({ type: 'ready' });
+        try {
+          const mod = await import(e.data.jsUrl);
+          await mod.default(e.data.wasmUrl);
+          _buildMerkleRoot = mod.buildMerkleRoot;
+          self.postMessage({ type: 'ready' });
+        } catch (err) {
+          self.postMessage({ type: 'error', message: String(err) });
+        }
       } else if (e.data.type === 'build') {
         try {
           const root = _buildMerkleRoot(e.data.leafBytes);
@@ -178,10 +182,19 @@ function createWorkerPool(
           pending.resolve(ev.data.root);
           recycleWorker(w);
         } else if (ev.data.type === "error") {
-          const pending = pendingTasks.get(w)!;
-          pendingTasks.delete(w);
-          pending.reject(new Error(ev.data.message));
-          recycleWorker(w);
+          const pending = pendingTasks.get(w);
+          if (pending) {
+            pendingTasks.delete(w);
+            pending.reject(new Error(ev.data.message));
+            recycleWorker(w);
+          } else if (readyCount < size && !initFailed) {
+            initFailed = true;
+            workers.forEach((e) => {
+              URL.revokeObjectURL(e.blobUrl);
+              e.worker.terminate();
+            });
+            rejectPool(new Error(`Worker init failed: ${ev.data.message}`));
+          }
         }
       };
 
