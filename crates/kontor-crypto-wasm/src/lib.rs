@@ -192,6 +192,9 @@ pub fn build_merkle_root(leaf_bytes: &[u8]) -> Result<Box<[u8]>, JsValue> {
     use kontor_crypto_core::merkle::build_tree_from_leaves;
     use kontor_crypto_core::poseidon::FieldElement;
 
+    if leaf_bytes.is_empty() {
+        return Err(JsValue::from_str("leafBytes must not be empty"));
+    }
     if !leaf_bytes.len().is_multiple_of(32) {
         return Err(JsValue::from_str(
             "leafBytes length must be a multiple of 32",
@@ -314,7 +317,8 @@ mod tests {
     #[test]
     fn prepare_file_multi_codeword() {
         let data = vec![42u8; 15_000];
-        let (prepared, metadata) = prepare_file(&data, "big.bin", b"nonce").unwrap();
+        let nonce = &data[..5];
+        let (prepared, metadata) = prepare_file(&data, "big.bin", nonce).unwrap();
         let meta_out = metadata_to_out(&metadata);
         let prep_out = prepared_file_to_out(&prepared);
 
@@ -342,7 +346,8 @@ mod tests {
     #[test]
     fn prepare_file_nonce_changes_file_id_not_root() {
         let (_, m1) = prepare_file(b"data", "f.bin", b"").unwrap();
-        let (_, m2) = prepare_file(b"data", "f.bin", b"nonce").unwrap();
+        let nonce = b"data".to_vec();
+        let (_, m2) = prepare_file(b"data", "f.bin", &nonce).unwrap();
         assert_eq!(m1.object_id, m2.object_id, "same content, same object_id");
         assert_ne!(m1.file_id, m2.file_id, "different nonce, different file_id");
         assert_eq!(m1.root, m2.root, "nonce must not affect Merkle root");
@@ -355,10 +360,11 @@ mod tests {
         use kontor_crypto_core::validate_and_encode;
 
         let data = vec![42u8; 15_000];
-        let (_, metadata) = prepare_file(&data, "test.bin", b"nonce").unwrap();
+        let nonce = &data[..5];
+        let (_, metadata) = prepare_file(&data, "test.bin", nonce).unwrap();
         let sequential_root = metadata.root;
 
-        let encoded = validate_and_encode(&data, "test.bin", b"nonce").unwrap();
+        let encoded = validate_and_encode(&data, "test.bin", nonce).unwrap();
 
         let leaves: Vec<FieldElement> = encoded
             .padded_symbols

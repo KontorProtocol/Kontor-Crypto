@@ -195,6 +195,9 @@ function createWorkerPool(
           rejectPool(new Error(`Worker init failed: ${String(err)}`));
           return;
         }
+        // Remove dead worker from free pool to prevent dispatching to it.
+        const idx = freeWorkers.indexOf(w);
+        if (idx >= 0) freeWorkers.splice(idx, 1);
         const pending = pendingTasks.get(w);
         if (pending) {
           pendingTasks.delete(w);
@@ -208,10 +211,12 @@ function createWorkerPool(
 }
 
 function chooseBatchCount(leavesCount: number): number {
-  if (leavesCount <= 32) return leavesCount;
   if (leavesCount >= 65536) return 128;
   if (leavesCount >= 16384) return 64;
-  return 32;
+  if (leavesCount >= 256) return 32;
+  // leavesCount is always a power of two (>= 256) from the prepare_file
+  // pipeline, so this branch is only hit in hypothetical edge cases.
+  return 1;
 }
 
 function readFileWithProgress(
@@ -297,7 +302,7 @@ export async function prepareFile(
 
     let roots: Uint8Array[] = subRoots;
 
-    if (roots.length > 1 && roots.length % 2 !== 0) {
+    if (roots.length > 1 && (roots.length & (roots.length - 1)) !== 0) {
       throw new Error(
         `internal: sub-root count must be a power of two, got ${roots.length}`
       );

@@ -56,7 +56,7 @@ fn prepare_file_empty_input_returns_error() {
 #[wasm_bindgen_test]
 fn prepare_leaves_returns_leaf_bytes() {
     let file = b"hello".to_vec().into_boxed_slice();
-    let nonce = b"nonce".to_vec().into_boxed_slice();
+    let nonce = file.clone();
     let result =
         kontor_crypto_wasm::prepare_leaves(file, "test.txt", nonce).expect("should succeed");
 
@@ -83,6 +83,12 @@ fn prepare_leaves_empty_input_returns_error() {
     let file = b"".to_vec().into_boxed_slice();
     let nonce = b"".to_vec().into_boxed_slice();
     let result = kontor_crypto_wasm::prepare_leaves(file, "empty.txt", nonce);
+    assert!(result.is_err(), "empty input must fail");
+}
+
+#[wasm_bindgen_test]
+fn build_merkle_root_rejects_empty_input() {
+    let result = kontor_crypto_wasm::build_merkle_root(&[]);
     assert!(result.is_err(), "empty input must fail");
 }
 
@@ -122,7 +128,7 @@ fn nonce_changes_file_id_but_not_root() {
     let r1 = kontor_crypto_wasm::prepare_file_wasm(file1, "f.bin", nonce1).unwrap();
 
     let file2 = b"data".to_vec().into_boxed_slice();
-    let nonce2 = b"nonce".to_vec().into_boxed_slice();
+    let nonce2 = file2.clone();
     let r2 = kontor_crypto_wasm::prepare_file_wasm(file2, "f.bin", nonce2).unwrap();
 
     let m1 = js_sys::Reflect::get(&r1, &"metadata".into()).unwrap();
