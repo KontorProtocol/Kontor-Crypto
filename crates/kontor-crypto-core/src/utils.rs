@@ -21,12 +21,14 @@ pub fn field_to_bytes31_le<F: PrimeField>(element: &F) -> [u8; 31] {
     out
 }
 
-/// Render a field element as a lowercase hex string of its canonical `to_repr` bytes.
+/// Render a field element as a lowercase hex string (MSB-first / big-endian),
+/// consistent with [`field_from_hex`].
 pub fn field_to_hex<F: PrimeField>(f: &F) -> String {
     use std::fmt::Write;
     let repr = f.to_repr();
     repr.as_ref()
         .iter()
+        .rev()
         .fold(String::with_capacity(64), |mut s, b| {
             let _ = write!(s, "{:02x}", b);
             s

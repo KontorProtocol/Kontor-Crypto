@@ -297,6 +297,7 @@ mod tests {
         let root_hex_from_bytes: String =
             desc.root
                 .iter()
+                .rev()
                 .fold(String::with_capacity(64), |mut s, b| {
                     use std::fmt::Write;
                     let _ = write!(s, "{:02x}", b);

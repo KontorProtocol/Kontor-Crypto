@@ -498,7 +498,7 @@ mod standalone_poseidon {
     }
 
     fn mat_mul<F: PrimeField>(a: &Matrix<F>, b: &Matrix<F>) -> Option<Matrix<F>> {
-        if rows(a) != columns(b) {
+        if columns(a) != rows(b) {
             return None;
         }
         let b_t = transpose(b);

@@ -29,7 +29,7 @@ fn prepare_file_hello_deterministic() {
 
     assert_eq!(
         field_to_hex(&metadata.root),
-        "f38690053b5a535fdbba69f3aa2f24d0f5c3134019e6d26d1121f64bb3413507"
+        "073541b34bf621116dd2e6194013c3f5d0242faaf369badb5f535a3b059086f3"
     );
 
     assert_eq!(prepared.root, metadata.root);
