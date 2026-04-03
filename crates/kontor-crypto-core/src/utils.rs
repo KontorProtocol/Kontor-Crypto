@@ -5,7 +5,11 @@ use ff::PrimeField;
 /// Convert up to 31 little-endian bytes into a field element using the
 /// canonical byte representation expected by `ff::PrimeField::from_repr`.
 pub fn bytes31_to_field_le<F: PrimeField>(bytes31: &[u8]) -> F {
-    debug_assert!(bytes31.len() <= 31);
+    assert!(
+        bytes31.len() <= 31,
+        "bytes31_to_field_le: input length {} exceeds 31 bytes",
+        bytes31.len()
+    );
     let mut repr = <F as PrimeField>::Repr::default();
     let buf = repr.as_mut();
     buf[..bytes31.len()].copy_from_slice(bytes31);

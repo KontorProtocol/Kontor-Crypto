@@ -144,10 +144,7 @@ mod standalone_poseidon {
             .find(|&i| matrix[i][column] != zero && (0..column).all(|j| matrix[i][j] == zero))?;
         let pivot = matrix[pivot_index].clone();
         let pivot_val = pivot[column];
-        let inv_pivot = match pivot_val.invert().into() {
-            Some(x) => x,
-            None => return None,
-        };
+        let inv_pivot: F = Option::from(pivot_val.invert())?;
         let mut result = vec![pivot.clone()];
         for (i, row) in matrix.iter().enumerate() {
             if i == pivot_index {
@@ -205,10 +202,7 @@ mod standalone_poseidon {
             let row = &matrix[idx];
             let shadow_row = &shadow[idx];
             let val = row[idx];
-            let inv = match val.invert().into() {
-                Some(x) => x,
-                None => return None,
-            };
+            let inv: F = Option::from(val.invert())?;
             let mut normalized = scalar_vec_mul(inv, row);
             let mut shadow_normalized = scalar_vec_mul(inv, shadow_row);
             for j in 0..i {

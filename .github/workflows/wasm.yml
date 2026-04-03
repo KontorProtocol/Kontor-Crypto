@@ -43,7 +43,7 @@ jobs:
         run: cargo build -p kontor-crypto-wasm --target wasm32-unknown-unknown --release
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        run: cargo install wasm-pack --locked --version 0.14.0
 
       - name: Test WASM
         run: wasm-pack test --node crates/kontor-crypto-wasm

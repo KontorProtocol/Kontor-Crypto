@@ -50,22 +50,15 @@ fn poseidon_hash_tagged_leaf_1_2() {
 
 #[test]
 fn poseidon_hash_tagged_node_42_123() {
-    let result = poseidon_hash_tagged(
-        domain_tags::node(),
-        FieldElement::from(42u64),
-        FieldElement::from(123u64),
-    );
-    let leaf_result = field_from_hex::<FieldElement>(
-        "2eb3923b358306dc6af5240a87e8ea32ec23a2b4cc99932af880d75a86021495",
-    );
-    assert_ne!(result, leaf_result, "node tag must differ from leaf tag");
     assert_eq!(
         poseidon_hash_tagged(
             domain_tags::node(),
             FieldElement::from(42u64),
             FieldElement::from(123u64),
         ),
-        result,
-        "poseidon_hash_tagged must be deterministic"
+        field_from_hex::<FieldElement>(
+            "3792b290b7368a21134c9fcd2978f2e94c91928442e524b2293ff4d4bbf2772a"
+        ),
+        "poseidon_hash_tagged(node,42,123)"
     );
 }

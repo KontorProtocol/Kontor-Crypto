@@ -8,6 +8,10 @@ use kontor_crypto_core::{prepare_file, FileMetadata, PreparedFile};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+fn js_err(e: impl core::fmt::Display) -> JsValue {
+    JsValue::from(js_sys::Error::new(&e.to_string()))
+}
+
 /// Metadata returned to JS (root as hex, objectId, fileId, etc.).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,14 +120,14 @@ pub fn prepare_file_wasm(
     filename: &str,
     nonce: Box<[u8]>,
 ) -> Result<JsValue, JsValue> {
-    let (prepared, metadata) = prepare_file(file.as_ref(), filename, nonce.as_ref())
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let (prepared, metadata) =
+        prepare_file(file.as_ref(), filename, nonce.as_ref()).map_err(js_err)?;
     let result = PrepareResult {
         metadata: metadata_to_out(&metadata),
         prepared_file: prepared_file_to_out(&prepared),
         descriptor: metadata_to_descriptor_out(&metadata),
     };
-    serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+    serde_wasm_bindgen::to_value(&result).map_err(js_err)
 }
 
 /// Prepares leaf data for parallel Merkle tree computation.
@@ -143,12 +147,11 @@ pub fn prepare_leaves(
     use kontor_crypto_core::merkle::get_leaf_hash;
     use kontor_crypto_core::validate_and_encode;
 
-    let encoded = validate_and_encode(file.as_ref(), filename, nonce.as_ref())
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let encoded = validate_and_encode(file.as_ref(), filename, nonce.as_ref()).map_err(js_err)?;
 
     let mut leaf_bytes = Vec::with_capacity(encoded.padded_len * 32);
     for chunk in &encoded.padded_symbols {
-        let fe = get_leaf_hash(chunk).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let fe = get_leaf_hash(chunk).map_err(js_err)?;
         leaf_bytes.extend_from_slice(fe.to_repr().as_ref());
     }
 
@@ -193,12 +196,10 @@ pub fn build_merkle_root(leaf_bytes: &[u8]) -> Result<Box<[u8]>, JsValue> {
     use kontor_crypto_core::poseidon::FieldElement;
 
     if leaf_bytes.is_empty() {
-        return Err(JsValue::from_str("leafBytes must not be empty"));
+        return Err(js_err("leafBytes must not be empty"));
     }
     if !leaf_bytes.len().is_multiple_of(32) {
-        return Err(JsValue::from_str(
-            "leafBytes length must be a multiple of 32",
-        ));
+        return Err(js_err("leafBytes length must be a multiple of 32"));
     }
 
     let leaves: Vec<FieldElement> = leaf_bytes
@@ -207,11 +208,11 @@ pub fn build_merkle_root(leaf_bytes: &[u8]) -> Result<Box<[u8]>, JsValue> {
             let mut repr = <FieldElement as PrimeField>::Repr::default();
             repr.as_mut().copy_from_slice(chunk);
             let opt: Option<FieldElement> = FieldElement::from_repr(repr).into();
-            opt.ok_or_else(|| JsValue::from_str("invalid field element in leafBytes"))
+            opt.ok_or_else(|| js_err("invalid field element in leafBytes"))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let tree = build_tree_from_leaves(&leaves).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let tree = build_tree_from_leaves(&leaves).map_err(js_err)?;
     let root = tree.root();
     Ok(root.to_repr().as_ref().to_vec().into_boxed_slice())
 }
@@ -224,18 +225,18 @@ pub fn hash_nodes(left_bytes: Box<[u8]>, right_bytes: Box<[u8]>) -> Result<Box<[
     use kontor_crypto_core::poseidon::FieldElement;
 
     if left_bytes.len() != 32 || right_bytes.len() != 32 {
-        return Err(JsValue::from_str("each input must be exactly 32 bytes"));
+        return Err(js_err("each input must be exactly 32 bytes"));
     }
 
     let mut left_repr = <FieldElement as PrimeField>::Repr::default();
     left_repr.as_mut().copy_from_slice(&left_bytes);
     let left: Option<FieldElement> = FieldElement::from_repr(left_repr).into();
-    let left = left.ok_or_else(|| JsValue::from_str("invalid left field element"))?;
+    let left = left.ok_or_else(|| js_err("invalid left field element"))?;
 
     let mut right_repr = <FieldElement as PrimeField>::Repr::default();
     right_repr.as_mut().copy_from_slice(&right_bytes);
     let right: Option<FieldElement> = FieldElement::from_repr(right_repr).into();
-    let right = right.ok_or_else(|| JsValue::from_str("invalid right field element"))?;
+    let right = right.ok_or_else(|| js_err("invalid right field element"))?;
 
     let result = hash_node(left, right);
     Ok(result.to_repr().as_ref().to_vec().into_boxed_slice())
