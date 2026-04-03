@@ -24,15 +24,12 @@ fn poseidon_hash2_zero_zero() {
 
 #[test]
 fn poseidon_hash2_one_two() {
-    let result = poseidon_hash2(FieldElement::from(1u64), FieldElement::from(2u64));
-    let zero_zero = field_from_hex::<FieldElement>(
-        "38ec69788c896550d69fb76411058e72798b21bcaaae2ad06101e9dc558b5dbd",
-    );
-    assert_ne!(result, zero_zero, "hash2(1,2) must differ from hash2(0,0)");
     assert_eq!(
         poseidon_hash2(FieldElement::from(1u64), FieldElement::from(2u64)),
-        result,
-        "poseidon_hash2 must be deterministic"
+        field_from_hex::<FieldElement>(
+            "041f4c4432174659e6b91ccdc53b7e47caae1cd55c46b5385c13291392283f61"
+        ),
+        "poseidon_hash2(1,2)"
     );
 }
 

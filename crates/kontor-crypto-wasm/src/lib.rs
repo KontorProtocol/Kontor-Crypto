@@ -148,6 +148,30 @@ pub fn prepare_leaves(
     if file.is_empty() {
         return Err(JsValue::from_str("empty file"));
     }
+    if file.len() > config::MAX_FILE_SIZE_BYTES {
+        return Err(JsValue::from_str(&format!(
+            "prepare_file input size {} exceeds maximum {}",
+            file.len(),
+            config::MAX_FILE_SIZE_BYTES
+        )));
+    }
+    if filename.is_empty() {
+        return Err(JsValue::from_str("prepare_file filename must be non-empty"));
+    }
+    if filename.len() > config::MAX_FILENAME_LEN_BYTES {
+        return Err(JsValue::from_str(&format!(
+            "prepare_file filename length {} exceeds maximum {}",
+            filename.len(),
+            config::MAX_FILENAME_LEN_BYTES
+        )));
+    }
+    if nonce.len() > config::MAX_NONCE_LEN_BYTES {
+        return Err(JsValue::from_str(&format!(
+            "prepare_file nonce length {} exceeds maximum {}",
+            nonce.len(),
+            config::MAX_NONCE_LEN_BYTES
+        )));
+    }
 
     let object_id = compute_object_id(file.as_ref());
     let file_id = compute_file_id(file.as_ref(), nonce.as_ref());

@@ -75,7 +75,7 @@ function getWorkerCount(): number {
   return Math.min(np2, 8);
 }
 
-function spawnWorker(): Worker {
+function spawnWorker(): { worker: Worker; blobUrl: string } {
   const code = `
     let _buildMerkleRoot;
     self.onmessage = async (e) => {
@@ -95,7 +95,8 @@ function spawnWorker(): Worker {
     };
   `;
   const blob = new Blob([code], { type: "text/javascript" });
-  return new Worker(URL.createObjectURL(blob), { type: "module" });
+  const blobUrl = URL.createObjectURL(blob);
+  return { worker: new Worker(blobUrl, { type: "module" }), blobUrl };
 }
 
 interface WorkerPool {
@@ -108,8 +109,8 @@ function createWorkerPool(
   jsUrl: string,
   wasmUrl: string
 ): Promise<WorkerPool> {
-  return new Promise((resolvePool) => {
-    const workers: Worker[] = [];
+  return new Promise((resolvePool, rejectPool) => {
+    const workers: { worker: Worker; blobUrl: string }[] = [];
     const freeWorkers: Worker[] = [];
     const pendingTasks = new Map<
       Worker,
@@ -121,6 +122,7 @@ function createWorkerPool(
       reject: (err: Error) => void;
     }[] = [];
     let readyCount = 0;
+    let initFailed = false;
 
     function recycleWorker(w: Worker) {
       const next = taskQueue.shift();
@@ -136,8 +138,9 @@ function createWorkerPool(
     }
 
     for (let i = 0; i < size; i++) {
-      const w = spawnWorker();
-      workers.push(w);
+      const entry = spawnWorker();
+      workers.push(entry);
+      const w = entry.worker;
 
       w.onmessage = (ev: MessageEvent) => {
         if (ev.data.type === "ready") {
@@ -160,7 +163,10 @@ function createWorkerPool(
                 });
               },
               terminate() {
-                workers.forEach((w) => w.terminate());
+                workers.forEach((e) => {
+                  URL.revokeObjectURL(e.blobUrl);
+                  e.worker.terminate();
+                });
               },
             });
           }
@@ -178,6 +184,15 @@ function createWorkerPool(
       };
 
       w.onerror = (err) => {
+        if (readyCount < size && !initFailed) {
+          initFailed = true;
+          workers.forEach((e) => {
+            URL.revokeObjectURL(e.blobUrl);
+            e.worker.terminate();
+          });
+          rejectPool(new Error(`Worker init failed: ${String(err)}`));
+          return;
+        }
         const pending = pendingTasks.get(w);
         if (pending) {
           pendingTasks.delete(w);
@@ -247,98 +262,112 @@ export async function prepareFile(
   onProgress?.(PHASE_READING, 'encoding');
   await new Promise((r) => setTimeout(r, 0));
 
-  const prep = mod.prepareLeaves(bytes, filename, nonce);
-  const leafBytes = prep.leafBytes;
-  const leavesCount = leafBytes.length / 32;
+  let pool: WorkerPool | undefined;
+  try {
+    const prep = mod.prepareLeaves(bytes, filename, nonce);
+    const leafBytes = prep.leafBytes;
+    const leavesCount = leafBytes.length / 32;
 
-  onProgress?.(PHASE_ENCODING, 'merkle');
+    onProgress?.(PHASE_ENCODING, 'merkle');
 
-  const pool = await poolPromise;
-  const batchCount = chooseBatchCount(leavesCount);
-  const batchSize = leavesCount / batchCount;
+    pool = await poolPromise;
+    const batchCount = chooseBatchCount(leavesCount);
+    const batchSize = leavesCount / batchCount;
 
-  const merkleRange = PHASE_MERKLE - PHASE_ENCODING;
-  let completed = 0;
+    const merkleRange = PHASE_MERKLE - PHASE_ENCODING;
+    let completed = 0;
 
-  const subRoots = new Array<Uint8Array>(batchCount);
-  await Promise.all(
-    Array.from({ length: batchCount }, (_, i) => {
-      const start = i * batchSize * 32;
-      const end = (i + 1) * batchSize * 32;
-      return pool.dispatch(leafBytes.slice(start, end)).then((root) => {
-        subRoots[i] = root;
-        completed++;
-        onProgress?.(
-          PHASE_ENCODING + merkleRange * (completed / batchCount),
-          'merkle'
-        );
-      });
-    })
-  );
-
-  pool.terminate();
-
-  let roots: Uint8Array[] = subRoots;
-  while (roots.length > 1) {
-    const next: Uint8Array[] = [];
-    for (let i = 0; i < roots.length; i += 2) {
-      next.push(mod.hashNodes(roots[i], roots[i + 1]));
-    }
-    roots = next;
-  }
-
-  const rootBytes = roots[0];
-  const rootHex = bytesToHex(rootBytes);
-
-  const treeLeavesHex: string[] = new Array(leavesCount);
-  const hexBatchSize = 8192;
-  const finalRange = 1 - PHASE_MERKLE;
-
-  for (let batch = 0; batch < leavesCount; batch += hexBatchSize) {
-    const end = Math.min(batch + hexBatchSize, leavesCount);
-    for (let i = batch; i < end; i++) {
-      const off = i * 32;
-      let h = "";
-      for (let j = 0; j < 32; j++) h += HEX[leafBytes[off + j]];
-      treeLeavesHex[i] = h;
-    }
-    onProgress?.(
-      PHASE_MERKLE +
-        finalRange * Math.min((batch + hexBatchSize) / leavesCount, 1),
-      'finalizing'
+    const subRoots = new Array<Uint8Array>(batchCount);
+    await Promise.all(
+      Array.from({ length: batchCount }, (_, i) => {
+        const start = i * batchSize * 32;
+        const end = (i + 1) * batchSize * 32;
+        return pool!.dispatch(leafBytes.slice(start, end)).then((root) => {
+          subRoots[i] = root;
+          completed++;
+          onProgress?.(
+            PHASE_ENCODING + merkleRange * (completed / batchCount),
+            'merkle'
+          );
+        });
+      })
     );
-    if (end < leavesCount) {
-      await new Promise((r) => setTimeout(r, 0));
+
+    let roots: Uint8Array[] = subRoots;
+
+    if (roots.length > 1 && roots.length % 2 !== 0) {
+      throw new Error(
+        `internal: sub-root count must be a power of two, got ${roots.length}`
+      );
+    }
+
+    while (roots.length > 1) {
+      const next: Uint8Array[] = [];
+      for (let i = 0; i < roots.length; i += 2) {
+        next.push(mod.hashNodes(roots[i], roots[i + 1]));
+      }
+      roots = next;
+    }
+
+    const rootBytes = roots[0];
+    const rootHex = bytesToHex(rootBytes);
+
+    const treeLeavesHex: string[] = new Array(leavesCount);
+    const hexBatchSize = 8192;
+    const finalRange = 1 - PHASE_MERKLE;
+
+    for (let batch = 0; batch < leavesCount; batch += hexBatchSize) {
+      const end = Math.min(batch + hexBatchSize, leavesCount);
+      for (let i = batch; i < end; i++) {
+        const off = i * 32;
+        let h = "";
+        for (let j = 0; j < 32; j++) h += HEX[leafBytes[off + j]];
+        treeLeavesHex[i] = h;
+      }
+      onProgress?.(
+        PHASE_MERKLE +
+          finalRange * Math.min((batch + hexBatchSize) / leavesCount, 1),
+        'finalizing'
+      );
+      if (end < leavesCount) {
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+
+    const metadata: FileMetadata = {
+      root: rootHex,
+      objectId: prep.objectId,
+      fileId: prep.fileId,
+      nonce: Array.from(prep.nonce),
+      paddedLen: prep.paddedLen,
+      originalSize: prep.originalSize,
+      filename: prep.filename,
+    };
+
+    const preparedFile: PreparedFileData = {
+      root: rootHex,
+      fileId: prep.fileId,
+      treeLeavesHex,
+    };
+
+    const descriptor: RawFileDescriptor = {
+      fileId: prep.fileId,
+      objectId: prep.objectId,
+      nonce: Array.from(prep.nonce),
+      root: Array.from(rootBytes),
+      paddedLen: prep.paddedLen,
+      originalSize: prep.originalSize,
+      filename: prep.filename,
+    };
+
+    onProgress?.(1, 'finalizing');
+
+    return { metadata, preparedFile, descriptor };
+  } finally {
+    if (pool) {
+      pool.terminate();
+    } else {
+      poolPromise.then((p) => p.terminate()).catch(() => {});
     }
   }
-
-  const metadata: FileMetadata = {
-    root: rootHex,
-    objectId: prep.objectId,
-    fileId: prep.fileId,
-    nonce: Array.from(prep.nonce),
-    paddedLen: prep.paddedLen,
-    originalSize: prep.originalSize,
-    filename: prep.filename,
-  };
-
-  const preparedFile: PreparedFileData = {
-    root: rootHex,
-    fileId: prep.fileId,
-    treeLeavesHex,
-  };
-
-  const descriptor: RawFileDescriptor = {
-    fileId: prep.fileId,
-    objectId: prep.objectId,
-    nonce: Array.from(prep.nonce),
-    root: Array.from(rootBytes),
-    paddedLen: prep.paddedLen,
-    originalSize: prep.originalSize,
-    filename: prep.filename,
-  };
-
-  onProgress?.(1, 'finalizing');
-
-  return { metadata, preparedFile, descriptor };
 }
