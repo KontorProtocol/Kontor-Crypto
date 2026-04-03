@@ -65,7 +65,9 @@
   <pre id="out">Select a file, then click Run.</pre>
 
   <script type="module">
-    import { prepareFile } from '../../../packages/kontor-crypto/dist/index.js';
+    import init, { prepareFile } from '../pkg/kontor_crypto_wasm.js';
+
+    await init();
 
     const out = document.getElementById('out');
     const run = document.getElementById('run');
@@ -76,13 +78,6 @@
     const progressFill = document.getElementById('progressFill');
     const progressPhase = document.getElementById('progressPhase');
     let selectedFile = null;
-
-    const phaseLabels = {
-      reading: 'Reading file…',
-      encoding: 'Encoding…',
-      merkle: 'Building Merkle tree…',
-      finalizing: 'Finalizing…',
-    };
 
     function formatBytes(n) {
       if (n < 1024) return n + ' B';
@@ -117,15 +112,10 @@
       progressPhase.textContent = '';
       progressSection.classList.add('visible');
       const t0 = performance.now();
-      const onProgress = (progress, phase) => {
-        progressFill.style.width = `${progress * 100}%`;
-        const pct = Math.round(progress * 100);
-        const elapsed = performance.now() - t0;
-        const timeStr = elapsed > 500 ? ` · ${(elapsed / 1000).toFixed(1)}s` : '';
-        progressPhase.textContent = `${phaseLabels[phase] || phase} ${pct}%${timeStr}`;
-      };
       try {
-        const result = await prepareFile(selectedFile, undefined, undefined, onProgress);
+        const buf = await selectedFile.arrayBuffer();
+        const fileBytes = new Uint8Array(buf);
+        const result = prepareFile(fileBytes, selectedFile.name, new Uint8Array(0));
         const elapsed = performance.now() - t0;
         progressFill.style.width = '100%';
         progressPhase.textContent = `Done · ${(elapsed / 1000).toFixed(1)}s`;

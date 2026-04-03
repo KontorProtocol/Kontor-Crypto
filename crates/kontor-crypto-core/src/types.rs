@@ -28,7 +28,8 @@ impl FileMetadata {
     }
 
     pub fn total_symbols(&self) -> usize {
-        self.num_codewords() * config::TOTAL_SYMBOLS_PER_CODEWORD
+        self.num_codewords()
+            .saturating_mul(config::TOTAL_SYMBOLS_PER_CODEWORD)
     }
 
     pub fn depth(&self) -> usize {
