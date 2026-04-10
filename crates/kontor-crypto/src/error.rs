@@ -84,5 +84,20 @@ pub enum KontorPoRError {
     InvalidChunkEncoding { size: usize, max: usize },
 }
 
+impl From<kontor_crypto_core::error::CoreError> for KontorPoRError {
+    fn from(e: kontor_crypto_core::error::CoreError) -> Self {
+        use kontor_crypto_core::error::CoreError;
+        match e {
+            CoreError::EmptyData { operation } => KontorPoRError::EmptyData { operation },
+            CoreError::InvalidInput(s) => KontorPoRError::InvalidInput(s),
+            CoreError::MerkleTree(s) => KontorPoRError::MerkleTree(s),
+            CoreError::ErasureCoding { details } => KontorPoRError::ErasureCoding { details },
+            CoreError::IndexOutOfBounds { index, length } => {
+                KontorPoRError::IndexOutOfBounds { index, length }
+            }
+        }
+    }
+}
+
 /// Convenience Result type for Kontor PoR operations
 pub type Result<T> = std::result::Result<T, KontorPoRError>;

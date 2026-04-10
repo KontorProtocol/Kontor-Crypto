@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Kontor prepareFile</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { margin-bottom: 0.25rem; }
+    .hint { color: #666; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    .file-picker {
+      border: 2px dashed #bbb; border-radius: 8px; padding: 2rem; text-align: center;
+      cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative;
+    }
+    .file-picker:hover, .file-picker.dragover { border-color: #4a90d9; background: #f0f6ff; }
+    .file-picker input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .file-picker .label { font-size: 1.1rem; color: #555; pointer-events: none; }
+    .file-picker .selected { font-weight: 600; color: #1a1a1a; }
+    button {
+      padding: 0.6rem 1.4rem; cursor: pointer; font-size: 1rem; border: none;
+      border-radius: 6px; background: #4a90d9; color: #fff; margin-top: 1rem;
+      transition: background 0.2s;
+    }
+    button:hover { background: #357abd; }
+    button:disabled { background: #aaa; cursor: not-allowed; }
+    pre {
+      background: #f4f4f4; padding: 1rem; overflow-x: auto; font-size: 0.85rem;
+      border-radius: 6px; white-space: pre-wrap; word-break: break-all;
+    }
+    .error { color: #c00; }
+    .ok { color: #1a7f37; }
+    .progress-section {
+      display: none; margin-top: 1rem;
+    }
+    .progress-section.visible { display: block; }
+    .progress-track {
+      width: 100%; height: 1.1rem; border-radius: 6px; background: #e8e8e8;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 0%; border-radius: 6px; background: #4a90d9;
+      transition: width 0.25s ease-out;
+    }
+    .progress-phase {
+      display: block; margin-top: 0.35rem; font-size: 0.85rem; color: #666;
+    }
+  </style>
+</head>
+<body>
+  <h1>prepareFile</h1>
+
+  <div class="file-picker" id="dropzone">
+    <input type="file" id="fileInput">
+    <div class="label" id="fileLabel">Drop a file here or click to browse</div>
+  </div>
+
+  <button id="run" disabled>Run prepareFile</button>
+
+  <div class="progress-section" id="progressSection">
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <span class="progress-phase" id="progressPhase"></span>
+  </div>
+
+  <pre id="out">Select a file, then click Run.</pre>
+
+  <script type="module">
+    import init, { prepareFile } from '../pkg/kontor_crypto_wasm.js';
+
+    await init();
+
+    const out = document.getElementById('out');
+    const run = document.getElementById('run');
+    const fileInput = document.getElementById('fileInput');
+    const fileLabel = document.getElementById('fileLabel');
+    const dropzone = document.getElementById('dropzone');
+    const progressSection = document.getElementById('progressSection');
+    const progressFill = document.getElementById('progressFill');
+    const progressPhase = document.getElementById('progressPhase');
+    let selectedFile = null;
+
+    function formatBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function selectFile(file) {
+      selectedFile = file;
+      fileLabel.className = 'label selected';
+      fileLabel.textContent = `${file.name} (${formatBytes(file.size)})`;
+      run.disabled = false;
+      out.textContent = 'Ready. Click Run.';
+      out.className = '';
+    }
+
+    fileInput.addEventListener('change', (e) => { if (e.target.files.length) selectFile(e.target.files[0]); });
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) { selectFile(e.dataTransfer.files[0]); fileInput.files = e.dataTransfer.files; }
+    });
+
+    run.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      run.disabled = true;
+      out.textContent = `Processing "${selectedFile.name}" (${formatBytes(selectedFile.size)})…`;
+      out.className = '';
+      progressFill.style.width = '0%';
+      progressPhase.textContent = '';
+      progressSection.classList.add('visible');
+      const t0 = performance.now();
+      try {
+        const buf = await selectedFile.arrayBuffer();
+        const fileBytes = new Uint8Array(buf);
+        const result = prepareFile(fileBytes, selectedFile.name, new Uint8Array(0));
+        const elapsed = performance.now() - t0;
+        progressFill.style.width = '100%';
+        progressPhase.textContent = `Done · ${(elapsed / 1000).toFixed(1)}s`;
+        out.className = 'ok';
+        out.textContent = `OK (${elapsed.toFixed(1)} ms)\n\n` + JSON.stringify({
+          metadata: { ...result.metadata, root: result.metadata.root.slice(0, 32) + '…' },
+          treeLeavesCount: result.preparedFile.treeLeavesHex.length,
+          descriptorRootLen: result.descriptor.root.length,
+        }, null, 2);
+      } catch (e) {
+        out.className = 'error';
+        out.textContent = 'Error: ' + (e.message || e);
+      } finally {
+        run.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

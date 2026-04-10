@@ -236,47 +236,37 @@ impl Clone for PorParams {
     }
 }
 
-/// The public commitment to a file, which is shared with verifiers.
+/// Public commitment to a file.
+///
+/// This is a thin wrapper around `kontor_crypto_core::types::FileMetadata` so that
+/// `validate()` returns `Result<(), KontorPoRError>` (the crate-level error) instead
+/// of leaking `CoreError` through the public API.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileMetadata {
-    /// The Merkle root over all symbols (data + parity)
     pub root: FieldElement,
-    /// Content-based identifier: `object_<SHA256(data)>`
-    /// Not unique - same data produces same object_id. Used for file discovery.
     pub object_id: String,
-    /// Unique file identifier: `file_<SHA256(data || nonce)>`
-    /// Unique per upload - used in the storage protocol.
     pub file_id: String,
-    /// The deterministic nonce used to derive the file_id (enables same data to have unique IDs)
     pub nonce: Vec<u8>,
-    /// The total number of leaves in the Merkle tree (padded to power of 2)
     pub padded_len: usize,
-    /// Size of original file in bytes (for reconstruction)
     pub original_size: usize,
-    /// Filename for operator UX and integration
     pub filename: String,
 }
 
 impl FileMetadata {
-    /// Number of data symbols (31-byte chunks from original file).
     pub fn num_data_symbols(&self) -> usize {
         self.original_size.div_ceil(crate::config::CHUNK_SIZE_BYTES)
     }
 
-    /// Number of RS codewords.
     pub fn num_codewords(&self) -> usize {
         self.num_data_symbols()
             .div_ceil(crate::config::DATA_SYMBOLS_PER_CODEWORD)
     }
 
-    /// Total symbols including parity (num_codewords × 255).
     pub fn total_symbols(&self) -> usize {
         self.num_codewords()
             .saturating_mul(crate::config::TOTAL_SYMBOLS_PER_CODEWORD)
     }
 
-    /// Computes the Merkle tree depth from padded_len.
-    /// Depth is log2(padded_len), assuming padded_len is a power of 2.
     pub fn depth(&self) -> usize {
         if self.padded_len == 0 {
             0
@@ -286,112 +276,41 @@ impl FileMetadata {
     }
 
     /// Validate metadata consistency and security bounds.
+    ///
+    /// Delegates to the core validation logic and converts the error to
+    /// `KontorPoRError` so callers only need to handle the crate-level error type.
     pub fn validate(&self) -> crate::Result<()> {
-        use crate::{config, KontorPoRError};
-
-        if self.file_id.is_empty() {
-            return Err(KontorPoRError::InvalidInput(
-                "FileMetadata.file_id must be non-empty".to_string(),
-            ));
-        }
-        if self.object_id.is_empty() {
-            return Err(KontorPoRError::InvalidInput(
-                "FileMetadata.object_id must be non-empty".to_string(),
-            ));
-        }
-        if self.filename.is_empty() {
-            return Err(KontorPoRError::InvalidInput(
-                "FileMetadata.filename must be non-empty".to_string(),
-            ));
-        }
-        if self.file_id.len() > config::MAX_IDENTIFIER_LEN_BYTES {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "FileMetadata.file_id length {} exceeds maximum {}",
-                self.file_id.len(),
-                config::MAX_IDENTIFIER_LEN_BYTES
-            )));
-        }
-        if self.object_id.len() > config::MAX_IDENTIFIER_LEN_BYTES {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "FileMetadata.object_id length {} exceeds maximum {}",
-                self.object_id.len(),
-                config::MAX_IDENTIFIER_LEN_BYTES
-            )));
-        }
-        if self.filename.len() > config::MAX_FILENAME_LEN_BYTES {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "FileMetadata.filename length {} exceeds maximum {}",
-                self.filename.len(),
-                config::MAX_FILENAME_LEN_BYTES
-            )));
-        }
-        if self.nonce.len() > config::MAX_NONCE_LEN_BYTES {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "FileMetadata.nonce length {} exceeds maximum {}",
-                self.nonce.len(),
-                config::MAX_NONCE_LEN_BYTES
-            )));
-        }
-        if self.original_size == 0 {
-            return Err(KontorPoRError::InvalidInput(
-                "FileMetadata.original_size must be > 0".to_string(),
-            ));
-        }
-        if self.original_size > config::MAX_FILE_SIZE_BYTES {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "FileMetadata.original_size {} exceeds maximum {}",
-                self.original_size,
-                config::MAX_FILE_SIZE_BYTES
-            )));
-        }
-        if self.padded_len == 0 {
-            return Err(KontorPoRError::InvalidInput(
-                "FileMetadata.padded_len must be > 0".to_string(),
-            ));
-        }
-        if !self.padded_len.is_power_of_two() {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "FileMetadata.padded_len {} must be a power of two",
-                self.padded_len
-            )));
-        }
-
-        let num_data_symbols = self.original_size.div_ceil(config::CHUNK_SIZE_BYTES);
-        let num_codewords = num_data_symbols.div_ceil(config::DATA_SYMBOLS_PER_CODEWORD);
-        let total_symbols = num_codewords
-            .checked_mul(config::TOTAL_SYMBOLS_PER_CODEWORD)
-            .ok_or_else(|| {
-                KontorPoRError::InvalidInput("FileMetadata symbol count overflow".to_string())
-            })?;
-        if total_symbols == 0 {
-            return Err(KontorPoRError::InvalidInput(
-                "FileMetadata implied symbol count must be > 0".to_string(),
-            ));
-        }
-
-        let expected_padded_len = total_symbols.next_power_of_two();
-        if self.padded_len != expected_padded_len {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "FileMetadata.padded_len {} does not match expected {} for original_size {}",
-                self.padded_len, expected_padded_len, self.original_size
-            )));
-        }
-
-        let encoded_capacity = total_symbols
-            .checked_mul(config::CHUNK_SIZE_BYTES)
-            .ok_or_else(|| {
-                KontorPoRError::InvalidInput(
-                    "FileMetadata encoded byte capacity overflow".to_string(),
-                )
-            })?;
-        if self.original_size > encoded_capacity {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "FileMetadata.original_size {} exceeds encoded capacity {}",
-                self.original_size, encoded_capacity
-            )));
-        }
-
+        let core: kontor_crypto_core::types::FileMetadata = self.into();
+        core.validate()?;
         Ok(())
+    }
+}
+
+impl From<kontor_crypto_core::types::FileMetadata> for FileMetadata {
+    fn from(c: kontor_crypto_core::types::FileMetadata) -> Self {
+        Self {
+            root: c.root,
+            object_id: c.object_id,
+            file_id: c.file_id,
+            nonce: c.nonce,
+            padded_len: c.padded_len,
+            original_size: c.original_size,
+            filename: c.filename,
+        }
+    }
+}
+
+impl From<&FileMetadata> for kontor_crypto_core::types::FileMetadata {
+    fn from(m: &FileMetadata) -> Self {
+        Self {
+            root: m.root,
+            object_id: m.object_id.clone(),
+            file_id: m.file_id.clone(),
+            nonce: m.nonce.clone(),
+            padded_len: m.padded_len,
+            original_size: m.original_size,
+            filename: m.filename.clone(),
+        }
     }
 }
 
@@ -405,11 +324,14 @@ impl crate::ledger::FileDescriptor for FileMetadata {
     }
 
     fn depth(&self) -> usize {
-        self.depth() // Delegates to FileMetadata::depth()
+        self.depth()
     }
 }
 
 /// The prover's representation of a file, containing the full Merkle tree.
+/// This wraps `kontor_crypto_core::types::PreparedFile` to restrict `tree`
+/// visibility to `pub(crate)`, preventing external access to the raw Merkle
+/// data which would compromise the zero-knowledge property.
 #[derive(Debug, Clone)]
 pub struct PreparedFile {
     /// The full Merkle tree structure held by the prover
@@ -418,6 +340,16 @@ pub struct PreparedFile {
     pub file_id: String,
     /// The Merkle root for quick access
     pub root: FieldElement,
+}
+
+impl From<kontor_crypto_core::types::PreparedFile> for PreparedFile {
+    fn from(core: kontor_crypto_core::types::PreparedFile) -> Self {
+        Self {
+            tree: core.tree,
+            file_id: core.file_id,
+            root: core.root,
+        }
+    }
 }
 
 /// Encapsulates a verifier's challenge request for a specific file.

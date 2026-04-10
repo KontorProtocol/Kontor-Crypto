@@ -2,31 +2,11 @@
 
 use crate::api::FieldElement;
 use crate::poseidon::{domain_tags, poseidon_hash_tagged};
-use ff::{FromUniformBytes, PrimeField};
+use ff::FromUniformBytes;
 
-/// Convert up to 31 little-endian bytes into a field element using the
-/// canonical byte representation expected by `ff::PrimeField::from_repr`.
-///
-/// This helper centralizes our endianness assumption and is covered by tests.
-/// If upstream representation changes, tests will fail here.
-pub fn bytes31_to_field_le<F: PrimeField>(bytes31: &[u8]) -> F {
-    debug_assert!(bytes31.len() <= 31);
-    let mut repr = <F as PrimeField>::Repr::default();
-    let buf = repr.as_mut();
-    // Copy provided bytes into the least-significant positions (little-endian)
-    buf[..bytes31.len()].copy_from_slice(bytes31);
-    F::from_repr(repr).expect("31-byte chunks should always fit in the field")
-}
-
-/// Convert a field element to its first 31 little-endian bytes.
-/// This is the inverse of `bytes31_to_field_le` for 31-byte inputs.
-pub fn field_to_bytes31_le<F: PrimeField>(element: &F) -> [u8; 31] {
-    let repr = element.to_repr();
-    let bytes = repr.as_ref();
-    let mut out = [0u8; 31];
-    out.copy_from_slice(&bytes[..31]);
-    out
-}
+pub use kontor_crypto_core::utils::{
+    bytes31_to_field_le, field_from_hex, field_to_bytes31_le, field_to_hex,
+};
 
 /// Utility function to derive a leaf index from a hash value using least-significant bits.
 /// This extracts the first `depth` bits from the hash in little-endian order.

@@ -77,6 +77,8 @@
 //! # Ok::<(), KontorPoRError>(())
 //! ```
 
+#![deny(unsafe_code)]
+
 pub mod api;
 pub mod circuit;
 pub mod circuit_safety;

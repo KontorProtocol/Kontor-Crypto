@@ -1,0 +1,24 @@
+[package]
+name = "kontor-crypto-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM bindings for Kontor prepare_file (browser)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Core: no nova_poseidon to keep WASM-compatible (pure Rust Poseidon in core).
+kontor-crypto-core = { path = "../kontor-crypto-core", default-features = false }
+# Minimum version; Cargo resolves to latest compatible (currently 0.2.112).
+# rust-toolchain.toml pins 1.93.0, so any 0.2.x is fine.
+wasm-bindgen = "0.2.100"
+serde = { version = "1.0", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+ff = "0.13"
+js-sys = "0.3"
+# Required for wasm32 so that pasta_curves/ff use JS randomness when needed
+getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

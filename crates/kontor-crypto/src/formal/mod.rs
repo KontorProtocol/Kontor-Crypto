@@ -2579,8 +2579,10 @@ mod tests {
         // Regression guard: if a step output is allocated as a fresh wire but never tied
         // back to its intended value, it will not appear in any constraint and Picus
         // can (correctly) report an underconstraint.
-        let fixtures_dir = Path::new("tools/picus/fixtures");
-        let fixture = load_fixture(fixtures_dir, "single-file-minimal").expect("fixture loads");
+        // Path from crate dir (crates/kontor-crypto) to workspace root then tools/picus/fixtures
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let fixtures_dir = manifest_dir.join("../../tools/picus/fixtures");
+        let fixture = load_fixture(&fixtures_dir, "single-file-minimal").expect("fixture loads");
 
         let scenario = build_fixture_scenario(&fixture).expect("scenario builds");
         let plan = derive_plan(&scenario.challenges, &scenario.ledger).expect("plan derives");
