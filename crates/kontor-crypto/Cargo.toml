@@ -1,6 +1,6 @@
 [package]
 name = "kontor-crypto"
-version = "0.1.6"
+version = "0.2.0"
 edition = "2021"
 default-run = "kontor-crypto"
 license = "MIT"
@@ -22,7 +22,7 @@ exclude = [
 # --- Core SNARK and Proof System Dependencies ---
 
 nova-snark = { version = "0.41.0", default-features = false }
-kontor-crypto-core = { path = "../kontor-crypto-core", features = ["nova_poseidon"] }
+kontor-crypto-core = { path = "../kontor-crypto-core", version = "0.2.0", features = ["nova_poseidon"] }
 
 # --- Hashing and Merkle Tree Dependencies ---
 

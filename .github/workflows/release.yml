@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish-crates:
+    name: Publish to crates.io
+    runs-on: ubuntu-x86-8cpu
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust
+        run: rustup show
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+
+      - name: Publish kontor-crypto-core
+        run: cargo publish -p kontor-crypto-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io to index kontor-crypto-core
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --no-deps -p kontor-crypto-core | jq -r '.packages[0].version')
+          echo "Waiting for kontor-crypto-core@$VERSION to appear on crates.io..."
+          for i in $(seq 1 30); do
+            if curl -sS "https://crates.io/api/v1/crates/kontor-crypto-core/$VERSION" | jq -e '.version' >/dev/null 2>&1; then
+              echo "kontor-crypto-core@$VERSION is indexed"
+              exit 0
+            fi
+            echo "  attempt $i/30 — retrying in 10s..."
+            sleep 10
+          done
+          echo "::error::Timed out waiting for crates.io to index kontor-crypto-core@$VERSION"
+          exit 1
+
+      - name: Publish kontor-crypto
+        run: cargo publish -p kontor-crypto
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-npm:
+    name: Publish to npm
+    needs: publish-crates
+    runs-on: ubuntu-x86-8cpu
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust
+        run: rustup show
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: |
+          if ! command -v wasm-pack >/dev/null; then
+            cargo install wasm-pack --locked --version 0.14.0
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Build package
+        working-directory: packages/kontor-crypto
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish to npm
+        working-directory: packages/kontor-crypto
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
