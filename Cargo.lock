@@ -784,6 +784,7 @@ dependencies = [
  "ff",
  "generic-array 0.14.9",
  "halo2curves",
+ "hex",
  "nova-snark",
  "once_cell",
  "reed-solomon-erasure",
