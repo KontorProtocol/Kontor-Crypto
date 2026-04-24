@@ -912,14 +912,14 @@ mod tests {
         assert_eq!(
             poseidon_hash2(Fq::from(0u64), Fq::from(0u64)),
             field_from_hex::<Fq>(
-                "38ec69788c896550d69fb76411058e72798b21bcaaae2ad06101e9dc558b5dbd"
+                "bd5d8b55dce90161d02aaeaabc218b79728e051164b79fd65065898c7869ec38"
             ),
             "poseidon_hash2(0,0) must match Nova"
         );
         assert_eq!(
             poseidon_hash_tagged(domain_tags::leaf(), Fq::from(1u64), Fq::from(2u64)),
             field_from_hex::<Fq>(
-                "2eb3923b358306dc6af5240a87e8ea32ec23a2b4cc99932af880d75a86021495"
+                "951402865ad780f82a9399ccb4a223ec32eae8870a24f56adc0683353b92b32e"
             ),
             "poseidon_hash_tagged(leaf,1,2) must match Nova"
         );

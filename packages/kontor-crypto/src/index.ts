@@ -60,11 +60,11 @@ export function init(): Promise<void> {
 const HEX: string[] = [];
 for (let i = 0; i < 256; i++) HEX[i] = i.toString(16).padStart(2, "0");
 
-/** Encode a 32-byte field element repr as big-endian hex (MSB-first),
- *  matching Rust `field_to_hex` which iterates `.iter().rev()`. */
+/** Encode a 32-byte field element repr as little-endian hex (canonical
+ *  `PrimeField::to_repr()` order), matching Rust `field_to_hex`. */
 function fieldBytesToHex(bytes: Uint8Array, offset = 0, len = 32): string {
   let hex = "";
-  for (let j = offset + len - 1; j >= offset; j--) hex += HEX[bytes[j]];
+  for (let j = offset; j < offset + len; j++) hex += HEX[bytes[j]];
   return hex;
 }
 

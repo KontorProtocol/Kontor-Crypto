@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   wasm_build_and_test:
-    runs-on: ubuntu-x86-8cpu
+    runs-on: ubuntu-latest-m
 
     steps:
       - name: Checkout repository

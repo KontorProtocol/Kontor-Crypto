@@ -1,7 +1,9 @@
 [package]
 name = "kontor-crypto-wasm"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+license = "MIT"
+publish = false
 description = "WASM bindings for Kontor prepare_file (browser)"
 
 [lib]
@@ -9,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Core: no nova_poseidon to keep WASM-compatible (pure Rust Poseidon in core).
-kontor-crypto-core = { path = "../kontor-crypto-core", default-features = false }
+kontor-crypto-core = { path = "../kontor-crypto-core", version = "0.2.0", default-features = false }
 # Minimum version; Cargo resolves to latest compatible (currently 0.2.112).
 # rust-toolchain.toml pins 1.93.0, so any 0.2.x is fine.
 wasm-bindgen = "0.2.100"

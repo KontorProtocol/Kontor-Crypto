@@ -1,5 +1,13 @@
 # Kontor Proof-of-Retrievability (PoR)
 
+> ## ⚠️ BREAKING CHANGE in v(next)
+>
+> `field_to_hex` and `field_from_hex` (in both Rust `kontor-crypto-core` and the npm `kontor-crypto` package) now use the **canonical little-endian** byte order of `ff::PrimeField::to_repr()`, instead of the previous big-endian order.
+>
+> This aligns the hex serialization with what the Kontor indexer (`bytes_to_field_element`) and the `filestorage` contract expect when consuming a field element via WIT. Any hex string of a field element produced by previous versions must be considered invalid (or reversed byte-by-byte) before being read by the new version. The change is binary-equivalent to applying a `byte.reverse()` on the hex output.
+>
+> See commit history for migration details.
+
 [![Crates.io](https://img.shields.io/crates/v/kontor-crypto.svg)](https://crates.io/crates/kontor-crypto)
 [![CI](https://github.com/KontorProtocol/Kontor-Crypto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/KontorProtocol/Kontor-Crypto/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/LICENSE)
