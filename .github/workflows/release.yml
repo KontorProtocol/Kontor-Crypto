@@ -23,16 +23,22 @@ jobs:
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
 
       - name: Publish kontor-crypto-core
-        run: cargo publish -p kontor-crypto-core
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "kontor-crypto-core") | .version')
+          if curl -sSfL "https://crates.io/api/v1/crates/kontor-crypto-core/$VERSION" | jq -e '.version' >/dev/null 2>&1; then
+            echo "kontor-crypto-core@$VERSION already published, skipping."
+            exit 0
+          fi
+          cargo publish -p kontor-crypto-core
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for crates.io to index kontor-crypto-core
         run: |
-          VERSION=$(cargo metadata --format-version 1 --no-deps -p kontor-crypto-core | jq -r '.packages[0].version')
+          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "kontor-crypto-core") | .version')
           echo "Waiting for kontor-crypto-core@$VERSION to appear on crates.io..."
           for i in $(seq 1 30); do
-            if curl -sS "https://crates.io/api/v1/crates/kontor-crypto-core/$VERSION" | jq -e '.version' >/dev/null 2>&1; then
+            if curl -sSfL "https://crates.io/api/v1/crates/kontor-crypto-core/$VERSION" | jq -e '.version' >/dev/null 2>&1; then
               echo "kontor-crypto-core@$VERSION is indexed"
               exit 0
             fi
@@ -43,7 +49,13 @@ jobs:
           exit 1
 
       - name: Publish kontor-crypto
-        run: cargo publish -p kontor-crypto
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "kontor-crypto") | .version')
+          if curl -sSfL "https://crates.io/api/v1/crates/kontor-crypto/$VERSION" | jq -e '.version' >/dev/null 2>&1; then
+            echo "kontor-crypto@$VERSION already published, skipping."
+            exit 0
+          fi
+          cargo publish -p kontor-crypto
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -51,6 +63,9 @@ jobs:
     name: Publish to npm
     needs: publish-crates
     runs-on: ubuntu-latest-m
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout repository
@@ -77,6 +92,9 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
+      - name: Upgrade npm for Trusted Publisher provenance
+        run: npm install -g npm@latest
+
       - name: Build package
         working-directory: packages/kontor-crypto
         run: |
@@ -85,4 +103,11 @@ jobs:
 
       - name: Publish to npm
         working-directory: packages/kontor-crypto
-        run: npm publish --access public
+        run: |
+          NAME=$(jq -r '.name' package.json)
+          VERSION=$(jq -r '.version' package.json)
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION already published, skipping."
+            exit 0
+          fi
+          npm publish --access public
