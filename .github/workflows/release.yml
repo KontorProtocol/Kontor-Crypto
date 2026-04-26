@@ -25,7 +25,9 @@ jobs:
       - name: Publish kontor-crypto-core
         run: |
           VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "kontor-crypto-core") | .version')
-          if curl -sSfL "https://crates.io/api/v1/crates/kontor-crypto-core/$VERSION" | jq -e '.version' >/dev/null 2>&1; then
+          if curl -sSfL -A "kontor-crypto-release-workflow (github.com/${{ github.repository }})" \
+              "https://index.crates.io/ko/nt/kontor-crypto-core" \
+              | jq -e --arg v "$VERSION" 'select(.vers == $v)' >/dev/null 2>&1; then
             echo "kontor-crypto-core@$VERSION already published, skipping."
             exit 0
           fi
@@ -38,7 +40,9 @@ jobs:
           VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "kontor-crypto-core") | .version')
           echo "Waiting for kontor-crypto-core@$VERSION to appear on crates.io..."
           for i in $(seq 1 30); do
-            if curl -sSfL "https://crates.io/api/v1/crates/kontor-crypto-core/$VERSION" | jq -e '.version' >/dev/null 2>&1; then
+            if curl -sSfL -A "kontor-crypto-release-workflow (github.com/${{ github.repository }})" \
+                "https://index.crates.io/ko/nt/kontor-crypto-core" \
+                | jq -e --arg v "$VERSION" 'select(.vers == $v)' >/dev/null 2>&1; then
               echo "kontor-crypto-core@$VERSION is indexed"
               exit 0
             fi
@@ -51,7 +55,9 @@ jobs:
       - name: Publish kontor-crypto
         run: |
           VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "kontor-crypto") | .version')
-          if curl -sSfL "https://crates.io/api/v1/crates/kontor-crypto/$VERSION" | jq -e '.version' >/dev/null 2>&1; then
+          if curl -sSfL -A "kontor-crypto-release-workflow (github.com/${{ github.repository }})" \
+              "https://index.crates.io/ko/nt/kontor-crypto" \
+              | jq -e --arg v "$VERSION" 'select(.vers == $v)' >/dev/null 2>&1; then
             echo "kontor-crypto@$VERSION already published, skipping."
             exit 0
           fi
