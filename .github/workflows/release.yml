@@ -22,6 +22,26 @@ jobs:
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
 
+      - name: Verify crate versions match release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          EXPECTED="${RELEASE_TAG#v}"
+          if [ -z "$EXPECTED" ]; then
+            echo "::error::Release tag is empty"
+            exit 1
+          fi
+          fail=0
+          for crate in kontor-crypto-core kontor-crypto kontor-crypto-wasm; do
+            ACTUAL=$(cargo metadata --format-version 1 --no-deps \
+              | jq -r --arg n "$crate" '.packages[] | select(.name == $n) | .version')
+            if [ "$ACTUAL" != "$EXPECTED" ]; then
+              echo "::error::$crate version is '$ACTUAL' but release tag is '$RELEASE_TAG' (expected '$EXPECTED')"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ]
+
       - name: Publish kontor-crypto-core
         run: |
           VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "kontor-crypto-core") | .version')
@@ -100,6 +120,18 @@ jobs:
 
       - name: Upgrade npm for Trusted Publisher provenance
         run: npm install -g npm@latest
+
+      - name: Verify npm package version matches release tag
+        working-directory: packages/kontor-crypto
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          EXPECTED="${RELEASE_TAG#v}"
+          ACTUAL=$(jq -r '.version' package.json)
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::package.json version is '$ACTUAL' but release tag is '$RELEASE_TAG' (expected '$EXPECTED')"
+            exit 1
+          fi
 
       - name: Build package
         working-directory: packages/kontor-crypto
