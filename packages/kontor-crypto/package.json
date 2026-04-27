@@ -1,6 +1,6 @@
 {
   "name": "@kontor/kontor-crypto",
-  "version": "0.2.0-alpha",
+  "version": "0.2.0",
   "type": "module",
   "description": "Kontor file preparation for Proof-of-Retrievability",
   "main": "dist/index.js",
