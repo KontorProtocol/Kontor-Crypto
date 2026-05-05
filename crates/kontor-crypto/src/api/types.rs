@@ -1,0 +1,467 @@
+//! Core API data types and structures.
+//!
+//! This module contains the public data structures used by the API:
+//! - FileMetadata: Public commitment to a file
+//! - PreparedFile: Prover's private representation  
+//! - Challenge: Verifier's challenge request
+//! - Proof: Final succinct proof object
+//! - PorParams: Cryptographic parameters
+
+use bincode::Options;
+use nova_snark::{
+    nova::{CompressedSNARK, ProverKey, PublicParams, VerifierKey},
+    provider::{ipa_pc, PallasEngine, VestaEngine},
+    spartan::snark::RelaxedR1CSSNARK,
+    traits::Engine,
+};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::sync::Arc;
+
+// --- Type Aliases for Core SNARK Components ---
+
+type E1 = PallasEngine;
+type E2 = VestaEngine;
+type EE1 = ipa_pc::EvaluationEngine<E1>;
+type EE2 = ipa_pc::EvaluationEngine<E2>;
+type S1 = RelaxedR1CSSNARK<E1, EE1>;
+type S2 = RelaxedR1CSSNARK<E2, EE2>;
+
+/// A type alias for the scalar field of the primary curve.
+pub type FieldElement = <E1 as Engine>::Scalar;
+
+type C = crate::circuit::PorCircuit<FieldElement>;
+
+/// Deterministic identity for a Challenge.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ChallengeID(pub [u8; 32]);
+
+/// The final, succinct proof object that is sent to the verifier.
+#[derive(Serialize, Deserialize)]
+pub struct Proof {
+    /// The compressed SNARK proof
+    pub compressed_snark: CompressedSNARK<E1, E2, C, S1, S2>,
+    /// The ledger root used during proof generation.
+    /// Verifiers must validate this root is in their accepted historical roots set
+    /// before verification. This enables cross-block aggregation without requiring
+    /// provers to regenerate proofs when new files activate.
+    pub ledger_root: FieldElement,
+    /// The aggregated tree depth at proof generation time.
+    /// Required for verification to load the correct circuit parameters.
+    pub aggregated_tree_depth: usize,
+}
+
+/// Constants for proof serialization format
+mod proof_format {
+    /// Magic bytes identifying Nova PoR proof format
+    pub const MAGIC: &[u8] = b"NPOR";
+
+    /// Current format version for forward compatibility.
+    ///
+    /// Version 3 removes the serialized `challenge_ids` and `ledger_indices`
+    /// vectors from `Proof`, so older version-2 payloads must not decode as if
+    /// they were the new constant-size proof format.
+    pub const VERSION: u16 = 3;
+
+    /// Header size in bytes: magic(4) + version(2) + length(4)
+    pub const HEADER_SIZE: usize = 10;
+}
+
+impl Proof {
+    /// Serialize this proof to bytes for network transport.
+    ///
+    /// The format includes a magic number, version, and the proof data.
+    /// This provides a stable, versioned format for cross-network compatibility.
+    ///
+    /// # Returns
+    ///
+    /// Returns the serialized proof as bytes, or an error if serialization fails.
+    pub fn to_bytes(&self) -> crate::Result<Vec<u8>> {
+        use crate::KontorPoRError;
+
+        let mut result = Vec::new();
+
+        // Write magic and version
+        result.extend_from_slice(proof_format::MAGIC);
+        result.extend_from_slice(&proof_format::VERSION.to_le_bytes());
+
+        // Serialize the proof using pinned bincode options so the wire format
+        // stays stable even if bincode's defaults change in the future.
+        let options = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_little_endian()
+            .with_limit(crate::config::MAX_PROOF_SIZE_BYTES as u64)
+            .reject_trailing_bytes();
+        let proof_bytes = options.serialize(self).map_err(|e| {
+            KontorPoRError::Serialization(format!("Failed to serialize proof: {}", e))
+        })?;
+
+        if proof_bytes.len() > crate::config::MAX_PROOF_SIZE_BYTES {
+            return Err(KontorPoRError::Serialization(format!(
+                "Proof size {} bytes exceeds maximum {} bytes",
+                proof_bytes.len(),
+                crate::config::MAX_PROOF_SIZE_BYTES
+            )));
+        }
+
+        // Write length and data
+        let length: u32 = proof_bytes.len().try_into().map_err(|_| {
+            KontorPoRError::Serialization("Proof size exceeds 32-bit length header".to_string())
+        })?;
+        result.extend_from_slice(&length.to_le_bytes());
+        result.extend_from_slice(&proof_bytes);
+
+        Ok(result)
+    }
+
+    /// Deserialize a proof from bytes.
+    ///
+    /// This function validates the magic number and version before deserializing
+    /// the proof data. It provides forward compatibility for future format versions.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - The serialized proof bytes
+    ///
+    /// # Returns
+    ///
+    /// Returns the deserialized Proof, or an error if deserialization fails.
+    pub fn from_bytes(bytes: &[u8]) -> crate::Result<Self> {
+        use crate::KontorPoRError;
+
+        if bytes.len() < proof_format::HEADER_SIZE {
+            return Err(KontorPoRError::Serialization(
+                "Proof bytes too short for header".to_string(),
+            ));
+        }
+
+        // Check magic bytes
+        let magic = &bytes[0..4];
+        if magic != proof_format::MAGIC {
+            return Err(KontorPoRError::Serialization(
+                "Invalid magic bytes in proof".to_string(),
+            ));
+        }
+
+        // Check version
+        let version = u16::from_le_bytes([bytes[4], bytes[5]]);
+        if version != proof_format::VERSION {
+            return Err(KontorPoRError::Serialization(format!(
+                "Unsupported proof format version: {}",
+                version
+            )));
+        }
+
+        // Read length
+        let length = u32::from_le_bytes([bytes[6], bytes[7], bytes[8], bytes[9]]) as usize;
+
+        if length > crate::config::MAX_PROOF_SIZE_BYTES {
+            return Err(KontorPoRError::Serialization(format!(
+                "Proof payload size {} bytes exceeds maximum {} bytes",
+                length,
+                crate::config::MAX_PROOF_SIZE_BYTES
+            )));
+        }
+
+        let expected_len = proof_format::HEADER_SIZE
+            .checked_add(length)
+            .ok_or_else(|| {
+                KontorPoRError::Serialization("Proof length header overflow".to_string())
+            })?;
+        if bytes.len() < expected_len {
+            return Err(KontorPoRError::Serialization(
+                "Proof bytes truncated".to_string(),
+            ));
+        }
+
+        if bytes.len() > expected_len {
+            return Err(KontorPoRError::Serialization(
+                "Proof bytes contain trailing data".to_string(),
+            ));
+        }
+
+        // Deserialize the proof
+        let proof_bytes = &bytes[proof_format::HEADER_SIZE..expected_len];
+        let options = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_little_endian()
+            .with_limit(crate::config::MAX_PROOF_SIZE_BYTES as u64)
+            .reject_trailing_bytes();
+        let proof = options.deserialize(proof_bytes).map_err(|e| {
+            KontorPoRError::Serialization(format!("Failed to deserialize proof: {}", e))
+        })?;
+
+        Ok(proof)
+    }
+}
+
+// --- Public API Structs ---
+
+#[derive(Clone)]
+pub struct KeyPair {
+    pub(crate) pk: Arc<ProverKey<E1, E2, C, S1, S2>>,
+    pub(crate) vk: Arc<VerifierKey<E1, E2, C, S1, S2>>,
+}
+
+/// Holds the universal, reusable cryptographic parameters for the PoR scheme.
+/// This struct is opaque and does not expose the complex internal types.
+pub struct PorParams {
+    pub(crate) pp: Arc<PublicParams<E1, E2, C>>,
+    pub(crate) keys: KeyPair,
+    /// Shape depth for this parameter set (exact-fit to the circuit)
+    pub file_tree_depth: usize,
+    /// Maximum file tree depth these params support (gating depth)
+    pub max_supported_depth: usize,
+    /// Declared aggregated tree depth (0 for single-file params)
+    pub aggregated_tree_depth: usize,
+}
+
+impl Clone for PorParams {
+    fn clone(&self) -> Self {
+        Self {
+            pp: Arc::clone(&self.pp),
+            keys: self.keys.clone(),
+            file_tree_depth: self.file_tree_depth,
+            max_supported_depth: self.max_supported_depth,
+            aggregated_tree_depth: self.aggregated_tree_depth,
+        }
+    }
+}
+
+/// Public commitment to a file.
+///
+/// This is a thin wrapper around `kontor_crypto_core::types::FileMetadata` so that
+/// `validate()` returns `Result<(), KontorPoRError>` (the crate-level error) instead
+/// of leaking `CoreError` through the public API.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileMetadata {
+    pub root: FieldElement,
+    pub object_id: String,
+    pub file_id: String,
+    pub nonce: Vec<u8>,
+    pub padded_len: usize,
+    pub original_size: usize,
+    pub filename: String,
+}
+
+impl FileMetadata {
+    pub fn num_data_symbols(&self) -> usize {
+        self.original_size.div_ceil(crate::config::CHUNK_SIZE_BYTES)
+    }
+
+    pub fn num_codewords(&self) -> usize {
+        self.num_data_symbols()
+            .div_ceil(crate::config::DATA_SYMBOLS_PER_CODEWORD)
+    }
+
+    pub fn total_symbols(&self) -> usize {
+        self.num_codewords()
+            .saturating_mul(crate::config::TOTAL_SYMBOLS_PER_CODEWORD)
+    }
+
+    pub fn depth(&self) -> usize {
+        if self.padded_len == 0 {
+            0
+        } else {
+            self.padded_len.trailing_zeros() as usize
+        }
+    }
+
+    /// Validate metadata consistency and security bounds.
+    ///
+    /// Delegates to the core validation logic and converts the error to
+    /// `KontorPoRError` so callers only need to handle the crate-level error type.
+    pub fn validate(&self) -> crate::Result<()> {
+        let core: kontor_crypto_core::types::FileMetadata = self.into();
+        core.validate()?;
+        Ok(())
+    }
+}
+
+impl From<kontor_crypto_core::types::FileMetadata> for FileMetadata {
+    fn from(c: kontor_crypto_core::types::FileMetadata) -> Self {
+        Self {
+            root: c.root,
+            object_id: c.object_id,
+            file_id: c.file_id,
+            nonce: c.nonce,
+            padded_len: c.padded_len,
+            original_size: c.original_size,
+            filename: c.filename,
+        }
+    }
+}
+
+impl From<&FileMetadata> for kontor_crypto_core::types::FileMetadata {
+    fn from(m: &FileMetadata) -> Self {
+        Self {
+            root: m.root,
+            object_id: m.object_id.clone(),
+            file_id: m.file_id.clone(),
+            nonce: m.nonce.clone(),
+            padded_len: m.padded_len,
+            original_size: m.original_size,
+            filename: m.filename.clone(),
+        }
+    }
+}
+
+impl crate::ledger::FileDescriptor for FileMetadata {
+    fn file_id(&self) -> &str {
+        &self.file_id
+    }
+
+    fn root(&self) -> FieldElement {
+        self.root
+    }
+
+    fn depth(&self) -> usize {
+        self.depth()
+    }
+}
+
+/// The prover's representation of a file, containing the full Merkle tree.
+/// This wraps `kontor_crypto_core::types::PreparedFile` to restrict `tree`
+/// visibility to `pub(crate)`, preventing external access to the raw Merkle
+/// data which would compromise the zero-knowledge property.
+#[derive(Debug, Clone)]
+pub struct PreparedFile {
+    /// The full Merkle tree structure held by the prover
+    pub(crate) tree: crate::merkle::MerkleTree,
+    /// SHA256 hash of the original file for identification
+    pub file_id: String,
+    /// The Merkle root for quick access
+    pub root: FieldElement,
+}
+
+impl From<kontor_crypto_core::types::PreparedFile> for PreparedFile {
+    fn from(core: kontor_crypto_core::types::PreparedFile) -> Self {
+        Self {
+            tree: core.tree,
+            file_id: core.file_id,
+            root: core.root,
+        }
+    }
+}
+
+/// Encapsulates a verifier's challenge request for a specific file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Challenge {
+    /// The public metadata of the file being challenged.
+    pub file_metadata: FileMetadata,
+    /// The block height when this challenge was created.
+    pub block_height: u64,
+    /// The number of proof iterations requested.
+    pub num_challenges: usize,
+    /// A deterministic seed used to generate challenges.
+    pub seed: FieldElement,
+    /// Identifier of the Storage Node being challenged
+    pub prover_id: String,
+}
+
+impl Challenge {
+    /// Create a new challenge for a file
+    pub fn new(
+        file_metadata: FileMetadata,
+        block_height: u64,
+        num_challenges: usize,
+        seed: FieldElement,
+        prover_id: String,
+    ) -> Self {
+        Self {
+            file_metadata,
+            block_height,
+            num_challenges,
+            seed,
+            prover_id,
+        }
+    }
+
+    /// Validate challenge structure and bounded fields.
+    pub fn validate(&self) -> crate::Result<()> {
+        use crate::{config, KontorPoRError};
+
+        self.file_metadata.validate()?;
+
+        if self.num_challenges == 0 || self.num_challenges > config::MAX_NUM_CHALLENGES {
+            return Err(KontorPoRError::InvalidChallengeCount {
+                count: self.num_challenges,
+            });
+        }
+        if self.prover_id.is_empty() {
+            return Err(KontorPoRError::InvalidInput(
+                "Challenge.prover_id must be non-empty".to_string(),
+            ));
+        }
+        if self.prover_id.len() > config::MAX_IDENTIFIER_LEN_BYTES {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "Challenge.prover_id length {} exceeds maximum {}",
+                self.prover_id.len(),
+                config::MAX_IDENTIFIER_LEN_BYTES
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Create a challenge with default test prover ID (convenience for testing)
+    #[doc(hidden)]
+    pub fn new_test(
+        file_metadata: FileMetadata,
+        block_height: u64,
+        num_challenges: usize,
+        seed: FieldElement,
+    ) -> Self {
+        Self::new(
+            file_metadata,
+            block_height,
+            num_challenges,
+            seed,
+            String::from("test_prover"),
+        )
+    }
+
+    /// Compute the deterministic ID for this challenge
+    pub fn id(&self) -> ChallengeID {
+        use crate::poseidon::domain_tags;
+        use ff::PrimeField;
+
+        fn feed_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
+            let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+            hasher.update(len.to_le_bytes());
+            hasher.update(bytes);
+        }
+
+        fn usize_to_u64(value: usize) -> u64 {
+            u64::try_from(value).unwrap_or(u64::MAX)
+        }
+
+        let mut hasher = Sha256::new();
+
+        // Add domain tag for challenge ID
+        let tag: FieldElement = domain_tags::challenge_id();
+        hasher.update(tag.to_repr());
+
+        // Add block height
+        hasher.update(self.block_height.to_le_bytes());
+
+        // Add seed (field element as bytes)
+        hasher.update(self.seed.to_repr());
+
+        // Add file metadata components with canonical, length-delimited encoding.
+        feed_len_prefixed(&mut hasher, self.file_metadata.file_id.as_bytes());
+        feed_len_prefixed(&mut hasher, self.file_metadata.nonce.as_slice());
+        hasher.update(usize_to_u64(self.file_metadata.padded_len).to_le_bytes());
+        hasher.update(usize_to_u64(self.file_metadata.original_size).to_le_bytes());
+        hasher.update(self.file_metadata.root.to_repr());
+
+        // Add num_challenges
+        hasher.update(usize_to_u64(self.num_challenges).to_le_bytes());
+
+        // Add prover_id with explicit length prefix.
+        feed_len_prefixed(&mut hasher, self.prover_id.as_bytes());
+
+        let result = hasher.finalize();
+        ChallengeID(result.into())
+    }
+}

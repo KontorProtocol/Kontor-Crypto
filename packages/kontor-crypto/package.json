@@ -1,0 +1,33 @@
+{
+  "name": "@kontor/kontor-crypto",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Kontor file preparation for Proof-of-Retrievability",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "bash build.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KontorProtocol/Kontor-Crypto.git",
+    "directory": "packages/kontor-crypto"
+  },
+  "homepage": "https://github.com/KontorProtocol/Kontor-Crypto#readme",
+  "bugs": {
+    "url": "https://github.com/KontorProtocol/Kontor-Crypto/issues"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,70 @@
+name: WASM
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wasm_build_and_test:
+    runs-on: ubuntu-latest-m
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust
+        run: rustup show
+
+      - name: Cache dependencies
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build WASM (raw)
+        run: cargo build -p kontor-crypto-wasm --target wasm32-unknown-unknown --release
+
+      - name: Install wasm-pack
+        run: |
+          if ! command -v wasm-pack >/dev/null; then
+            cargo install wasm-pack --locked --version 0.14.0
+          fi
+
+      - name: Test WASM
+        run: wasm-pack test --node crates/kontor-crypto-wasm
+
+      # Build with --target web (the mode used by the NPM package).
+      - name: Build WASM (web target)
+        run: wasm-pack build --target web --release crates/kontor-crypto-wasm
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Build NPM package
+        working-directory: packages/kontor-crypto
+        run: |
+          npm ci
+          npx tsc
+          cp ../../crates/kontor-crypto-wasm/pkg/kontor_crypto_wasm.js dist/
+          cp ../../crates/kontor-crypto-wasm/pkg/kontor_crypto_wasm_bg.wasm dist/
+          cp ../../crates/kontor-crypto-wasm/pkg/kontor_crypto_wasm.d.ts dist/
