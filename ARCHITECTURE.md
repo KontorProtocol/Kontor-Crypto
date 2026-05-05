@@ -2,6 +2,23 @@
 
 This section provides a technical overview of the cryptographic implementation for contributors.
 
+## Workspace and crates
+
+The project is a Cargo workspace with three crates:
+
+| Crate | Role |
+|-------|------|
+| **kontor-crypto** | Main library and CLI: full PoR API (`PorSystem`, `prepare_file`, `prove`, `verify`), Nova proving/verification, benchmarks, formal verification (Picus). Depends on `kontor-crypto-core` with feature `nova_poseidon`. |
+| **kontor-crypto-core** | Shared core: Reed–Solomon encoding, Poseidon Merkle trees, and `prepare_file`. No Nova dependency; used by both the main crate and the WASM crate. |
+| **kontor-crypto-wasm** | WASM bindings for `prepare_file` only (browser/Node). Depends on `kontor-crypto-core` (no `nova_poseidon`). Exposes `prepareFile(file, filename, nonce)` via wasm-bindgen. |
+
+**prepare_file flow:**
+
+- **Core → main:** `kontor-crypto` calls `kontor_crypto_core::prepare_file`; the result is used by the Nova-based prover/verifier. Poseidon and encoding are shared with the core.
+- **Core → WASM:** `kontor-crypto-wasm` calls the same `kontor_crypto_core::prepare_file` and exposes it to JS via `init` + `prepareFile`. Metadata and prepared file output are compatible with the main crate so that browser-prepared files can be used in the Nova pipeline (e.g. on a server).
+
+Regression tests ensure that when the main crate uses the core with Nova, Poseidon and `prepare_file` output remain consistent with the WASM/core-only path.
+
 ## Core Architecture
 
 The system processes data through a pipeline of erasure coding, chunking, and Merkle tree construction before entering the recursive proving loop.
