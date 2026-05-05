@@ -3,7 +3,6 @@ name: Formal Picus (Comprehensive)
 on:
   workflow_dispatch:
   pull_request:
-    branches: ["main"]
   push:
     branches: ["main"]
   schedule:
@@ -14,10 +13,13 @@ concurrency:
   group: formal-picus-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   picus_matrix:
     name: Picus ${{ matrix.lane_name }}
-    runs-on: ubuntu-x86-8cpu
+    runs-on: ubuntu-latest-m
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -44,10 +46,10 @@ jobs:
       PICUS_DOCKER_MEMORY: 10g
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Checkout Picus (Pinned)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: Veridise/Picus
           # Pinned commit for determinism (Veridise/Picus main @ 2026-02-13).
@@ -55,10 +57,12 @@ jobs:
           path: Picus
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7
+        with:
+          toolchain: stable
 
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
             ~/.cargo/bin/
@@ -103,7 +107,7 @@ jobs:
 
       - name: Upload Artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: ${{ matrix.artifact_name }}
           path: |

@@ -9,7 +9,6 @@ on:
   push:
     branches: ["main"]
   pull_request:
-    branches: ["main", "picus-2"]
 
 permissions:
   contents: read
@@ -23,7 +22,7 @@ concurrency:
 jobs:
   build_and_test:
     # The type of runner that the job will run on.
-    runs-on: ubuntu-x86-8cpu
+    runs-on: ubuntu-latest
 
     # Steps represent a sequence of tasks that will be executed as part of the job.
     steps:
@@ -31,31 +30,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # 2. Set up the Rust toolchain.
+      # 2. Set up the Rust toolchain (version from rust-toolchain.toml).
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@881ba7bf39a41cda34ac9e123fb41b44ed08232f
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
+        run: rustup show
 
       # 3. Cache dependencies to speed up future builds.
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
 
-      # 4. Check formatting
+      # 4. Build whole workspace.
+      - name: Build workspace
+        run: cargo build --workspace
+
+      # 5. Check formatting.
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      # 5. Run clippy
+      # 6. Lint with clippy.
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
 
-      # 6. Run tests.
-      # The --all-features flag ensures all optional dependencies are tested.
+      # 7. Run tests (--all-features enables nova_poseidon in core).
       - name: Run tests
         run: cargo test --all-features --workspace
 
-      # 7. Run security audit.
+      # 8. Test core crate without --all-features so the standalone Poseidon
+      #    path (used in WASM) is exercised. Feature unification in step 7
+      #    enables nova_poseidon, which hides #[cfg(not(feature = "nova_poseidon"))] tests.
+      - name: Test core standalone Poseidon (no nova_poseidon)
+        run: cargo test -p kontor-crypto-core
+
+      # 9. Run security audit.
       # The command will fail the workflow if any vulnerabilities are found.
       - name: Install cargo-audit
         run: |

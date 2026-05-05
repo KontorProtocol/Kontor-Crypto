@@ -27,10 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@881ba7bf39a41cda34ac9e123fb41b44ed08232f
-        with:
-          toolchain: stable
+      - name: Install Rust
+        run: rustup show
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
@@ -44,8 +42,8 @@ jobs:
           cargo codspeed build -m walltime
 
       - name: Run benchmarks with CodSpeed
-        # v4.4.1 (tag v4) pinned to commit for supply-chain safety
-        uses: CodSpeedHQ/action@346a2d8a8d9d38909abd0bc3d23f773110f076ad
+        # v4.10.6 pinned to commit for supply-chain safety
+        uses: CodSpeedHQ/action@568631e981ca53efe0331925d2a3c8e5d53ab6e5
         with:
           mode: walltime
           run: cargo codspeed run -- ${{ matrix.shard }}

@@ -1,0 +1,37 @@
+[package]
+name = "kontor-crypto-core"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+description = "Shared cryptographic primitives for Kontor PoR (prepare_file, encode, Merkle)"
+repository = "https://github.com/KontorProtocol/Kontor-Crypto"
+homepage = "https://github.com/KontorProtocol/Kontor-Crypto"
+keywords = ["cryptography", "por", "storage", "merkle"]
+categories = ["cryptography", "algorithms"]
+readme = "../../README.md"
+
+[features]
+default = []
+# Use Nova's Poseidon (same constants) so regression tests core vs Nova pass. For test/dev only.
+nova_poseidon = ["nova-snark", "generic-array"]
+
+# Dependency version pins:
+# - blake2b_simd and constant_time_eq: pinned to avoid edition2024 crates.
+#   Transitive path: halo2curves -> blake2b_simd 1.0.4+ -> constant_time_eq 0.4.2+
+#   which requires edition2024 (rustc 1.85+). Pin blake2b_simd <= 1.0.3 to stay safe.
+[dependencies]
+ff = "0.13"
+nova-snark = { version = "0.41.0", optional = true, default-features = false }
+generic-array = { version = "0.14", optional = true }
+sha2 = "0.10.6"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+halo2curves = { version = "0.8", default-features = false, features = ["derive_serde"] }
+reed-solomon-erasure = "6.0"
+# Pin: halo2curves -> blake2b_simd 1.0.4+ -> constant_time_eq 0.4.2+ (edition2024).
+blake2b_simd = "1.0.1"
+constant_time_eq = "0.3.1"
+once_cell = "1.19"
+
+[dev-dependencies]
+hex = "0.4"
