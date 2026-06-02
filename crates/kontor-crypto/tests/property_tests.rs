@@ -94,6 +94,21 @@ fn fuz01_merkle_roundtrip() {
                 "case {case}: proof must not verify against a foreign root"
             );
         }
+
+        // Tamper direction: corrupting a single sibling must break verification
+        // against the *correct* root — this catches a verifier that ignores the
+        // path or mishandles sibling order (the foreign-root case alone wouldn't).
+        if depth > 0 {
+            let mut tampered = get_padded_proof_for_leaf(&tree, 0, depth).unwrap();
+            let bogus = field_from_uniform_bytes(&[0xA5u8; 64]);
+            if tampered.siblings[0] != bogus {
+                tampered.siblings[0] = bogus;
+                assert!(
+                    !verify_merkle_proof_in_place(root, &tampered),
+                    "case {case}: a corrupted sibling must fail verification"
+                );
+            }
+        }
     }
 }
 
@@ -107,8 +122,12 @@ fn fuz01_merkle_roundtrip() {
 #[test]
 fn fuz02_prepare_file_coherent_and_deterministic() {
     let mut rng = StdRng::seed_from_u64(0xF021_0002);
-    for case in 0..256 {
-        let data_len = rng.gen_range(1..=4096);
+    for case in 0..128 {
+        // Span several codewords (231×31 = 7161 data bytes each) so that
+        // padded_len and depth actually vary across cases (one codeword → depth
+        // 8, two→9, three→10) rather than pinning a single (depth, padded_len)
+        // point. Bounded at ~16 KB to keep erasure-coding cost reasonable.
+        let data_len = rng.gen_range(1..=16_000);
         let mut data = vec![0u8; data_len];
         rng.fill_bytes(&mut data);
         let nonce_len = rng.gen_range(0..=32);
