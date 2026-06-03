@@ -362,7 +362,13 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
         // 3. Get binary decomposition of challenge and extract path bits
         let index_bits = {
             let mut bits_ns = file_cs.namespace(|| "challenge_with_idx_bits");
-            challenge_with_idx.to_bits_le(&mut bits_ns)?
+            // STRICT decomposition: enforce the canonical in-field bit
+            // representation. The low bits become Merkle path-selection indices,
+            // and non-strict `to_bits_le` admits a second (value + p)
+            // decomposition (the field modulus is just above 2^254, NUM_BITS=255),
+            // whose low bits encode index+1 — letting a prover open a leaf other
+            // than the challenged one. See Kontor-Crypto issue #46.
+            challenge_with_idx.to_bits_le_strict(&mut bits_ns)?
         };
         // Build exactly file_tree_depth bits, allocating false for padding (not constants!)
         let mut file_path_indices: Vec<Boolean> = Vec::with_capacity(file_tree_depth);
@@ -586,7 +592,12 @@ fn synthesize_por_circuit_impl<F: PrimeField + PrimeFieldBits, CS: ConstraintSys
             // Decompose public ledger index to bits for Merkle path verification
             let ledger_index_bits = {
                 let mut bits_ns = file_cs.namespace(|| "ledger_index_bits");
-                ledger_index_public.to_bits_le(&mut bits_ns)?
+                // STRICT decomposition (see issue #46): the verifier range-checks
+                // the public ledger-index scalar but not its in-circuit bit
+                // decomposition, so non-strict `to_bits_le` would let a prover
+                // steer the aggregation path to index+1 while the public scalar
+                // stays index.
+                ledger_index_public.to_bits_le_strict(&mut bits_ns)?
             };
 
             // Take only the bits needed for aggregated tree depth
