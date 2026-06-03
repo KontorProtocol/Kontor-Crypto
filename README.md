@@ -12,7 +12,7 @@
 [![CI](https://github.com/KontorProtocol/Kontor-Crypto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/KontorProtocol/Kontor-Crypto/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KontorProtocol/Kontor-Crypto/blob/main/LICENSE)
 
-> **⚠️ WARNING: This code is unaudited and experimental. Use at your own risk.**
+> **⚠️ WARNING: This code is experimental and pre-release. Use at your own risk.**
 
 This project implements a Proof-of-Retrievability (PoR) system designed to provide economically enforceable guarantees that Storage Nodes are actually storing the data they have committed to. It is a core component for decentralized storage metaprotocols where a network of Indexers (Verifiers) must continuously audit Storage Nodes (Provers).
 
