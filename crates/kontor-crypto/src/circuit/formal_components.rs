@@ -277,7 +277,10 @@ pub fn synthesize_file_merkle_component<F: PrimeField + PrimeFieldBits, CS: Cons
 
         let index_bits = {
             let mut ns = cs.namespace(|| format!("merkle_challenge_bits_{file_idx}"));
-            challenge_with_idx.to_bits_le(&mut ns)?
+            // STRICT decomposition (issue #46): canonical in-field bits, so the
+            // low path-selection bits can't be set to index+1 via a (value + p)
+            // non-canonical witness.
+            challenge_with_idx.to_bits_le_strict(&mut ns)?
         };
 
         let mut file_path_indices: Vec<Boolean> = Vec::with_capacity(file_tree_depth);
@@ -389,7 +392,10 @@ pub fn synthesize_aggregation_merkle_component<
 
         let ledger_bits = {
             let mut ns = cs.namespace(|| format!("agg_ledger_bits_{file_idx}"));
-            ledger_index_public.to_bits_le(&mut ns)?
+            // STRICT decomposition (issue #46): pin the canonical bits so the
+            // aggregation path can't be steered to index+1 while the public
+            // ledger-index scalar stays index.
+            ledger_index_public.to_bits_le_strict(&mut ns)?
         };
         let mut agg_path_indices: Vec<Boolean> = Vec::with_capacity(aggregated_tree_depth);
         for i in 0..aggregated_tree_depth {
