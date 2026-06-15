@@ -5,11 +5,66 @@
 
 use super::{
     plan::Plan,
-    types::{Challenge, Proof},
+    types::{Challenge, FieldElement, Proof},
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
+use ff::PrimeField;
 use std::collections::HashSet;
 use tracing::{debug, info_span};
+
+/// What proof verification needs from "the ledger". Verification consumes
+/// `proof.ledger_root` and `proof.ledger_indices` as the circuit's public inputs,
+/// so it never needs the live aggregated Merkle tree — only the set of valid
+/// aggregated roots. This lets verification run either against a full
+/// [`FileLedger`] (the prover's view) or against bare data held elsewhere — e.g. a
+/// contract's own storage — via [`StatelessLedger`].
+pub trait LedgerView {
+    /// Whether `root` is an accepted aggregated ledger root (current or historical).
+    fn is_valid_root(&self, root: FieldElement) -> bool;
+
+    /// Per-file metadata binding: confirm the challenged file is registered with a
+    /// root-commitment matching the challenge's claimed metadata. The default
+    /// accepts — for a view that *is* the registry (a contract that builds
+    /// challenges from its own storage), this cross-check is vacuous, and "is the
+    /// file registered?" is enforced by the caller before verification.
+    fn check_registered(&self, _file_id: &str, _expected_rc: FieldElement) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl LedgerView for FileLedger {
+    fn is_valid_root(&self, root: FieldElement) -> bool {
+        FileLedger::is_valid_root(self, root)
+    }
+    fn check_registered(&self, file_id: &str, expected_rc: FieldElement) -> Result<()> {
+        match self.files.get(file_id).map(|entry| entry.rc) {
+            None => Err(KontorPoRError::FileNotInLedger {
+                file_id: file_id.to_string(),
+            }),
+            Some(actual_rc) if actual_rc != expected_rc => Err(KontorPoRError::MetadataMismatch),
+            Some(_) => Ok(()),
+        }
+    }
+}
+
+/// A [`LedgerView`] backed by plain data instead of a live [`FileLedger`]: just the
+/// set of valid aggregated roots. That is exactly the data a contract holds in its
+/// own storage once the file registry moves in-contract, so the host can verify
+/// proofs without maintaining an accumulator. The per-file metadata cross-check is
+/// skipped (see [`LedgerView::check_registered`]) — the contract is the registry,
+/// so it builds challenges from its own files and checks existence itself.
+pub struct StatelessLedger<'a> {
+    /// Accepted aggregated roots ({current} ∪ historical), each as the 32-byte
+    /// little-endian field repr (matching `FileLedger::historical_roots`).
+    pub valid_roots: &'a HashSet<[u8; 32]>,
+}
+
+impl LedgerView for StatelessLedger<'_> {
+    fn is_valid_root(&self, root: FieldElement) -> bool {
+        let repr: [u8; 32] = root.to_repr().into();
+        self.valid_roots.contains(&repr)
+    }
+}
 
 /// Verifies a proof against one or more challenges.
 ///
@@ -49,6 +104,26 @@ use tracing::{debug, info_span};
 /// Returns `Ok(true)` if the proof is valid, `Ok(false)` if invalid, or an error
 /// if verification fails due to invalid inputs, invalid ledger root, or unexpected errors.
 pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> Result<bool> {
+    verify_with(challenges, proof, ledger)
+}
+
+/// Verify a proof against challenges using bare ledger data instead of a live
+/// [`FileLedger`] — just the set of valid aggregated roots. Behaves identically to
+/// [`verify`] except it skips the per-file metadata cross-check (see
+/// [`StatelessLedger`]).
+///
+/// This is the entry point for hosts that keep the file registry in contract
+/// storage rather than an in-memory accumulator.
+pub fn verify_stateless(
+    challenges: &[Challenge],
+    proof: &Proof,
+    valid_roots: &HashSet<[u8; 32]>,
+) -> Result<bool> {
+    let view = StatelessLedger { valid_roots };
+    verify_with(challenges, proof, &view)
+}
+
+fn verify_with(challenges: &[Challenge], proof: &Proof, ledger: &impl LedgerView) -> Result<bool> {
     let _span = info_span!(
         "verify",
         num_challenges = challenges.len(),
@@ -95,8 +170,17 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         return Ok(false);
     }
 
-    // Create unified preprocessing plan (derives root internally for security)
-    let plan = Plan::make_plan(challenges, ledger)?;
+    // Build the verify-side plan from the challenges alone: the circuit's public
+    // inputs come from the proof, so no ledger/tree is needed to construct it.
+    let plan = Plan::for_verify(challenges)?;
+
+    // Per-file metadata binding (delegated to the view): for a `FileLedger` this
+    // confirms each challenged file is registered with a matching root-commitment;
+    // for a stateless view it is a no-op (the contract is the registry). In
+    // `make_plan` this lived inside the ledger lookup loop.
+    for (i, challenge) in plan.sorted_challenges.iter().enumerate() {
+        ledger.check_registered(&challenge.file_metadata.file_id, plan.expected_rcs[i])?;
+    }
 
     // --- Proof shape + index sanity checks ---
     //
@@ -155,9 +239,8 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     // historical root. For single-file proofs, the circuit uses the file's root directly.
     if is_multi_file && !ledger.is_valid_root(proof.ledger_root) {
         debug!(
-            "Proof ledger_root {:?} is not in ledger's valid roots (current: {:?})",
+            "Proof ledger_root {:?} is not in the ledger's set of valid roots",
             proof.ledger_root,
-            ledger.root()
         );
         return Err(KontorPoRError::InvalidLedgerRoot {
             proof_root: format!("{:?}", proof.ledger_root),
@@ -237,7 +320,7 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     tracing::Span::current().record("num_iterations", num_iterations);
     tracing::Span::current().record("files_per_step", plan.files_per_step);
 
-    if plan.aggregated_tree_depth == 0 {
+    if !is_multi_file {
         debug!("verify() - Single-file verification:");
     } else {
         debug!("verify() - Multi-file verification:");

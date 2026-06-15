@@ -78,6 +78,11 @@ pub use types::{
     Challenge, ChallengeID, FieldElement, FileMetadata, KeyPair, PorParams, PreparedFile, Proof,
 };
 
+// Stateless verification: verify a proof from bare ledger data (just the valid-root
+// set) instead of a live `FileLedger`. For hosts that keep the file registry in
+// contract storage.
+pub use verify::{verify_stateless, LedgerView, StatelessLedger};
+
 // Internal modules can access these for implementation
 // Export for testing - these are implementation details
 #[doc(hidden)]

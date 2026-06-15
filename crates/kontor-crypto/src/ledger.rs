@@ -19,7 +19,7 @@ use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTre
 use crate::poseidon::calculate_root_commitment;
 use crate::KontorPoRError;
 use bincode::Options;
-use ff::Field;
+use ff::{Field, PrimeField};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -427,6 +427,38 @@ impl FileLedger {
             }
         }
     }
+}
+
+/// Compute the aggregated ledger root from file root-commitments (`rc`s) alone,
+/// statelessly — no live [`FileLedger`] required.
+///
+/// `rcs` MUST be in the ledger's canonical order: lexicographic by `file_id`
+/// (the same order a `BTreeMap<String, _>` iterates, and the order an
+/// order-preserving key codec yields for string keys). The result is byte-for-byte
+/// identical to [`FileLedger::root`] over the same file set (this mirrors
+/// `rebuild_tree`), so a contract holding its files in `file_id` order can compute
+/// the current ledger root itself and feed it to `verify_stateless` as a valid root.
+pub fn aggregate_root(rcs: &[F]) -> Result<[u8; 32], KontorPoRError> {
+    let tree = if rcs.is_empty() {
+        // An empty ledger has a tree with a single zero leaf (see `rebuild_tree`).
+        build_tree_from_leaves(&[F::ZERO])?
+    } else {
+        let padded_len = rcs.len().next_power_of_two();
+        let mut padded = rcs.to_vec();
+        padded.resize(padded_len, F::ZERO);
+        build_tree_from_leaves(&padded)?
+    };
+    Ok(tree.root().to_repr().into())
+}
+
+/// Convenience over [`aggregate_root`] that takes each file's `(root, depth)` and
+/// computes the `rc`s internally. `files` MUST be in canonical `file_id` order.
+pub fn aggregate_root_from_files(files: &[(F, usize)]) -> Result<[u8; 32], KontorPoRError> {
+    let rcs: Vec<F> = files
+        .iter()
+        .map(|(root, depth)| calculate_root_commitment(*root, F::from(*depth as u64)))
+        .collect();
+    aggregate_root(&rcs)
 }
 
 #[cfg(test)]

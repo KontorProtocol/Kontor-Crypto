@@ -4,6 +4,7 @@
 //! by handling all the common preprocessing steps in one place.
 
 use super::types::{Challenge, FieldElement};
+use crate::poseidon::calculate_root_commitment;
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
 use ff::Field;
 use sha2::{Digest, Sha256};
@@ -142,6 +143,76 @@ impl Plan {
             initial_state,
             sorted_challenges,
             ledger_indices,
+            depths,
+            seeds,
+            expected_rcs,
+            public_io_layout,
+        })
+    }
+
+    /// Build a [`Plan`] for VERIFICATION from the challenges alone, with no ledger.
+    ///
+    /// Verification feeds `proof.ledger_root` and `proof.ledger_indices` to the
+    /// circuit as public inputs (see `verify`), so the ledger-derived plan fields
+    /// — `aggregated_root`, `aggregated_tree_depth`, `ledger_indices` — are never
+    /// read on the verify path; they are filled with placeholders here. The
+    /// per-file metadata binding (registered `rc` vs `expected_rc`) is done by the
+    /// caller against a `LedgerView`, so this performs no lookups.
+    pub(crate) fn for_verify(challenges: &[Challenge]) -> Result<Plan> {
+        if challenges.is_empty() {
+            return Err(KontorPoRError::InvalidInput(
+                "Cannot create plan from empty challenges".to_string(),
+            ));
+        }
+
+        for challenge in challenges {
+            challenge.validate()?;
+        }
+
+        let max_file_depth = challenges
+            .iter()
+            .map(|c| crate::api::tree_depth_from_metadata(&c.file_metadata))
+            .max()
+            .unwrap_or(0);
+        let (files_per_step, file_tree_depth) =
+            config::derive_shape(challenges.len(), max_file_depth);
+
+        // Same canonical ordering as `make_plan` so depths/seeds/expected_rcs line
+        // up with the proof's `ledger_indices`.
+        let mut sorted_challenges: Vec<Challenge> = challenges.to_vec();
+        sorted_challenges.sort_by(|a, b| {
+            match a.file_metadata.file_id.cmp(&b.file_metadata.file_id) {
+                Ordering::Equal => a.id().0.cmp(&b.id().0),
+                other => other,
+            }
+        });
+
+        let initial_state = derive_initial_state(&sorted_challenges);
+
+        let mut expected_rcs = vec![FieldElement::ZERO; files_per_step];
+        let mut depths = vec![0usize; files_per_step];
+        let mut seeds = vec![FieldElement::ZERO; files_per_step];
+        for (i, challenge) in sorted_challenges.iter().enumerate() {
+            let file_depth = crate::api::tree_depth_from_metadata(&challenge.file_metadata);
+            expected_rcs[i] = calculate_root_commitment(
+                challenge.file_metadata.root,
+                FieldElement::from(file_depth as u64),
+            );
+            depths[i] = file_depth;
+            seeds[i] = challenge.seed;
+        }
+
+        let public_io_layout = config::PublicIOLayout::new(files_per_step);
+
+        Ok(Plan {
+            files_per_step,
+            file_tree_depth,
+            // Placeholders: verify reads these from the proof, not the plan.
+            aggregated_tree_depth: 0,
+            aggregated_root: FieldElement::ZERO,
+            initial_state,
+            sorted_challenges,
+            ledger_indices: vec![0usize; files_per_step],
             depths,
             seeds,
             expected_rcs,
