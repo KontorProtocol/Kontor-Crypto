@@ -4,7 +4,7 @@
 //! broken down into focused, manageable functions.
 
 use super::{
-    plan::Plan,
+    plan::{AggInputs, Plan},
     types::{Challenge, FieldElement, PorParams, PreparedFile, Proof},
     witness::generate_circuit_witness,
 };
@@ -156,7 +156,7 @@ fn setup_proving_environment(
     }
 
     // Create unified preprocessing plan
-    let plan = Plan::make_plan(challenges, ledger)?;
+    let plan = Plan::make_plan(challenges, AggInputs::Ledger(ledger))?;
 
     // Load or generate parameters for the exact shape
     let params = crate::params::load_or_generate_params(

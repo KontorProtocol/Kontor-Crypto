@@ -24,6 +24,8 @@ Single-file proofs use file root from metadata; multi-file uses `ledger.tree.roo
 
 `verify()` performs validation before SNARK verification. Check error vs invalid proof distinction (`Ok(false)` vs `Err`), no panics on malformed input, and challenge-set binding via verifier-constructed public inputs.
 
+`verify()` (live `FileLedger`) and `verify_stateless()` (a `StatelessLedger`: a `file_id → (slot, rc)` registry snapshot + valid-root set) share `verify_with()` over the `LedgerView` trait. The two resolve per-file indices through the same code path, so soundness does not depend on which is used. In stateless mode the registry is supplied by the caller (e.g. a contract reading its own state): a wrong slot/`rc` makes the SNARK statement fail to verify, and an attacker-chosen `ledger_root` is rejected unless it is in the caller-supplied valid-root set (multi-file). The caller is therefore responsible for keeping the registry and valid-root set consistent with the on-chain files; given a correct registry, the binding is identical to the ledger path.
+
 ### 6. Serialization (`src/api/types.rs`)
 
 `Proof::from_bytes()` / `to_bytes()` handle network boundary. Verify buffer overflow protection, version validation, trailing data rejection, fixed encoding.

@@ -68,6 +68,7 @@ sequenceDiagram
 -   Files are committed at explicit stable append-only ledger indices. The `files` map is key-sorted for lookup, but the aggregated tree is built by `ledger_index`, not lexicographic `file_id` order.
 -   Multi-file proofs pin the ledger root as the aggregated root; single-file proofs pin the file root.
 -   The verifier re-derives public ledger indices from its own ledger state and rejects statements whose derived indices do not fit the claimed aggregated tree depth.
+-   **Stateless verification.** A verifier needs only two facts about "the ledger" — the stable slot + `rc` of each challenged file, and whether the proof's `ledger_root` is accepted — so it does not need a live `FileLedger`. `verify_stateless` takes those facts as plain data (a `StatelessLedger`: a `file_id → (slot, rc)` registry snapshot plus the set of valid roots), letting a host keep the file registry in contract storage instead of an in-memory accumulator. `aggregate_root`/`aggregate_root_from_files` recompute a root from `(rc, slot)` (resp. `(root, depth, slot)`) pairs, byte-identical to `FileLedger::root`, so the registry holder can derive the current valid root itself.
 
 ## Determinism & Canonical Ordering
 
