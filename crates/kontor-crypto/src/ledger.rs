@@ -18,7 +18,7 @@ use crate::KontorPoRError;
 use bincode::Options;
 use ff::Field;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -673,6 +673,77 @@ impl FileLedger {
             }
         }
     }
+}
+
+/// Compute the aggregated ledger root from each file's `(rc, ledger_index)` slot,
+/// statelessly — no live [`FileLedger`] required.
+///
+/// Mirrors [`FileLedger`]'s internal `rebuild_tree`: each `rc` is placed at its stable
+/// append-only slot, gaps are zero-filled, and the leaf vector is padded to a power of
+/// two. The result is byte-identical to [`FileLedger::root`] over the same files, so a
+/// contract holding its files (with their slots) in its own storage can compute the
+/// current ledger root itself and feed it to [`crate::api::verify_stateless`] as a
+/// valid root. The returned root is the 32-byte little-endian field repr (matching
+/// [`FileLedger::historical_roots`]).
+///
+/// Errors if two files claim the same slot, or if the slots are too sparse (same guard
+/// as the live ledger: the implied leaf count may exceed the file count by at most
+/// `MAX_LEDGER_INDEX_SPARSITY_GAP`).
+pub fn aggregate_root(files: &[(F, usize)]) -> Result<[u8; 32], KontorPoRError> {
+    use ff::PrimeField;
+
+    if files.is_empty() {
+        // An empty ledger has a tree with a single zero leaf (see `rebuild_tree`).
+        let tree = build_tree_from_leaves(&[F::ZERO])?;
+        return Ok(tree.root().to_repr().into());
+    }
+
+    let max_index = files.iter().map(|(_, idx)| *idx).max().unwrap_or(0);
+    let leaf_count = max_index
+        .checked_add(1)
+        .ok_or_else(|| KontorPoRError::InvalidInput("Ledger index overflow".to_string()))?;
+
+    if leaf_count > files.len().saturating_add(MAX_LEDGER_INDEX_SPARSITY_GAP) {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "Ledger indices too sparse: max_index={} implies leaf_count={} for only {} files",
+            max_index,
+            leaf_count,
+            files.len()
+        )));
+    }
+
+    let mut rc_values = vec![F::ZERO; leaf_count];
+    let mut seen = HashSet::with_capacity(files.len());
+    for (rc, idx) in files {
+        if !seen.insert(*idx) {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "Duplicate ledger_index {idx} in aggregate_root input"
+            )));
+        }
+        rc_values[*idx] = *rc;
+    }
+
+    let padded_len = rc_values.len().next_power_of_two();
+    rc_values.resize(padded_len, F::ZERO);
+
+    let tree = build_tree_from_leaves(&rc_values)?;
+    Ok(tree.root().to_repr().into())
+}
+
+/// Convenience over [`aggregate_root`] that takes each file's `(root, depth,
+/// ledger_index)` and computes the `rc = calculate_root_commitment(root, depth)`
+/// internally. `files` may be in any order; each carries its own stable slot.
+pub fn aggregate_root_from_files(files: &[(F, usize, usize)]) -> Result<[u8; 32], KontorPoRError> {
+    let rc_slots: Vec<(F, usize)> = files
+        .iter()
+        .map(|(root, depth, idx)| {
+            (
+                calculate_root_commitment(*root, F::from(*depth as u64)),
+                *idx,
+            )
+        })
+        .collect();
+    aggregate_root(&rc_slots)
 }
 
 #[cfg(test)]

@@ -4,55 +4,126 @@
 //! secure root derivation from the ledger.
 
 use super::{
-    plan::Plan,
-    types::{Challenge, Proof},
+    plan::{AggInputs, Plan},
+    types::{Challenge, FieldElement, Proof},
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
-use std::collections::HashSet;
+use ff::PrimeField;
+use std::collections::{BTreeMap, HashSet};
 use tracing::{debug, info_span};
 
-/// Verifies a proof against one or more challenges.
+/// What proof verification needs from "the ledger": resolve each challenged file's
+/// stable, append-only slot (and its registered root-commitment), and decide whether
+/// a `ledger_root` is accepted.
 ///
-/// This function implements secure verification with historical root validation.
-/// Parameters are derived automatically to match the proof structure.
+/// The constant-size proof (wire v3) carries neither challenge IDs nor ledger
+/// indices, so the verifier resolves indices itself — from whatever holds the file
+/// registry. That can be a live [`FileLedger`] (the prover's view) or bare data held
+/// elsewhere, e.g. a contract's own on-chain storage (see [`StatelessLedger`]). The
+/// SNARK binds the resolved indices to the proof's root, so a prover cannot lie about
+/// them.
+pub trait LedgerView {
+    /// Stable append-only ledger slot and registered root-commitment for `file_id`,
+    /// if the file is registered. Returns `None` for an unregistered file.
+    fn lookup(&self, file_id: &str) -> Option<(usize, FieldElement)>;
+
+    /// Whether `root` is an accepted aggregated ledger root (current or historical).
+    fn is_valid_root(&self, root: FieldElement) -> bool;
+}
+
+impl LedgerView for FileLedger {
+    fn lookup(&self, file_id: &str) -> Option<(usize, FieldElement)> {
+        FileLedger::lookup(self, file_id)
+    }
+
+    fn is_valid_root(&self, root: FieldElement) -> bool {
+        FileLedger::is_valid_root(self, root)
+    }
+}
+
+/// A [`LedgerView`] backed by plain data instead of a live [`FileLedger`]: the set of
+/// valid aggregated roots plus a snapshot of the file registry (`file_id -> (slot,
+/// rc)`). That is exactly the data a contract holds once the file registry moves
+/// in-contract, so the host can verify proofs without maintaining a mutable
+/// accumulator. The registry's stable slots let the verifier resolve ledger indices
+/// identically to the prover; the contract is responsible for keeping them (and the
+/// valid-root set) consistent with the on-chain files.
+///
+/// Roots are the 32-byte little-endian field repr (matching
+/// `FileLedger::historical_roots`). Compute them from the on-chain files with
+/// [`crate::ledger::aggregate_root`] / [`crate::ledger::aggregate_root_from_files`].
+///
+/// Note: a proof's `aggregated_tree_depth` is bound to its `ledger_root` only
+/// cryptographically (via Poseidon root equality), not by a structural check here —
+/// the same trust model as the live [`FileLedger`]. Callers must therefore only admit
+/// roots into `valid_roots` that they actually produced from their own files (e.g. via
+/// [`crate::ledger::aggregate_root`]); never roots of unknown provenance/depth.
+pub struct StatelessLedger<'a> {
+    /// Accepted aggregated roots ({current} ∪ historical).
+    pub valid_roots: &'a HashSet<[u8; 32]>,
+    /// File registry snapshot: `file_id -> (stable ledger slot, root-commitment)`.
+    pub files: &'a BTreeMap<String, (usize, FieldElement)>,
+}
+
+impl LedgerView for StatelessLedger<'_> {
+    fn lookup(&self, file_id: &str) -> Option<(usize, FieldElement)> {
+        self.files.get(file_id).copied()
+    }
+
+    fn is_valid_root(&self, root: FieldElement) -> bool {
+        let repr: [u8; 32] = root.to_repr().into();
+        self.valid_roots.contains(&repr)
+    }
+}
+
+/// Verifies a proof against one or more challenges using a live [`FileLedger`].
 ///
 /// # Historical Root Validation
 ///
-/// For multi-file proofs (k > 1), this function validates that `proof.ledger_root` is
-/// in the ledger's set of valid roots (current or historical). This enables cross-block
+/// For multi-file proofs (k > 1), this validates that `proof.ledger_root` is in the
+/// ledger's set of valid roots (current or historical). This enables cross-block
 /// aggregation: proofs generated against older ledger states remain valid as long as
 /// the root is in the historical set.
 ///
-/// The proof does not carry prover-supplied ledger indices. The verifier derives the
-/// canonical ledger indices from protocol/ledger state and supplies them as public inputs,
-/// binding the SNARK statement to the verifier's notion of which files are being challenged.
+/// The constant-size proof does not carry ledger indices. The verifier resolves each
+/// file's canonical, append-only slot from the ledger and supplies them as public
+/// inputs, binding the SNARK statement to the verifier's notion of which files are
+/// being challenged.
 ///
-/// For single-file proofs (k = 1), the ledger root check is skipped because the circuit
-/// uses the file's Merkle root directly instead of the ledger root.
+/// For single-file proofs (k = 1), the ledger root check is skipped because the
+/// circuit uses the file's Merkle root directly instead of the ledger root.
 ///
 /// # Security
 ///
-/// The SNARK cryptographically proves that:
-/// - Each file exists at the claimed index in the tree with the claimed root
-/// - The Merkle paths are valid
-///
-/// A prover cannot lie about indices - invalid indices would cause SNARK verification to fail.
-///
-/// # Arguments
-///
-/// * `challenges` - Vector of challenges to verify against
-/// * `proof` - The proof to verify (includes ledger_root and aggregated_tree_depth)
-/// * `ledger` - The file ledger (used for historical root validation, not index computation)
-///
-/// # Returns
-///
-/// Returns `Ok(true)` if the proof is valid, `Ok(false)` if invalid, or an error
-/// if verification fails due to invalid inputs, invalid ledger root, or unexpected errors.
+/// The SNARK cryptographically proves that each file exists at the resolved index in
+/// the tree with the claimed root and that the Merkle paths are valid. A prover
+/// cannot lie about indices — invalid indices would cause SNARK verification to fail.
 pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> Result<bool> {
+    verify_with(challenges, proof, ledger)
+}
+
+/// Verifies a proof against one or more challenges using bare registry data instead
+/// of a live [`FileLedger`] — see [`StatelessLedger`].
+///
+/// This is the entry point for hosts that keep the file registry in contract storage
+/// rather than an in-memory accumulator. Behaves identically to [`verify`]: indices
+/// are resolved from the supplied registry snapshot, and `proof.ledger_root` is
+/// checked against the supplied valid-root set (multi-file only).
+pub fn verify_stateless(
+    challenges: &[Challenge],
+    proof: &Proof,
+    ledger: &StatelessLedger,
+) -> Result<bool> {
+    verify_with(challenges, proof, ledger)
+}
+
+/// Shared verification over any [`LedgerView`]. Every input the circuit consumes is
+/// rebuilt by the verifier: indices/depths/seeds/rcs from the challenges + registry,
+/// and the aggregated root/depth from the (SNARK-bound) proof.
+fn verify_with(challenges: &[Challenge], proof: &Proof, view: &dyn LedgerView) -> Result<bool> {
     let _span = info_span!(
         "verify",
         num_challenges = challenges.len(),
-        has_ledger = true,
         num_iterations = tracing::field::Empty,
         files_per_step = tracing::field::Empty,
     )
@@ -80,8 +151,17 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
         }
     }
 
-    // Create unified preprocessing plan (derives root internally for security)
-    let plan = Plan::make_plan(challenges, ledger)?;
+    // Build the verify-side plan: every challenge-derived field comes from the
+    // challenges; the aggregation root/depth come from the proof (SNARK-bound); the
+    // per-file indices are resolved from `view` (the proof carries none).
+    let plan = Plan::make_plan(
+        challenges,
+        AggInputs::Proof {
+            root: proof.ledger_root,
+            aggregated_tree_depth: proof.aggregated_tree_depth,
+            view,
+        },
+    )?;
 
     // --- Proof shape + index sanity checks ---
     //
@@ -130,11 +210,10 @@ pub fn verify(challenges: &[Challenge], proof: &Proof, ledger: &FileLedger) -> R
     //
     // For multi-file proofs, `proof.ledger_root` must be either the current root or a retained
     // historical root. For single-file proofs, the circuit uses the file's root directly.
-    if is_multi_file && !ledger.is_valid_root(proof.ledger_root) {
+    if is_multi_file && !view.is_valid_root(proof.ledger_root) {
         debug!(
-            "Proof ledger_root {:?} is not in ledger's valid roots (current: {:?})",
-            proof.ledger_root,
-            ledger.root()
+            "Proof ledger_root {:?} is not in the set of valid roots",
+            proof.ledger_root
         );
         return Err(KontorPoRError::InvalidLedgerRoot {
             proof_root: format!("{:?}", proof.ledger_root),

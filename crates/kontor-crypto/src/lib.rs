@@ -95,10 +95,15 @@ pub mod utils;
 
 // Re-export commonly used types and functions for convenience
 pub use api::{prepare_file, reconstruct_file, tree_depth_from_metadata, PorSystem};
-pub use api::{Challenge, FieldElement, FileMetadata, PorParams, PreparedFile, Proof};
+pub use api::{
+    verify_stateless, Challenge, FieldElement, FileMetadata, LedgerView, PorParams, PreparedFile,
+    Proof, StatelessLedger,
+};
 pub use circuit::{CircuitWitness, FileProofWitness, PorCircuit};
 pub use error::{KontorPoRError, Result};
-pub use ledger::{FileDescriptor, FileLedger, HistoricalRootPolicy};
+pub use ledger::{
+    aggregate_root, aggregate_root_from_files, FileDescriptor, FileLedger, HistoricalRootPolicy,
+};
 pub use merkle::{
     build_tree, build_tree_from_leaves, get_leaf_hash, get_padded_proof_for_leaf, hash_leaf_data,
     hash_node, verify_merkle_proof_in_place, CircuitMerkleProof, MerkleTree,
