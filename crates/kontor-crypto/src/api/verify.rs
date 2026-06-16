@@ -4,7 +4,7 @@
 //! secure root derivation from the ledger.
 
 use super::{
-    plan::Plan,
+    plan::{AggInputs, Plan},
     types::{Challenge, FieldElement, Proof},
 };
 use crate::{config, ledger::FileLedger, KontorPoRError, Result};
@@ -170,9 +170,17 @@ fn verify_with(challenges: &[Challenge], proof: &Proof, ledger: &impl LedgerView
         return Ok(false);
     }
 
-    // Build the verify-side plan from the challenges alone: the circuit's public
-    // inputs come from the proof, so no ledger/tree is needed to construct it.
-    let plan = Plan::for_verify(challenges)?;
+    // Build the verify-side plan: every challenge-derived field comes from the
+    // challenges; the three aggregation public inputs come from the proof (where
+    // they were committed and are SNARK-bound), so no ledger/tree is needed.
+    let plan = Plan::make_plan(
+        challenges,
+        AggInputs::Proof {
+            root: proof.ledger_root,
+            aggregated_tree_depth: proof.aggregated_tree_depth,
+            ledger_indices: proof.ledger_indices.clone(),
+        },
+    )?;
 
     // Per-file metadata binding (delegated to the view): for a `FileLedger` this
     // confirms each challenged file is registered with a matching root-commitment;
@@ -303,15 +311,9 @@ fn verify_with(challenges: &[Challenge], proof: &Proof, ledger: &impl LedgerView
     debug!("  - Using proof.ledger_indices: {:?}", proof.ledger_indices);
     debug!("  - Depths from challenges: {:?}", plan.depths);
 
-    // Build z0_primary with proof's values for root/indices
-    let z0_primary = plan.public_io_layout.build_z0_primary(
-        proof.ledger_root,
-        plan.initial_state,
-        &proof.ledger_indices,
-        &plan.depths,
-        &plan.seeds,
-        &plan.expected_rcs,
-    );
+    // Build z0_primary uniformly — the plan already carries the proof's
+    // root/indices (via `AggInputs::Proof`), so this is the same call the prover makes.
+    let z0_primary = plan.build_z0_primary();
     debug!("VERIFIER z0_primary: {:?}", z0_primary);
 
     let num_iterations = plan.sorted_challenges[0].num_challenges;

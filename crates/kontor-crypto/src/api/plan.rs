@@ -38,9 +38,29 @@ pub(crate) struct Plan {
     pub(crate) public_io_layout: config::PublicIOLayout,
 }
 
+/// Where the three aggregation public inputs come from — the only fields whose
+/// source differs between proving and verification. The prover derives them from
+/// the ledger's aggregated tree; the verifier takes them from the proof, where they
+/// were committed and are SNARK-bound. Every other plan field is derived from the
+/// challenges alone, identically on both paths — so one `make_plan` serves both and
+/// `build_z0_primary` is uniform.
+pub(crate) enum AggInputs<'a> {
+    /// Prove path: derive root/depth/indices from the live ledger, cross-checking
+    /// each file's registered `rc` against the challenge metadata.
+    Ledger(&'a FileLedger),
+    /// Verify path: the values already committed in (and SNARK-bound by) the proof.
+    Proof {
+        root: FieldElement,
+        aggregated_tree_depth: usize,
+        ledger_indices: Vec<usize>,
+    },
+}
+
 impl Plan {
-    /// Create a unified preprocessing plan for both prove() and verify().
-    pub(crate) fn make_plan(challenges: &[Challenge], ledger: &FileLedger) -> Result<Plan> {
+    /// The single preprocessing plan shared by `prove()` and `verify()`. Every
+    /// challenge-derived field is computed once here; only the three aggregation
+    /// public inputs vary by source (see [`AggInputs`]).
+    pub(crate) fn make_plan(challenges: &[Challenge], agg: AggInputs) -> Result<Plan> {
         if challenges.is_empty() {
             return Err(KontorPoRError::InvalidInput(
                 "Cannot create plan from empty challenges".to_string(),
@@ -51,18 +71,7 @@ impl Plan {
             challenge.validate()?;
         }
 
-        // Derive aggregated root internally based on number of challenges
-        // Single challenge = single-file proof (use file root)
-        // Multiple challenges = multi-file proof (use ledger root)
-        let aggregated_root = if challenges.len() > 1 {
-            // Multi-file case: use ledger root
-            ledger.tree.root()
-        } else {
-            // Single-file case: always use file root (even if ledger is provided)
-            challenges[0].file_metadata.root
-        };
-
-        // 1. Derive shape from challenges
+        // 1. Derive shape from challenges.
         let max_file_depth = challenges
             .iter()
             .map(|c| crate::api::tree_depth_from_metadata(&c.file_metadata))
@@ -70,13 +79,8 @@ impl Plan {
             .unwrap_or(0);
         let (files_per_step, file_tree_depth) =
             config::derive_shape(challenges.len(), max_file_depth);
-        let aggregated_tree_depth = if files_per_step > 1 {
-            ledger.tree.layers.len() - 1
-        } else {
-            0
-        };
 
-        // 2. Sort challenges canonically by (file_id, challenge_id)
+        // 2. Sort challenges canonically by (file_id, challenge_id).
         //
         // We need a total order so proof verification cannot accidentally depend on
         // the caller-provided ordering of `challenges` when multiple challenges refer
@@ -93,102 +97,7 @@ impl Plan {
         // non-circuit fields captured by Challenge::id()).
         let initial_state = derive_initial_state(&sorted_challenges);
 
-        // 3. Compute ledger indices
-        let mut ledger_indices = vec![0usize; files_per_step];
-        let mut expected_rcs = vec![FieldElement::ZERO; files_per_step];
-        use crate::poseidon::calculate_root_commitment;
-
-        for (i, challenge) in sorted_challenges.iter().enumerate() {
-            let file_depth = crate::api::tree_depth_from_metadata(&challenge.file_metadata);
-            let expected_rc = calculate_root_commitment(
-                challenge.file_metadata.root,
-                FieldElement::from(file_depth as u64),
-            );
-            expected_rcs[i] = expected_rc;
-
-            let (ledger_idx, actual_rc) = ledger
-                .lookup(&challenge.file_metadata.file_id)
-                .ok_or_else(|| KontorPoRError::FileNotInLedger {
-                    file_id: challenge.file_metadata.file_id.clone(),
-                })?;
-
-            if actual_rc != expected_rc {
-                return Err(KontorPoRError::MetadataMismatch);
-            }
-
-            ledger_indices[i] = ledger_idx;
-        }
-
-        // Compute actual depths for each challenge
-        let mut depths = vec![0usize; files_per_step];
-        for (i, challenge) in sorted_challenges.iter().enumerate() {
-            let depth = crate::api::tree_depth_from_metadata(&challenge.file_metadata);
-            depths[i] = depth;
-        }
-
-        // Collect seeds for each challenge
-        let mut seeds = vec![FieldElement::ZERO; files_per_step];
-        for (i, challenge) in sorted_challenges.iter().enumerate() {
-            seeds[i] = challenge.seed;
-        }
-
-        // 4. Create public I/O layout helper
-        let public_io_layout = config::PublicIOLayout::new(files_per_step);
-
-        Ok(Plan {
-            files_per_step,
-            file_tree_depth,
-            aggregated_tree_depth,
-            aggregated_root,
-            initial_state,
-            sorted_challenges,
-            ledger_indices,
-            depths,
-            seeds,
-            expected_rcs,
-            public_io_layout,
-        })
-    }
-
-    /// Build a [`Plan`] for VERIFICATION from the challenges alone, with no ledger.
-    ///
-    /// Verification feeds `proof.ledger_root` and `proof.ledger_indices` to the
-    /// circuit as public inputs (see `verify`), so the ledger-derived plan fields
-    /// — `aggregated_root`, `aggregated_tree_depth`, `ledger_indices` — are never
-    /// read on the verify path; they are filled with placeholders here. The
-    /// per-file metadata binding (registered `rc` vs `expected_rc`) is done by the
-    /// caller against a `LedgerView`, so this performs no lookups.
-    pub(crate) fn for_verify(challenges: &[Challenge]) -> Result<Plan> {
-        if challenges.is_empty() {
-            return Err(KontorPoRError::InvalidInput(
-                "Cannot create plan from empty challenges".to_string(),
-            ));
-        }
-
-        for challenge in challenges {
-            challenge.validate()?;
-        }
-
-        let max_file_depth = challenges
-            .iter()
-            .map(|c| crate::api::tree_depth_from_metadata(&c.file_metadata))
-            .max()
-            .unwrap_or(0);
-        let (files_per_step, file_tree_depth) =
-            config::derive_shape(challenges.len(), max_file_depth);
-
-        // Same canonical ordering as `make_plan` so depths/seeds/expected_rcs line
-        // up with the proof's `ledger_indices`.
-        let mut sorted_challenges: Vec<Challenge> = challenges.to_vec();
-        sorted_challenges.sort_by(|a, b| {
-            match a.file_metadata.file_id.cmp(&b.file_metadata.file_id) {
-                Ordering::Equal => a.id().0.cmp(&b.id().0),
-                other => other,
-            }
-        });
-
-        let initial_state = derive_initial_state(&sorted_challenges);
-
+        // 3. Per-slot vectors derived from the challenges alone (no ledger needed).
         let mut expected_rcs = vec![FieldElement::ZERO; files_per_step];
         let mut depths = vec![0usize; files_per_step];
         let mut seeds = vec![FieldElement::ZERO; files_per_step];
@@ -202,21 +111,57 @@ impl Plan {
             seeds[i] = challenge.seed;
         }
 
-        let public_io_layout = config::PublicIOLayout::new(files_per_step);
+        // 4. The three aggregation public inputs, by source. This is the ONLY thing
+        //    that differs between proving and verification.
+        let (aggregated_root, aggregated_tree_depth, ledger_indices) = match agg {
+            AggInputs::Ledger(ledger) => {
+                // Single-file uses the file's own root; multi-file uses the ledger root.
+                let aggregated_root = if sorted_challenges.len() > 1 {
+                    ledger.tree.root()
+                } else {
+                    sorted_challenges[0].file_metadata.root
+                };
+                let aggregated_tree_depth = if files_per_step > 1 {
+                    ledger.tree.layers.len() - 1
+                } else {
+                    0
+                };
+                // Each file's index, cross-checking the registered `rc` against the
+                // challenge metadata (the prove-time registry binding).
+                let mut ledger_indices = vec![0usize; files_per_step];
+                for (i, challenge) in sorted_challenges.iter().enumerate() {
+                    let (ledger_idx, actual_rc) =
+                        ledger
+                            .lookup(&challenge.file_metadata.file_id)
+                            .ok_or_else(|| KontorPoRError::FileNotInLedger {
+                                file_id: challenge.file_metadata.file_id.clone(),
+                            })?;
+                    if actual_rc != expected_rcs[i] {
+                        return Err(KontorPoRError::MetadataMismatch);
+                    }
+                    ledger_indices[i] = ledger_idx;
+                }
+                (aggregated_root, aggregated_tree_depth, ledger_indices)
+            }
+            AggInputs::Proof {
+                root,
+                aggregated_tree_depth,
+                ledger_indices,
+            } => (root, aggregated_tree_depth, ledger_indices),
+        };
 
         Ok(Plan {
             files_per_step,
             file_tree_depth,
-            // Placeholders: verify reads these from the proof, not the plan.
-            aggregated_tree_depth: 0,
-            aggregated_root: FieldElement::ZERO,
+            aggregated_tree_depth,
+            aggregated_root,
             initial_state,
             sorted_challenges,
-            ledger_indices: vec![0usize; files_per_step],
+            ledger_indices,
             depths,
             seeds,
             expected_rcs,
-            public_io_layout,
+            public_io_layout: config::PublicIOLayout::new(files_per_step),
         })
     }
 
