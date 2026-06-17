@@ -12,7 +12,7 @@
 //! The aggregated tree is built from rc values ordered by `ledger_index`, padded with zeros
 //! for any missing slots. This keeps verifier-side index derivation deterministic.
 
-use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, MerkleTree, F};
+use crate::merkle::{build_tree_from_leaves, get_padded_proof_for_leaf, hash_node, MerkleTree, F};
 use crate::poseidon::calculate_root_commitment;
 use crate::KontorPoRError;
 use bincode::Options;
@@ -744,6 +744,140 @@ pub fn aggregate_root_from_files(files: &[(F, usize, usize)]) -> Result<[u8; 32]
         })
         .collect();
     aggregate_root(&rc_slots)
+}
+
+/// Zero-subtree roots by height: `Z[0] = 0` (a zero leaf), `Z[h] = node(Z[h-1], Z[h-1])`.
+/// These fill the empty right portion of the aggregated tree, matching the zero-fill +
+/// power-of-two padding that [`aggregate_root`] feeds to `build_tree_from_leaves`.
+fn zero_subtree_roots(max_height: usize) -> Vec<F> {
+    let mut z = Vec::with_capacity(max_height + 1);
+    z.push(F::ZERO);
+    for h in 1..=max_height {
+        let prev = z[h - 1];
+        z.push(hash_node(prev, prev));
+    }
+    z
+}
+
+/// Append-only incremental accumulator for the aggregated ledger root.
+///
+/// Maintains the O(log n) Merkle "mountain peaks" of the contiguous, append-only file
+/// slots, so adding a file is one `O(log n)` fold instead of an `O(n)` tree rebuild.
+/// [`Self::root`] is **byte-identical** to [`aggregate_root`] over the same contiguous
+/// slots `0..count` (see the `frontier_*` equivalence tests), so a contract can persist
+/// just `(count, peaks)` and update the ledger root incrementally each block rather than
+/// recomputing the whole tree.
+///
+/// Only the append-only case is supported — slots assigned `0, 1, 2, …` with no gaps.
+/// Interior removal / zero-fill is intentionally out of scope (it would invalidate the
+/// right-edge peaks); a removal workload would need a full rebuild or a richer structure.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LedgerFrontier {
+    count: u64,
+    /// Perfect-subtree roots, lowest height first — exactly one per set bit of `count`.
+    peaks: Vec<F>,
+}
+
+impl LedgerFrontier {
+    /// An empty frontier (no files), whose [`Self::root`] matches `aggregate_root(&[])`.
+    pub fn new() -> Self {
+        Self {
+            count: 0,
+            peaks: Vec::new(),
+        }
+    }
+
+    /// Reconstruct from persisted state (e.g. a contract reading its own storage).
+    /// Errors unless `peaks.len()` equals the number of set bits in `count`, the
+    /// structural invariant of the mountain-peak representation.
+    pub fn from_parts(count: u64, peaks: Vec<F>) -> Result<Self, KontorPoRError> {
+        if peaks.len() != count.count_ones() as usize {
+            return Err(KontorPoRError::InvalidInput(format!(
+                "LedgerFrontier: got {} peaks for count {} (expected {} set bits)",
+                peaks.len(),
+                count,
+                count.count_ones()
+            )));
+        }
+        Ok(Self { count, peaks })
+    }
+
+    /// Number of appended files (== next slot to be assigned).
+    pub fn count(&self) -> u64 {
+        self.count
+    }
+
+    /// Perfect-subtree peaks, lowest height first — persist these alongside `count`.
+    pub fn peaks(&self) -> &[F] {
+        &self.peaks
+    }
+
+    /// Append a file by its precomputed root-commitment `rc` at the next slot. O(log n).
+    pub fn append_rc(&mut self, rc: F) {
+        // Binary-increment carry: the trailing run of set bits in `count` are the low
+        // peaks that merge with the new leaf. Each existing peak is the LEFT sibling and
+        // the carry the RIGHT — matching `build_tree_from_leaves`'s low-index-left order.
+        let mut carry = rc;
+        let mut h = 0;
+        while (self.count >> h) & 1 == 1 {
+            let left = self.peaks.remove(0);
+            carry = hash_node(left, carry);
+            h += 1;
+        }
+        self.peaks.insert(0, carry);
+        self.count += 1;
+    }
+
+    /// Append a file by its `(root, depth)`, computing `rc` as [`aggregate_root_from_files`]
+    /// does, then folding it in via [`Self::append_rc`].
+    pub fn append(&mut self, root: F, depth: usize) {
+        self.append_rc(calculate_root_commitment(root, F::from(depth as u64)));
+    }
+
+    /// Current aggregated ledger root — byte-identical to [`aggregate_root`] over slots
+    /// `0..count`. Returned as the 32-byte little-endian field repr (matching
+    /// [`FileLedger::historical_roots`]).
+    pub fn root(&self) -> [u8; 32] {
+        use ff::PrimeField;
+
+        if self.count == 0 {
+            // Empty ledger: a single zero leaf (mirrors `aggregate_root`/`rebuild_tree`).
+            return F::ZERO.to_repr().into();
+        }
+
+        // Root height D = ceil(log2(count)) = bit-length(count - 1); D = 0 for count == 1.
+        let d = (u64::BITS - (self.count - 1).leading_zeros()) as usize;
+        let z = zero_subtree_roots(d);
+
+        // Fold peaks low-to-high. `acc` is the root of the accumulated right-hand region
+        // at height `acc_h`; lift it with zero-subtrees to the current height before
+        // combining the next peak (a fully-filled subtree to its left).
+        let mut acc: Option<F> = None;
+        let mut acc_h = 0usize;
+        let mut peaks = self.peaks.iter();
+        for h in 0..=d {
+            if let Some(a) = acc.as_mut() {
+                while acc_h < h {
+                    *a = hash_node(*a, z[acc_h]);
+                    acc_h += 1;
+                }
+            }
+            if (self.count >> h) & 1 == 1 {
+                let p = *peaks.next().expect("peak count matches set bits of count");
+                match acc {
+                    None => {
+                        acc = Some(p);
+                        acc_h = h;
+                    }
+                    Some(a) => {
+                        acc = Some(hash_node(p, a));
+                        acc_h = h + 1;
+                    }
+                }
+            }
+        }
+        acc.expect("count >= 1 yields a root").to_repr().into()
+    }
 }
 
 #[cfg(test)]
