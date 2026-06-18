@@ -103,6 +103,7 @@ pub use circuit::{CircuitWitness, FileProofWitness, PorCircuit};
 pub use error::{KontorPoRError, Result};
 pub use ledger::{
     aggregate_root, aggregate_root_from_files, FileDescriptor, FileLedger, HistoricalRootPolicy,
+    LedgerFrontier,
 };
 pub use merkle::{
     build_tree, build_tree_from_leaves, get_leaf_hash, get_padded_proof_for_leaf, hash_leaf_data,
