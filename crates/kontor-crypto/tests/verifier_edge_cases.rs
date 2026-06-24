@@ -1,6 +1,7 @@
 //! Tests for malicious or non-standard verifier inputs and edge cases
 
 use kontor_crypto::api::{self, Challenge, FieldElement};
+use kontor_crypto::config;
 use kontor_crypto::KontorPoRError;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -49,6 +50,67 @@ fn test_verifier_rejects_out_of_range_ledger_index() {
     assert!(
         matches!(res, Err(KontorPoRError::InvalidInput(_))),
         "Expected InvalidInput for out-of-range derived ledger index, got: {res:?}"
+    );
+}
+
+#[test]
+fn test_verifier_rejects_too_many_files_before_planning() {
+    let data = vec![9u8; 100];
+    let (prepared, metadata) =
+        api::prepare_file(&data, "too_many.dat", &nonce("too_many")).unwrap();
+
+    let mut ledger = kontor_crypto::FileLedger::new();
+    ledger.add_file(&metadata).unwrap();
+
+    let challenge = Challenge::new_test(metadata.clone(), 1000, 1, FieldElement::from(9u64));
+    let system = kontor_crypto::api::PorSystem::new(&ledger);
+    let proof = system
+        .prove(vec![&prepared], std::slice::from_ref(&challenge))
+        .expect("Should generate a valid single-file proof");
+
+    let oversized = vec![challenge; config::PRACTICAL_MAX_FILES + 1];
+    let res = system.verify(&proof, &oversized);
+    assert!(
+        matches!(
+            res,
+            Err(KontorPoRError::TooManyFiles {
+                got,
+                max
+            }) if got == config::PRACTICAL_MAX_FILES + 1
+                && max == config::PRACTICAL_MAX_FILES
+        ),
+        "Expected TooManyFiles before duplicate detection or planning, got: {res:?}"
+    );
+}
+
+#[test]
+fn test_verifier_rejects_inflated_aggregation_depth_before_params() {
+    let data_a = vec![5u8; 100];
+    let data_b = vec![6u8; 100];
+    let (prepared_a, meta_a) =
+        api::prepare_file(&data_a, "inflated_a.dat", &nonce("inflated_a")).unwrap();
+    let (prepared_b, meta_b) =
+        api::prepare_file(&data_b, "inflated_b.dat", &nonce("inflated_b")).unwrap();
+
+    let mut ledger = kontor_crypto::FileLedger::new();
+    ledger.add_file(&meta_a).unwrap();
+    ledger.add_file(&meta_b).unwrap();
+
+    let challenges = vec![
+        Challenge::new_test(meta_a.clone(), 1000, 1, FieldElement::from(51u64)),
+        Challenge::new_test(meta_b.clone(), 1000, 1, FieldElement::from(62u64)),
+    ];
+
+    let system = kontor_crypto::api::PorSystem::new(&ledger);
+    let mut proof = system
+        .prove(vec![&prepared_a, &prepared_b], &challenges)
+        .expect("Should generate a valid multi-file proof");
+
+    proof.aggregated_tree_depth = usize::BITS as usize - 1;
+    let res = system.verify(&proof, &challenges);
+    assert!(
+        matches!(res, Err(KontorPoRError::InvalidLedgerRoot { .. })),
+        "Expected InvalidLedgerRoot for valid root paired with inflated depth, got: {res:?}"
     );
 }
 

@@ -12,6 +12,31 @@ use ff::PrimeField;
 use std::collections::{BTreeMap, HashSet};
 use tracing::{debug, info_span};
 
+/// How tightly a ledger view can bind an accepted root to aggregation depth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootDepthRequirement {
+    /// The root is accepted only at this exact aggregation depth.
+    Exact(usize),
+    /// The root is accepted for depths up to and including this bound.
+    Max(usize),
+}
+
+impl RootDepthRequirement {
+    fn accepts(self, depth: usize) -> bool {
+        match self {
+            RootDepthRequirement::Exact(expected) => depth == expected,
+            RootDepthRequirement::Max(max) => depth <= max,
+        }
+    }
+
+    fn describe(self) -> String {
+        match self {
+            RootDepthRequirement::Exact(expected) => format!("expected exact depth {expected}"),
+            RootDepthRequirement::Max(max) => format!("maximum accepted depth {max}"),
+        }
+    }
+}
+
 /// What proof verification needs from "the ledger": resolve each challenged file's
 /// stable, append-only slot (and its registered root-commitment), and decide whether
 /// a `ledger_root` is accepted.
@@ -29,6 +54,9 @@ pub trait LedgerView {
 
     /// Whether `root` is an accepted aggregated ledger root (current or historical).
     fn is_valid_root(&self, root: FieldElement) -> bool;
+
+    /// Depth policy for an accepted aggregated ledger root.
+    fn root_depth_requirement(&self, root: FieldElement) -> Option<RootDepthRequirement>;
 }
 
 impl LedgerView for FileLedger {
@@ -38,6 +66,10 @@ impl LedgerView for FileLedger {
 
     fn is_valid_root(&self, root: FieldElement) -> bool {
         FileLedger::is_valid_root(self, root)
+    }
+
+    fn root_depth_requirement(&self, root: FieldElement) -> Option<RootDepthRequirement> {
+        FileLedger::accepted_root_depth(self, root).map(RootDepthRequirement::Exact)
     }
 }
 
@@ -53,11 +85,12 @@ impl LedgerView for FileLedger {
 /// `FileLedger::historical_roots`). Compute them from the on-chain files with
 /// [`crate::ledger::aggregate_root`] / [`crate::ledger::aggregate_root_from_files`].
 ///
-/// Note: a proof's `aggregated_tree_depth` is bound to its `ledger_root` only
-/// cryptographically (via Poseidon root equality), not by a structural check here —
-/// the same trust model as the live [`FileLedger`]. Callers must therefore only admit
-/// roots into `valid_roots` that they actually produced from their own files (e.g. via
-/// [`crate::ledger::aggregate_root`]); never roots of unknown provenance/depth.
+/// Because this stateless view stores roots without per-root depths, verification bounds
+/// `aggregated_tree_depth` by the current registry's implied aggregation depth before
+/// parameter loading. Callers that retain historical roots should prefer an external
+/// `(root, depth)` policy when they can enforce one at the host/contract boundary.
+/// Callers must only admit roots into `valid_roots` that they produced from their own
+/// files (e.g. via [`crate::ledger::aggregate_root`]); never roots of unknown provenance.
 pub struct StatelessLedger<'a> {
     /// Accepted aggregated roots ({current} ∪ historical).
     pub valid_roots: &'a HashSet<[u8; 32]>,
@@ -73,6 +106,18 @@ impl LedgerView for StatelessLedger<'_> {
     fn is_valid_root(&self, root: FieldElement) -> bool {
         let repr: [u8; 32] = root.to_repr().into();
         self.valid_roots.contains(&repr)
+    }
+
+    fn root_depth_requirement(&self, root: FieldElement) -> Option<RootDepthRequirement> {
+        if !self.is_valid_root(root) {
+            return None;
+        }
+        let max_index = self.files.values().map(|(idx, _rc)| *idx).max()?;
+        let leaf_count = max_index.checked_add(1)?;
+        let padded_leaf_count = leaf_count.next_power_of_two();
+        Some(RootDepthRequirement::Max(
+            padded_leaf_count.trailing_zeros() as usize,
+        ))
     }
 }
 
@@ -133,6 +178,13 @@ fn verify_with(challenges: &[Challenge], proof: &Proof, view: &dyn LedgerView) -
         return Err(KontorPoRError::InvalidInput(
             "Must provide at least one challenge".to_string(),
         ));
+    }
+
+    if challenges.len() > config::PRACTICAL_MAX_FILES {
+        return Err(KontorPoRError::TooManyFiles {
+            got: challenges.len(),
+            max: config::PRACTICAL_MAX_FILES,
+        });
     }
 
     // Validate challenge structure/metadata invariants before any cryptographic checks.
@@ -206,24 +258,33 @@ fn verify_with(challenges: &[Challenge], proof: &Proof, view: &dyn LedgerView) -
         }
     }
 
-    // --- Historical root validation (multi-file only) ---
+    // --- Historical root/depth validation (multi-file only) ---
     //
     // For multi-file proofs, `proof.ledger_root` must be either the current root or a retained
-    // historical root. For single-file proofs, the circuit uses the file's root directly.
-    if is_multi_file && !view.is_valid_root(proof.ledger_root) {
-        debug!(
-            "Proof ledger_root {:?} is not in the set of valid roots",
-            proof.ledger_root
-        );
-        return Err(KontorPoRError::InvalidLedgerRoot {
-            proof_root: format!("{:?}", proof.ledger_root),
-            reason: "Proof's ledger_root is not in the set of valid historical roots".to_string(),
-        });
-    }
+    // historical root at an accepted depth. For single-file proofs, the circuit uses the file's
+    // root directly.
     if is_multi_file {
+        let depth_requirement =
+            view.root_depth_requirement(proof.ledger_root)
+                .ok_or_else(|| KontorPoRError::InvalidLedgerRoot {
+                    proof_root: format!("{:?}", proof.ledger_root),
+                    reason: "Proof's ledger_root is not accepted with a known aggregation depth"
+                        .to_string(),
+                })?;
+        if !depth_requirement.accepts(proof.aggregated_tree_depth) {
+            return Err(KontorPoRError::InvalidLedgerRoot {
+                proof_root: format!("{:?}", proof.ledger_root),
+                reason: format!(
+                    "Proof aggregated_tree_depth {} does not satisfy {}",
+                    proof.aggregated_tree_depth,
+                    depth_requirement.describe()
+                ),
+            });
+        }
+
         debug!(
-            "Proof ledger_root {:?} validated as historical root",
-            proof.ledger_root
+            "Proof ledger_root {:?} validated with depth requirement {:?}",
+            proof.ledger_root, depth_requirement
         );
     }
 

@@ -81,6 +81,13 @@ fn stateless_matches_ledger_multi_file() {
         verify_stateless(&setup.challenges, &proof, &empty_view),
         Err(KontorPoRError::InvalidLedgerRoot { .. })
     ));
+
+    let mut inflated_depth_proof = proof;
+    inflated_depth_proof.aggregated_tree_depth = usize::BITS as usize - 1;
+    assert!(matches!(
+        verify_stateless(&setup.challenges, &inflated_depth_proof, &view),
+        Err(KontorPoRError::InvalidLedgerRoot { .. })
+    ));
 }
 
 #[test]

@@ -133,7 +133,7 @@ fn test_bytes31_field_helpers_round_trip_and_known_values() {
     ];
 
     for p in patterns {
-        let fe = bytes31_to_field_le::<FieldElement>(&p);
+        let fe = bytes31_to_field_le::<FieldElement>(&p).unwrap();
         let back = field_to_bytes31_le(&fe);
         assert_eq!(back[..p.len()], p[..]);
         assert!(back[p.len()..].iter().all(|&b| b == 0));
@@ -141,7 +141,7 @@ fn test_bytes31_field_helpers_round_trip_and_known_values() {
 
     // Known small numbers
     for i in 0u8..=16 {
-        let fe = bytes31_to_field_le::<FieldElement>(&[i]);
+        let fe = bytes31_to_field_le::<FieldElement>(&[i]).unwrap();
         assert_eq!(fe, FieldElement::from(i as u64));
     }
 }

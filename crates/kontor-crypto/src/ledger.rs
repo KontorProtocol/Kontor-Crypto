@@ -107,7 +107,48 @@ struct LedgerData {
     #[serde(default)]
     historical_roots: Vec<[u8; 32]>,
     #[serde(default)]
+    historical_root_depths: BTreeMap<[u8; 32], usize>,
+    #[serde(default)]
     historical_root_policy: HistoricalRootPolicy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LegacyLedgerDataV2 {
+    version: u16,
+    files: BTreeMap<String, IndexedFileLedgerEntry>,
+    root: F,
+    #[serde(default)]
+    historical_roots: Vec<[u8; 32]>,
+    #[serde(default)]
+    historical_root_policy: HistoricalRootPolicy,
+}
+
+fn load_legacy_ledger_data_v2(encoded: &[u8]) -> Result<LedgerData, KontorPoRError> {
+    let options = bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .with_little_endian()
+        .with_limit(crate::config::MAX_LEDGER_SIZE_BYTES as u64)
+        .reject_trailing_bytes();
+    let data: LegacyLedgerDataV2 = options.deserialize(encoded).map_err(|e| {
+        KontorPoRError::Serialization(format!("Failed to deserialize legacy v2 ledger: {}", e))
+    })?;
+
+    if data.version != crate::config::LEGACY_LEDGER_FORMAT_VERSION_V2 {
+        return Err(KontorPoRError::InvalidInput(format!(
+            "Ledger format version {} is not compatible with current version {}",
+            data.version,
+            crate::config::LEDGER_FORMAT_VERSION
+        )));
+    }
+
+    Ok(LedgerData {
+        version: crate::config::LEDGER_FORMAT_VERSION,
+        files: data.files,
+        root: data.root,
+        historical_roots: data.historical_roots,
+        historical_root_depths: BTreeMap::new(),
+        historical_root_policy: data.historical_root_policy,
+    })
 }
 
 /// The `FileLedger` manages the aggregated Merkle tree of all file roots.
@@ -141,6 +182,14 @@ pub struct FileLedger {
     /// Use [`Self::set_historical_roots`] to replace this list.
     #[serde(default)]
     pub historical_roots: Vec<[u8; 32]>,
+    /// Known depth for each accepted historical root.
+    ///
+    /// This is intentionally private: callers may still inspect and replace the
+    /// root list, but verification only treats a historical root as shape-bound
+    /// when its depth was recorded by the ledger or supplied through
+    /// [`Self::set_historical_roots_with_depths`].
+    #[serde(default)]
+    historical_root_depths: BTreeMap<[u8; 32], usize>,
     /// Historical-root retention policy.
     #[serde(default)]
     pub historical_root_policy: HistoricalRootPolicy,
@@ -160,6 +209,7 @@ impl Default for FileLedger {
                 layers: vec![vec![]],
             },
             historical_roots: Vec::new(),
+            historical_root_depths: BTreeMap::new(),
             historical_root_policy: HistoricalRootPolicy::default(),
             index_to_file_id: HashMap::new(),
             next_ledger_index: 0,
@@ -188,6 +238,8 @@ impl FileLedger {
         use ff::PrimeField;
         let root = self.tree.root();
         let repr: [u8; 32] = root.to_repr().into();
+        let depth = self.depth();
+        self.historical_root_depths.insert(repr, depth);
         self.historical_roots.push(repr);
         self.prune_historical_roots();
     }
@@ -205,11 +257,40 @@ impl FileLedger {
         self.historical_roots.iter().any(|r| r == &repr)
     }
 
+    /// Returns the exact accepted aggregation depth for `root`, when known.
+    ///
+    /// Current roots are always bound to the current ledger depth. Historical
+    /// roots are accepted here only when their depth was recorded alongside the
+    /// root; root-only historical entries still satisfy [`Self::is_valid_root`]
+    /// for compatibility, but cannot pass multi-file proof verification.
+    pub fn accepted_root_depth(&self, root: F) -> Option<usize> {
+        use ff::PrimeField;
+        if root == self.tree.root() {
+            return Some(self.depth());
+        }
+        let repr: [u8; 32] = root.to_repr().into();
+        if self.historical_roots.iter().any(|r| r == &repr) {
+            return self.historical_root_depths.get(&repr).copied();
+        }
+        None
+    }
+
     /// Sets the historical roots to the given list.
     ///
     /// This replaces any existing historical roots with the provided values.
     pub fn set_historical_roots(&mut self, roots: Vec<[u8; 32]>) {
         self.historical_roots = roots;
+        self.prune_historical_roots();
+    }
+
+    /// Replaces historical roots with explicit root-depth pairs.
+    ///
+    /// Use this when reconstructing a verifier ledger from external storage:
+    /// multi-file proof verification needs both the accepted root and the
+    /// aggregation depth that produced it.
+    pub fn set_historical_roots_with_depths(&mut self, roots: Vec<([u8; 32], usize)>) {
+        self.historical_roots = roots.iter().map(|(root, _depth)| *root).collect();
+        self.historical_root_depths = roots.into_iter().collect();
         self.prune_historical_roots();
     }
 
@@ -527,6 +608,41 @@ impl FileLedger {
         Ok(())
     }
 
+    fn rebuild_missing_historical_root_depths(&mut self) -> Result<(), KontorPoRError> {
+        let wanted: HashSet<[u8; 32]> = self.historical_roots.iter().copied().collect();
+        if wanted.is_empty()
+            || wanted
+                .iter()
+                .all(|root| self.historical_root_depths.contains_key(root))
+        {
+            self.retain_historical_root_depths();
+            return Ok(());
+        }
+
+        let mut by_index: Vec<(usize, F)> = self
+            .files
+            .values()
+            .map(|entry| (entry.ledger_index, entry.entry.rc))
+            .collect();
+        by_index.sort_by_key(|(idx, _rc)| *idx);
+
+        let mut prefix = Vec::new();
+        for (expected_idx, (idx, rc)) in by_index.iter().copied().enumerate() {
+            if idx != expected_idx {
+                break;
+            }
+            prefix.push((rc, idx));
+            let root = aggregate_root(&prefix)?;
+            if wanted.contains(&root) {
+                let depth = prefix.len().next_power_of_two().trailing_zeros() as usize;
+                self.historical_root_depths.insert(root, depth);
+            }
+        }
+
+        self.retain_historical_root_depths();
+        Ok(())
+    }
+
     /// Returns the next append-only ledger index that will be assigned.
     pub fn next_ledger_index(&self) -> usize {
         self.next_ledger_index
@@ -548,6 +664,7 @@ impl FileLedger {
             files: self.files.clone(),
             root: self.tree.root(),
             historical_roots: self.historical_roots.clone(),
+            historical_root_depths: self.historical_root_depths.clone(),
             historical_root_policy: self.historical_root_policy,
         };
 
@@ -604,28 +721,36 @@ impl FileLedger {
             .with_little_endian()
             .with_limit(crate::config::MAX_LEDGER_SIZE_BYTES as u64)
             .reject_trailing_bytes();
-        let data: LedgerData = options.deserialize(&encoded).map_err(|e| {
-            KontorPoRError::Serialization(format!("Failed to deserialize ledger: {}", e))
-        })?;
-
-        if data.version != crate::config::LEDGER_FORMAT_VERSION {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "Ledger format version {} is not compatible with current version {}",
-                data.version,
-                crate::config::LEDGER_FORMAT_VERSION
-            )));
-        }
+        let data = match options.deserialize::<LedgerData>(&encoded) {
+            Ok(data) if data.version == crate::config::LEDGER_FORMAT_VERSION => data,
+            Ok(data) => load_legacy_ledger_data_v2(&encoded).map_err(|legacy_err| {
+                KontorPoRError::InvalidInput(format!(
+                    "Ledger format version {} is not compatible with current version {}; legacy load failed: {}",
+                    data.version,
+                    crate::config::LEDGER_FORMAT_VERSION,
+                    legacy_err
+                ))
+            })?,
+            Err(current_err) => load_legacy_ledger_data_v2(&encoded).map_err(|legacy_err| {
+                KontorPoRError::Serialization(format!(
+                    "Failed to deserialize ledger: {}; legacy v2 load failed: {}",
+                    current_err, legacy_err
+                ))
+            })?,
+        };
 
         let mut ledger = FileLedger {
             files: data.files,
             tree: MerkleTree::default(),
             historical_roots: data.historical_roots,
+            historical_root_depths: data.historical_root_depths,
             historical_root_policy: data.historical_root_policy,
             index_to_file_id: HashMap::new(),
             next_ledger_index: 0,
         };
         ledger.rebuild_runtime_index_cache()?;
         ledger.rebuild_tree()?;
+        ledger.rebuild_missing_historical_root_depths()?;
         ledger.prune_historical_roots();
 
         if ledger.tree.root() != data.root {
@@ -672,6 +797,13 @@ impl FileLedger {
                 }
             }
         }
+        self.retain_historical_root_depths();
+    }
+
+    fn retain_historical_root_depths(&mut self) {
+        let retained: HashSet<[u8; 32]> = self.historical_roots.iter().copied().collect();
+        self.historical_root_depths
+            .retain(|root, _depth| retained.contains(root));
     }
 }
 
@@ -896,6 +1028,7 @@ mod security_tests {
             files: BTreeMap::new(),
             root,
             historical_roots: vec![],
+            historical_root_depths: BTreeMap::new(),
             historical_root_policy: HistoricalRootPolicy::Unlimited,
         };
 

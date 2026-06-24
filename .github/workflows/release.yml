@@ -118,8 +118,8 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - name: Upgrade npm for Trusted Publisher provenance
-        run: npm install -g npm@latest
+      - name: Show npm version
+        run: npm --version
 
       - name: Verify npm package version matches release tag
         working-directory: packages/kontor-crypto

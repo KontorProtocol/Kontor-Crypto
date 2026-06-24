@@ -81,7 +81,7 @@ pub use types::{
 // Stateless verification: verify a constant-size proof from bare registry data (the
 // valid-root set + a `file_id -> (slot, rc)` snapshot) instead of a live `FileLedger`.
 // For hosts that keep the file registry in contract storage.
-pub use verify::{verify_stateless, LedgerView, StatelessLedger};
+pub use verify::{verify_stateless, LedgerView, RootDepthRequirement, StatelessLedger};
 
 // Internal modules can access these for implementation
 // Export for testing - these are implementation details

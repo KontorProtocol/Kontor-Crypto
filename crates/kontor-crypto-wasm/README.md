@@ -119,7 +119,7 @@ Throws if input is empty or encoding fails.
   node examples/node_prepare_file.mjs
   ```
   Calls `prepareFile` with fixed input and asserts metadata and `preparedFile` shape and consistency.
-- **Browser example:** from `crates/kontor-crypto-wasm/`, run `wasm-pack build --target web`, then serve the crate directory (`npx serve .`). Open `http://localhost:3000/examples/browser_prepare_file.html` in a browser. The example imports `../pkg/kontor_crypto_wasm.js`, so the `pkg/` directory must be at the crate root. Verifies same metadata/preparedFile consistency from the browser.
+- **Browser example:** from `crates/kontor-crypto-wasm/`, run `wasm-pack build --target web`, then serve the crate directory with `python3 -m http.server 4000 --bind 127.0.0.1`. Open `http://127.0.0.1:4000/examples/browser_prepare_file.html` in a browser. The example imports `../pkg/kontor_crypto_wasm.js`, so the `pkg/` directory must be at the crate root. Verifies same metadata/preparedFile consistency from the browser.
 
 ## Package (npm)
 

@@ -42,25 +42,29 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace
 
-      # 5. Check formatting.
+      # 5. Ensure excluded fuzz crate lockfile stays current.
+      - name: Check fuzz lockfile
+        run: cargo metadata --manifest-path fuzz/Cargo.toml --locked --format-version=1 >/dev/null
+
+      # 6. Check formatting.
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      # 6. Lint with clippy.
+      # 7. Lint with clippy.
       - name: Run clippy
         run: cargo clippy --all-targets --all-features --workspace -- -D warnings
 
-      # 7. Run tests (--all-features enables nova_poseidon in core).
+      # 8. Run tests (--all-features enables nova_poseidon in core).
       - name: Run tests
         run: cargo test --all-features --workspace
 
-      # 8. Test core crate without --all-features so the standalone Poseidon
+      # 9. Test core crate without --all-features so the standalone Poseidon
       #    path (used in WASM) is exercised. Feature unification in step 7
       #    enables nova_poseidon, which hides #[cfg(not(feature = "nova_poseidon"))] tests.
       - name: Test core standalone Poseidon (no nova_poseidon)
         run: cargo test -p kontor-crypto-core
 
-      # 9. Run security audit.
+      # 10. Run security audit.
       # The command will fail the workflow if any vulnerabilities are found.
       - name: Install cargo-audit
         run: |

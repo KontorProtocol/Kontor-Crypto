@@ -32,7 +32,7 @@ pub fn get_leaf_hash(data: &[u8]) -> Result<FieldElement> {
     if data.is_empty() {
         return Ok(FieldElement::ZERO);
     }
-    Ok(bytes31_to_field_le::<FieldElement>(data))
+    bytes31_to_field_le::<FieldElement>(data)
 }
 
 /// Merkle tree with layers from leaves (layer 0) to root.

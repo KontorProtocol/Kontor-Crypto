@@ -17,7 +17,8 @@ fn poseidon_hash2_zero_zero() {
         poseidon_hash2(FieldElement::from(0u64), FieldElement::from(0u64)),
         field_from_hex::<FieldElement>(
             "bd5d8b55dce90161d02aaeaabc218b79728e051164b79fd65065898c7869ec38"
-        ),
+        )
+        .unwrap(),
         "poseidon_hash2(0,0)"
     );
 }
@@ -28,7 +29,8 @@ fn poseidon_hash2_one_two() {
         poseidon_hash2(FieldElement::from(1u64), FieldElement::from(2u64)),
         field_from_hex::<FieldElement>(
             "613f28921329135c38b5465cd51caeca477e3bc5cd1cb9e659461732444c1f04"
-        ),
+        )
+        .unwrap(),
         "poseidon_hash2(1,2)"
     );
 }
@@ -43,7 +45,8 @@ fn poseidon_hash_tagged_leaf_1_2() {
         ),
         field_from_hex::<FieldElement>(
             "951402865ad780f82a9399ccb4a223ec32eae8870a24f56adc0683353b92b32e"
-        ),
+        )
+        .unwrap(),
         "poseidon_hash_tagged(leaf,1,2)"
     );
 }
@@ -58,7 +61,8 @@ fn poseidon_hash_tagged_node_42_123() {
         ),
         field_from_hex::<FieldElement>(
             "2a77f2bbd4f43f29b224e5428492914ce9f27829cd9f4c13218a36b790b29237"
-        ),
+        )
+        .unwrap(),
         "poseidon_hash_tagged(node,42,123)"
     );
 }

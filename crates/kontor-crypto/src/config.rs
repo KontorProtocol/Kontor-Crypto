@@ -285,8 +285,14 @@ pub const MAX_PROOF_SIZE_BYTES: usize = 50 * 1024 * 1024;
 /// Older roots are pruned when this cap is exceeded.
 pub const DEFAULT_MAX_HISTORICAL_ROOTS: usize = 4096;
 
-/// Current ledger format version
-pub const LEDGER_FORMAT_VERSION: u16 = 2;
+/// Current ledger format version.
+///
+/// Version 3 persists historical root depths so verifiers can bind accepted
+/// ledger roots to bounded aggregation shapes before loading parameters.
+pub const LEDGER_FORMAT_VERSION: u16 = 3;
+
+/// Previous ledger format accepted for backwards-compatible loading.
+pub const LEGACY_LEDGER_FORMAT_VERSION_V2: u16 = 2;
 
 // --- Test-related Constants ---
 

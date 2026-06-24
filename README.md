@@ -236,6 +236,8 @@ Blocking controls include:
 Quick start (Dockerized Picus):
 
 ```bash
+export PICUS_DOCKER_IMAGE='veridise/picus:base@sha256:fc396dbabd92cb0026a52dd3f2f72893374a1fc29367409cb49f251923089162'
+
 # sanity-check Dockerized run-picus
 tools/picus/check-docker.sh
 
