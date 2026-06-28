@@ -8,7 +8,7 @@ use kontor_crypto::api::{self, FieldElement, FileMetadata};
 use kontor_crypto::ledger::FileLedger;
 
 mod common;
-use common::fixtures::synthetic_metadata;
+use common::fixtures::{collect_test_file_metadata_rows, synthetic_metadata, TestFileMetadataRow};
 
 /// Helper to create a dummy FileMetadata for testing.
 /// The depth is derived from padded_len (2^depth).
@@ -34,7 +34,10 @@ fn test_batch_add_basic() {
         dummy_metadata("file_c", 300, 5),
     ];
 
-    ledger.add_files(&files).expect("Batch add should succeed");
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger
+        .add_files(&indexed)
+        .expect("Batch add should succeed");
 
     assert_eq!(ledger.files.len(), 3, "Should have 3 files");
     assert!(ledger.files.contains_key("file_a"));
@@ -52,9 +55,9 @@ fn test_batch_add_empty() {
     let root_before = ledger.tree.root();
 
     // Empty batch should succeed and not change anything
-    let empty: Vec<FileMetadata> = vec![];
+    let indexed_empty: Vec<TestFileMetadataRow> = vec![];
     ledger
-        .add_files(&empty)
+        .add_files(&indexed_empty)
         .expect("Empty batch should succeed");
 
     assert_eq!(ledger.files.len(), 1, "Should still have 1 file");
@@ -66,17 +69,18 @@ fn test_batch_add_single_file() {
     let mut ledger = FileLedger::new();
 
     let files = vec![dummy_metadata("only_file", 999, 5)];
+    let indexed = collect_test_file_metadata_rows(files.clone());
     ledger
-        .add_files(&files)
+        .add_files(&indexed)
         .expect("Single file batch should succeed");
 
     assert_eq!(ledger.files.len(), 1);
     assert!(ledger.files.contains_key("only_file"));
     assert_eq!(
-        ledger.files.get("only_file").unwrap().root,
+        ledger.files.get("only_file").unwrap().entry.root,
         FieldElement::from(999u64)
     );
-    assert_eq!(ledger.files.get("only_file").unwrap().depth, 5);
+    assert_eq!(ledger.files.get("only_file").unwrap().entry.depth, 5);
 }
 
 // ===========================================
@@ -100,7 +104,8 @@ fn test_batch_add_equivalent_to_individual_adds() {
 
     // Method 2: Batch add
     let mut ledger_batch = FileLedger::new();
-    ledger_batch.add_files(&files).unwrap();
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger_batch.add_files(&indexed).unwrap();
 
     // Both should produce identical cryptographic results
     assert_eq!(
@@ -120,10 +125,10 @@ fn test_batch_add_equivalent_to_individual_adds() {
             .files
             .get(key)
             .expect("File should exist in batch ledger");
-        assert_eq!(entry_individual.root, entry_batch.root);
-        assert_eq!(entry_individual.depth, entry_batch.depth);
+        assert_eq!(entry_individual.entry.root, entry_batch.entry.root);
+        assert_eq!(entry_individual.entry.depth, entry_batch.entry.depth);
         assert_eq!(
-            entry_individual.rc, entry_batch.rc,
+            entry_individual.entry.rc, entry_batch.entry.rc,
             "Root commitments must match for {}",
             key
         );
@@ -131,8 +136,8 @@ fn test_batch_add_equivalent_to_individual_adds() {
 }
 
 #[test]
-fn test_batch_add_order_independence() {
-    // BTreeMap ensures deterministic ordering regardless of insertion order
+fn test_batch_add_order_dependence_with_distinct_explicit_indices() {
+    // With append-only stable indices, insertion order defines index assignment.
     let files_order1 = vec![
         dummy_metadata("zebra", 1, 3),
         dummy_metadata("apple", 2, 3),
@@ -146,21 +151,27 @@ fn test_batch_add_order_independence() {
     ];
 
     let mut ledger1 = FileLedger::new();
-    ledger1.add_files(&files_order1).unwrap();
+    let indexed1 = collect_test_file_metadata_rows(files_order1.clone());
+    ledger1.add_files(&indexed1).unwrap();
 
     let mut ledger2 = FileLedger::new();
-    ledger2.add_files(&files_order2).unwrap();
+    let indexed2 = collect_test_file_metadata_rows(files_order2.clone());
+    ledger2.add_files(&indexed2).unwrap();
 
-    assert_eq!(
+    assert_ne!(
         ledger1.tree.root(),
         ledger2.tree.root(),
-        "Different insertion orders must produce identical root (BTreeMap sorts by key)"
+        "Different insertion orders should produce different roots with append-only indices"
     );
 
-    // Verify canonical indices are the same
-    assert_eq!(ledger1.lookup("apple").unwrap().0, 0);
-    assert_eq!(ledger1.lookup("mango").unwrap().0, 1);
-    assert_eq!(ledger1.lookup("zebra").unwrap().0, 2);
+    // Verify index assignment tracks insertion order.
+    assert_eq!(ledger1.lookup("zebra").unwrap().0, 0);
+    assert_eq!(ledger1.lookup("apple").unwrap().0, 1);
+    assert_eq!(ledger1.lookup("mango").unwrap().0, 2);
+
+    assert_eq!(ledger2.lookup("apple").unwrap().0, 0);
+    assert_eq!(ledger2.lookup("mango").unwrap().0, 1);
+    assert_eq!(ledger2.lookup("zebra").unwrap().0, 2);
 }
 
 // ===========================================
@@ -168,32 +179,28 @@ fn test_batch_add_order_independence() {
 // ===========================================
 
 #[test]
-fn test_batch_add_with_duplicates_in_batch() {
+fn test_batch_add_rejects_duplicates_in_batch() {
     let mut ledger = FileLedger::new();
 
-    // Batch contains duplicate file_id - last one should win
+    // Batch contains duplicate file_id entries, which should now be rejected.
     let files = vec![
         dummy_metadata("dup_file", 100, 3),
         dummy_metadata("other_file", 200, 4),
         dummy_metadata("dup_file", 999, 5), // Same file_id, different values
     ];
 
-    ledger.add_files(&files).unwrap();
-
-    assert_eq!(ledger.files.len(), 2, "Should have 2 unique files");
-
-    // The last duplicate should win
-    let dup_entry = ledger.files.get("dup_file").unwrap();
-    assert_eq!(
-        dup_entry.root,
-        FieldElement::from(999u64),
-        "Last duplicate root should be used"
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    let err = ledger
+        .add_files(&indexed)
+        .expect_err("Duplicate file_id should be rejected");
+    assert!(
+        matches!(err, kontor_crypto::KontorPoRError::InvalidInput(_)),
+        "Expected InvalidInput for duplicate file_id, got: {err:?}"
     );
-    assert_eq!(dup_entry.depth, 5, "Last duplicate depth should be used");
 }
 
 #[test]
-fn test_batch_add_overwrites_existing_files() {
+fn test_batch_add_rejects_existing_files() {
     let mut ledger = FileLedger::new();
 
     // Add initial file
@@ -206,19 +213,16 @@ fn test_batch_add_overwrites_existing_files() {
         dummy_metadata("existing", 999, 5), // Overwrite
         dummy_metadata("new_file", 200, 4),
     ];
-    ledger.add_files(&files).unwrap();
-
-    assert_eq!(ledger.files.len(), 2);
-    assert_eq!(
-        ledger.files.get("existing").unwrap().root,
-        FieldElement::from(999u64),
-        "Existing file should be overwritten"
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    let err = ledger
+        .add_files(&indexed)
+        .expect_err("Existing file_id should be rejected");
+    assert!(
+        matches!(err, kontor_crypto::KontorPoRError::InvalidInput(_)),
+        "Expected InvalidInput for existing file_id, got: {err:?}"
     );
-    assert_ne!(
-        ledger.tree.root(),
-        original_root,
-        "Root should change after overwrite"
-    );
+    assert_eq!(ledger.files.len(), 1);
+    assert_eq!(ledger.tree.root(), original_root);
 }
 
 // ===========================================
@@ -238,11 +242,18 @@ fn test_batch_add_after_individual_adds() {
         .unwrap();
 
     // Then batch add more files
-    let batch_files = vec![
+    let batch_files = [
         dummy_metadata("batch_1", 300, 5),
         dummy_metadata("batch_2", 400, 3),
     ];
-    ledger.add_files(&batch_files).unwrap();
+    let indexed = batch_files
+        .iter()
+        .enumerate()
+        .map(|(offset, metadata)| {
+            TestFileMetadataRow::new(metadata.clone(), ledger.next_ledger_index() + offset)
+        })
+        .collect::<Vec<_>>();
+    ledger.add_files(&indexed).unwrap();
 
     assert_eq!(ledger.files.len(), 4, "Should have 4 files total");
     assert!(ledger.files.contains_key("individual_1"));
@@ -260,7 +271,8 @@ fn test_individual_add_after_batch_add() {
         dummy_metadata("batch_1", 100, 3),
         dummy_metadata("batch_2", 200, 4),
     ];
-    ledger.add_files(&files).unwrap();
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger.add_files(&indexed).unwrap();
 
     // Then add individually
     ledger
@@ -283,9 +295,10 @@ fn test_lookup_after_batch_add() {
         dummy_metadata("banana", 200, 4),
         dummy_metadata("cherry", 300, 5),
     ];
-    ledger.add_files(&files).unwrap();
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger.add_files(&indexed).unwrap();
 
-    // Indices should be in lexicographic order
+    // Indices should follow the supplied reconstruction order
     let (idx_apple, rc_apple) = ledger.lookup("apple").expect("apple should be found");
     let (idx_banana, rc_banana) = ledger.lookup("banana").expect("banana should be found");
     let (idx_cherry, rc_cherry) = ledger.lookup("cherry").expect("cherry should be found");
@@ -307,13 +320,19 @@ fn test_lookup_after_batch_add() {
 fn test_aggregation_proof_after_batch_add() {
     let mut ledger = FileLedger::new();
 
-    let files = vec![
+    let files = [
         dummy_metadata("file_1", 100, 3),
         dummy_metadata("file_2", 200, 4),
         dummy_metadata("file_3", 300, 5),
         dummy_metadata("file_4", 400, 3),
     ];
-    ledger.add_files(&files).unwrap();
+    let indexed = files
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(ledger_index, metadata)| TestFileMetadataRow::new(metadata, ledger_index))
+        .collect::<Vec<_>>();
+    ledger.add_files(&indexed).unwrap();
 
     // Get aggregation proof for each file
     for file_id in ["file_1", "file_2", "file_3", "file_4"] {
@@ -356,7 +375,8 @@ fn test_batch_add_tree_depth_progression() {
             .map(|i| dummy_metadata(&format!("file_{}", i), i as u64, 3))
             .collect();
 
-        ledger.add_files(&files).unwrap();
+        let indexed = collect_test_file_metadata_rows(files.clone());
+        ledger.add_files(&indexed).unwrap();
 
         assert_eq!(
             ledger.depth(),
@@ -382,12 +402,12 @@ fn test_batch_add_large_batch() {
         .collect();
 
     ledger
-        .add_files(&files)
+        .add_files(&collect_test_file_metadata_rows(files.clone()))
         .expect("Large batch should succeed");
 
     assert_eq!(ledger.files.len(), 100);
 
-    // Verify ordering (BTreeMap sorts lexicographically)
+    // Verify map-key ordering (the `files` map remains lexicographically sorted by key).
     let keys: Vec<_> = ledger.files.keys().collect();
     assert_eq!(*keys[0], "file_000");
     assert_eq!(*keys[50], "file_050");
@@ -410,7 +430,8 @@ fn test_batch_vs_individual_large_dataset() {
 
     // Batch add
     let mut ledger_batch = FileLedger::new();
-    ledger_batch.add_files(&files).unwrap();
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger_batch.add_files(&indexed).unwrap();
 
     // Verify identical results
     assert_eq!(ledger_individual.tree.root(), ledger_batch.tree.root());
@@ -442,7 +463,8 @@ fn test_batch_add_with_iter() {
 
     // Using .iter() explicitly
     let mut ledger = FileLedger::new();
-    ledger.add_files(files.iter()).unwrap();
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger.add_files(&indexed).unwrap();
 
     assert_eq!(ledger.files.len(), 3);
 }
@@ -459,9 +481,9 @@ fn test_batch_add_with_filter() {
 
     // Filter to only add files with depth > 3
     let mut ledger = FileLedger::new();
-    ledger
-        .add_files(files.iter().filter(|m| m.depth() > 3))
-        .unwrap();
+    let filtered: Vec<_> = files.into_iter().filter(|m| m.depth() > 3).collect();
+    let indexed = collect_test_file_metadata_rows(filtered.clone());
+    ledger.add_files(&indexed).unwrap();
 
     assert_eq!(ledger.files.len(), 2);
     assert!(ledger.files.contains_key("large_1"));
@@ -488,7 +510,8 @@ fn test_batch_add_with_real_files() {
 
     // Batch add
     let mut ledger_batch = FileLedger::new();
-    ledger_batch.add_files(&metadatas).unwrap();
+    let indexed = collect_test_file_metadata_rows(metadatas.clone());
+    ledger_batch.add_files(&indexed).unwrap();
 
     // Individual adds for comparison
     let mut ledger_individual = FileLedger::new();
@@ -503,8 +526,8 @@ fn test_batch_add_with_real_files() {
     // Verify each file is correctly stored
     for metadata in &metadatas {
         let entry = ledger_batch.files.get(&metadata.file_id).unwrap();
-        assert_eq!(entry.root, metadata.root);
-        assert_eq!(entry.depth, metadata.depth());
+        assert_eq!(entry.entry.root, metadata.root);
+        assert_eq!(entry.entry.depth, metadata.depth());
     }
 }
 
@@ -553,7 +576,8 @@ fn test_add_files_does_not_record_historical_roots() {
         dummy_metadata("file_b", 200, 3),
         dummy_metadata("file_c", 300, 3),
     ];
-    ledger.add_files(&files).unwrap();
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger.add_files(&indexed).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -563,11 +587,18 @@ fn test_add_files_does_not_record_historical_roots() {
     assert_eq!(ledger.files.len(), 3);
 
     // Case 2: Batch add to non-empty ledger (still no historical root)
-    let more_files = vec![
+    let more_files = [
         dummy_metadata("file_d", 400, 3),
         dummy_metadata("file_e", 500, 3),
     ];
-    ledger.add_files(&more_files).unwrap();
+    let indexed_more = more_files
+        .iter()
+        .enumerate()
+        .map(|(offset, metadata)| {
+            TestFileMetadataRow::new(metadata.clone(), ledger.next_ledger_index() + offset)
+        })
+        .collect::<Vec<_>>();
+    ledger.add_files(&indexed_more).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -601,11 +632,18 @@ fn test_historical_roots_accumulate_with_add_file() {
     );
 
     // add_files does NOT add historical roots
-    let batch = vec![
+    let batch = [
         dummy_metadata("batch_1", 600, 3),
         dummy_metadata("batch_2", 700, 3),
     ];
-    ledger.add_files(&batch).unwrap();
+    let indexed = batch
+        .iter()
+        .enumerate()
+        .map(|(offset, metadata)| {
+            TestFileMetadataRow::new(metadata.clone(), ledger.next_ledger_index() + offset)
+        })
+        .collect::<Vec<_>>();
+    ledger.add_files(&indexed).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -689,12 +727,19 @@ fn test_add_files_atomicity_state_consistency() {
     let historical_count_before = historical_root_total(&ledger);
 
     // Batch add
-    let batch = vec![
+    let batch = [
         dummy_metadata("batch_1", 200, 3),
         dummy_metadata("batch_2", 300, 3),
         dummy_metadata("batch_3", 400, 3),
     ];
-    ledger.add_files(&batch).unwrap();
+    let indexed = batch
+        .iter()
+        .enumerate()
+        .map(|(offset, metadata)| {
+            TestFileMetadataRow::new(metadata.clone(), ledger.next_ledger_index() + offset)
+        })
+        .collect::<Vec<_>>();
+    ledger.add_files(&indexed).unwrap();
 
     // State should be fully updated atomically
     assert_eq!(
@@ -723,8 +768,8 @@ fn test_empty_batch_does_not_record_historical_root() {
     let historical_count_before = historical_root_total(&ledger);
 
     // Add empty batch - should be a complete no-op
-    let empty: Vec<api::FileMetadata> = vec![];
-    ledger.add_files(&empty).unwrap();
+    let indexed_empty: Vec<TestFileMetadataRow> = vec![];
+    ledger.add_files(&indexed_empty).unwrap();
 
     // Root should not change
     assert_eq!(
@@ -752,8 +797,8 @@ fn test_empty_batch_is_true_noop() {
     let mut ledger_empty = FileLedger::new();
     let root_before_empty = ledger_empty.tree.root();
 
-    let empty: Vec<api::FileMetadata> = vec![];
-    ledger_empty.add_files(&empty).unwrap();
+    let indexed_empty: Vec<TestFileMetadataRow> = vec![];
+    ledger_empty.add_files(&indexed_empty).unwrap();
 
     assert_eq!(
         ledger_empty.files.len(),
@@ -782,7 +827,8 @@ fn test_empty_batch_is_true_noop() {
 
     // Multiple empty batches should all be no-ops
     for _ in 1002..1005 {
-        ledger.add_files(&empty).unwrap();
+        let indexed_empty: Vec<TestFileMetadataRow> = vec![];
+        ledger.add_files(&indexed_empty).unwrap();
     }
 
     assert_eq!(ledger.files.len(), files_before, "File count unchanged");
@@ -806,12 +852,17 @@ fn test_add_file_and_batch_interleaved() {
     assert_eq!(historical_root_total(&ledger), 1);
 
     // Batch add - does NOT record historical root
-    ledger
-        .add_files(&[
-            dummy_metadata("batch_1", 200, 3),
-            dummy_metadata("batch_2", 300, 3),
-        ])
-        .unwrap();
+    let batch = [
+        dummy_metadata("batch_1", 200, 3),
+        dummy_metadata("batch_2", 300, 3),
+    ];
+    let start_index = ledger.next_ledger_index();
+    let indexed = batch
+        .iter()
+        .enumerate()
+        .map(|(offset, metadata)| TestFileMetadataRow::new(metadata.clone(), start_index + offset))
+        .collect::<Vec<_>>();
+    ledger.add_files(&indexed).unwrap();
     assert_eq!(ledger.files.len(), 3);
     assert_eq!(historical_root_total(&ledger), 1); // unchanged
 
@@ -821,9 +872,14 @@ fn test_add_file_and_batch_interleaved() {
     assert_eq!(historical_root_total(&ledger), 2);
 
     // Another batch - does NOT record historical root
-    ledger
-        .add_files(&[dummy_metadata("batch_3", 500, 3)])
-        .unwrap();
+    let batch = [dummy_metadata("batch_3", 500, 3)];
+    let start_index = ledger.next_ledger_index();
+    let indexed = batch
+        .iter()
+        .enumerate()
+        .map(|(offset, metadata)| TestFileMetadataRow::new(metadata.clone(), start_index + offset))
+        .collect::<Vec<_>>();
+    ledger.add_files(&indexed).unwrap();
     assert_eq!(ledger.files.len(), 5);
     assert_eq!(historical_root_total(&ledger), 2); // unchanged
 

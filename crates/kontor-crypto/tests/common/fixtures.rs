@@ -11,7 +11,7 @@ use kontor_crypto::{
         PreparedFile,
     },
     config::{self, CHUNK_SIZE_BYTES},
-    ledger::FileLedger,
+    ledger::{FileDescriptor, FileLedger},
     params,
 };
 use rand::rngs::StdRng;
@@ -265,6 +265,49 @@ pub fn synthetic_metadata(file_id: &str, root: FieldElement, depth: usize) -> Fi
         padded_len: 1 << depth,
         original_size: 100,
         filename: format!("{}.dat", file_id),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TestFileMetadataRow {
+    pub metadata: FileMetadata,
+    pub ledger_index: usize,
+}
+
+impl TestFileMetadataRow {
+    pub fn new(metadata: FileMetadata, ledger_index: usize) -> Self {
+        Self {
+            metadata,
+            ledger_index,
+        }
+    }
+}
+
+pub fn collect_test_file_metadata_rows(
+    metadatas: impl IntoIterator<Item = FileMetadata>,
+) -> Vec<TestFileMetadataRow> {
+    metadatas
+        .into_iter()
+        .enumerate()
+        .map(|(ledger_index, metadata)| TestFileMetadataRow::new(metadata, ledger_index))
+        .collect()
+}
+
+impl FileDescriptor for TestFileMetadataRow {
+    fn file_id(&self) -> &str {
+        &self.metadata.file_id
+    }
+
+    fn root(&self) -> FieldElement {
+        self.metadata.root
+    }
+
+    fn depth(&self) -> usize {
+        self.metadata.depth()
+    }
+
+    fn ledger_index(&self) -> Option<usize> {
+        Some(self.ledger_index)
     }
 }
 

@@ -286,7 +286,7 @@ pub const MAX_PROOF_SIZE_BYTES: usize = 50 * 1024 * 1024;
 pub const DEFAULT_MAX_HISTORICAL_ROOTS: usize = 4096;
 
 /// Current ledger format version
-pub const LEDGER_FORMAT_VERSION: u16 = 1;
+pub const LEDGER_FORMAT_VERSION: u16 = 2;
 
 // --- Test-related Constants ---
 

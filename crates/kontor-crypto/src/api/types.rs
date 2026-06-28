@@ -41,23 +41,11 @@ pub struct ChallengeID(pub [u8; 32]);
 pub struct Proof {
     /// The compressed SNARK proof
     pub compressed_snark: CompressedSNARK<E1, E2, C, S1, S2>,
-    /// Exact ordered set of challenges covered by this proof
-    pub challenge_ids: Vec<ChallengeID>,
     /// The ledger root used during proof generation.
     /// Verifiers must validate this root is in their accepted historical roots set
     /// before verification. This enables cross-block aggregation without requiring
     /// provers to regenerate proofs when new files activate.
     pub ledger_root: FieldElement,
-    /// The ledger indices for each file at proof generation time.
-    /// These are the positions of each file's root commitment (rc) in the ledger tree.
-    ///
-    /// Important: indices are *relative to the ledger_root*. Adding files can change
-    /// canonical positions in later ledger states (because ordering is by file_id),
-    /// so verifiers must use the indices bundled in the proof together with the
-    /// proof's ledger_root.
-    ///
-    /// The SNARK proves these indices are correct for the claimed ledger_root.
-    pub ledger_indices: Vec<usize>,
     /// The aggregated tree depth at proof generation time.
     /// Required for verification to load the correct circuit parameters.
     pub aggregated_tree_depth: usize,
@@ -68,8 +56,12 @@ mod proof_format {
     /// Magic bytes identifying Nova PoR proof format
     pub const MAGIC: &[u8] = b"NPOR";
 
-    /// Current format version for forward compatibility
-    pub const VERSION: u16 = 2;
+    /// Current format version for forward compatibility.
+    ///
+    /// Version 3 removes the serialized `challenge_ids` and `ledger_indices`
+    /// vectors from `Proof`, so older version-2 payloads must not decode as if
+    /// they were the new constant-size proof format.
+    pub const VERSION: u16 = 3;
 
     /// Header size in bytes: magic(4) + version(2) + length(4)
     pub const HEADER_SIZE: usize = 10;

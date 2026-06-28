@@ -7,7 +7,6 @@
 use super::types::{Challenge, FileMetadata, PreparedFile, Proof};
 use crate::{ledger::FileLedger, KontorPoRError, Result};
 use std::collections::BTreeMap;
-use std::collections::HashSet;
 use tracing::debug;
 
 /// The unified API entry point for the Nova-based Proof-of-Retrievability system.
@@ -65,7 +64,7 @@ impl<'a> PorSystem<'a> {
     ///
     /// # Returns
     ///
-    /// Returns a Proof containing the compressed SNARK and the challenge IDs
+    /// Returns a Proof containing the compressed SNARK and constant-size metadata.
     pub fn prove(&self, files: Vec<&PreparedFile>, challenges: &[Challenge]) -> Result<Proof> {
         // Convert Vec<&PreparedFile> to BTreeMap<String, &PreparedFile>
         let mut files_map = BTreeMap::new();
@@ -100,8 +99,9 @@ impl<'a> PorSystem<'a> {
 
     /// Verify a proof against the Challenges it claims to answer.
     ///
-    /// This method validates that the proof's challenge_ids exactly match
-    /// the provided challenges and then performs SNARK verification.
+    /// This method validates challenge inputs and performs SNARK verification.
+    /// The proof bytes are not self-describing coverage metadata; callers must supply
+    /// the exact `Challenge` objects they intend this proof to satisfy.
     ///
     /// # Arguments
     ///
@@ -116,44 +116,8 @@ impl<'a> PorSystem<'a> {
         for challenge in challenges {
             challenge.validate()?;
         }
-
-        let mut seen = HashSet::with_capacity(challenges.len());
-        for challenge in challenges {
-            if !seen.insert(challenge.id()) {
-                return Err(KontorPoRError::InvalidInput(
-                    "verify: duplicate challenge detected".to_string(),
-                ));
-            }
-        }
-
-        // Validate that proof.challenge_ids matches the provided challenges
-        let expected_ids: Vec<_> = challenges.iter().map(|c| c.id()).collect();
-
-        if proof.challenge_ids.len() != expected_ids.len() {
-            return Err(KontorPoRError::InvalidInput(format!(
-                "Challenge count mismatch: proof covers {} challenges, provided {}",
-                proof.challenge_ids.len(),
-                expected_ids.len()
-            )));
-        }
-
-        // Check that all challenge IDs match (order matters for Nova)
-        for (i, (proof_id, expected_id)) in proof
-            .challenge_ids
-            .iter()
-            .zip(expected_ids.iter())
-            .enumerate()
-        {
-            if proof_id != expected_id {
-                return Err(KontorPoRError::InvalidInput(format!(
-                    "Challenge ID mismatch at position {}: proof has {:?}, expected {:?}",
-                    i, proof_id.0, expected_id.0
-                )));
-            }
-        }
-
         debug!(
-            "PorSystem::verify - validated {} challenge IDs",
+            "PorSystem::verify - verifying {} challenges",
             challenges.len()
         );
 
