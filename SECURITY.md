@@ -14,7 +14,7 @@ Kontor-Crypto implements Proof-of-Retrievability using recursive SNARKs. Storage
 
 ### 3. Public Input Construction (`src/api/plan.rs`, `src/api/prove.rs`, `src/api/verify.rs`)
 
-`Plan::make_plan()` and `build_z0_primary()` bind proofs to specific files and ledger state. Public I/O layout in `src/config.rs::PublicIOLayout` (lines 46-181). Verify prover/verifier construct identical inputs, aggregated root derived from verifier's ledger only, canonical ordering, no prover-controlled values.
+`Plan::make_plan()` and `build_z0_primary()` bind proofs to specific files and ledger state. Public I/O layout in `src/config.rs::PublicIOLayout` (lines 46-181). Verify prover/verifier construct identical inputs, aggregated root derived from verifier's ledger only, challenge ordering is canonical, and ledger indices are verifier-derived rather than prover-controlled.
 
 ### 4. Ledger Root Pinning (`src/api/plan.rs` lines 46-52)
 
@@ -22,7 +22,9 @@ Single-file proofs use file root from metadata; multi-file uses `ledger.tree.roo
 
 ### 5. Proof Verification (`src/api/verify.rs`)
 
-`verify()` performs validation before SNARK verification. Check error vs invalid proof distinction (`Ok(false)` vs `Err`), no panics on malformed input, challenge ID binding.
+`verify()` performs validation before SNARK verification. Check error vs invalid proof distinction (`Ok(false)` vs `Err`), no panics on malformed input, and challenge-set binding via verifier-constructed public inputs.
+
+`verify()` (live `FileLedger`) and `verify_stateless()` (a `StatelessLedger`: a `file_id → (slot, rc)` registry snapshot + valid-root set) share `verify_with()` over the `LedgerView` trait. The two resolve per-file indices through the same code path, so soundness does not depend on which is used. In stateless mode the registry is supplied by the caller (e.g. a contract reading its own state): a wrong slot/`rc` makes the SNARK statement fail to verify, and an attacker-chosen `ledger_root` is rejected unless it is in the caller-supplied valid-root set (multi-file). The caller is therefore responsible for keeping the registry and valid-root set consistent with the on-chain files; given a correct registry, the binding is identical to the ledger path.
 
 ### 6. Serialization (`src/api/types.rs`)
 
@@ -58,49 +60,59 @@ Verify version pinning, security advisories, no known vulnerabilities, component
 
 # Input Validation
 
-| Function | Inputs | DoS Risk | Handled |
-|----------|--------|----------|---------|
-| `prepare_file()` | data size, filename | Large files | ✅ |
-| `Challenge::new()` | num_challenges, prover_id | Extreme values | ✅ |
-| `prove()` | challenges.len(), num_challenges | Resource exhaustion | ✅ |
-| `verify()` | proof bytes, challenges | Malformed data | ✅ |
-| `reconstruct_file()` | sector count, metadata | Invalid combinations | ✅ |
-| `FileLedger::load()` | file size, contents | Large/malformed files | ✅ |
+| Function             | Inputs                           | DoS Risk              | Handled |
+| -------------------- | -------------------------------- | --------------------- | ------- |
+| `prepare_file()`     | data size, filename              | Large files           | ✅      |
+| `Challenge::new()`   | num_challenges, prover_id        | Extreme values        | ✅      |
+| `prove()`            | challenges.len(), num_challenges | Resource exhaustion   | ✅      |
+| `verify()`           | proof bytes, challenges          | Malformed data        | ✅      |
+| `reconstruct_file()` | sector count, metadata           | Invalid combinations  | ✅      |
+| `FileLedger::load()` | file size, contents              | Large/malformed files | ✅      |
 
 **Boundary conditions:** empty inputs, maximum sizes (file/challenge/ledger count), zero values (depth, size, count), type boundaries (usize::MAX, u64::MAX).
 
 ## Security Properties
 
 ### Soundness
+
 Prover cannot generate valid proof without data. Check circuit constraints (`synth.rs`), Merkle path validation, state chaining (prevents step skipping), no freely-chosen witness values. Tests: `security_malicious_prover.rs` (9).
 
 ### Completeness
+
 Honest prover always succeeds. Review error paths in `prove()`, witness generation for valid cases, no false rejections. Tests: all e2e.
 
 ### Binding
-Proof bound to specific challenges and ledger. Public inputs include aggregated_root (from ledger), challenge IDs derived deterministically (includes prover_id), verified before SNARK check, state chain creates temporal binding. Tests: `security_replay_attack.rs`, `security_ledger_root_pinning.rs`.
+
+Proof bound to specific challenges and ledger once the verifier supplies the intended `Challenge` set. Public inputs include aggregated_root (from ledger), verifier-derived ledger indices, deterministically derived challenge-set state (includes prover_id through `Challenge::id()`), and the recursive state chain. Tests: `security_replay_attack.rs`, `security_ledger_root_pinning.rs`.
 
 ### Determinism
-Same inputs → same outputs. No randomness, canonical ordering (BTreeMap), fixed serialization. Tests: `regression.rs`, `api_consistency.rs`.
+
+Same inputs → same outputs. No randomness, canonical challenge ordering, explicit stable ledger indices for reconstruction, fixed serialization. Tests: `regression.rs`, `api_consistency.rs`.
 
 ## Attack Vectors
 
 ### Malformed Proof Bytes (`Proof::from_bytes()`)
+
 Parser vulnerabilities, buffer overflows. Mitigations: magic byte validation, length checks, trailing data rejection, version validation.
 
 ### Resource Exhaustion (`prove()`, parameter generation)
+
 Memory exhaustion, DoS. Limits: MAX_NUM_CHALLENGES (10,000), PRACTICAL_MAX_FILES (1,024), parameter cache (50), no unbounded loops.
 
 ### Integer Overflow (sector calculations, index arithmetic)
+
 Checked arithmetic, documented type conversions, bounds enforced before casts.
 
 ### Depth/Metadata Tampering (challenge construction, verification)
+
 Root commitment binds (root, depth): `rc = H(TAG_RC, root, depth)`. Public depth in circuit, ledger lookup uses rc, gating prevents depth=0 abuse.
 
 ### Ledger Substitution (multi-file verification)
+
 Verifier derives aggregated root from its own ledger, not prover-supplied, cryptographically bound via public inputs.
 
 ### State Chain Manipulation (recursive proving)
+
 State evolution one-way: `state_new = H(TAG_STATE_UPDATE, state_old, leaf)`. Circuit enforces state threading, no skipping/reordering.
 
 ## Test Coverage
@@ -148,11 +160,11 @@ Verifier generates parameters from challenge shape independently. If prover used
 
 ## Dependencies
 
-| Dependency | Version | Role | Audit Status |
-|------------|---------|------|--------------|
-| `nova-snark` | 0.41.0 | Nova SNARK & Poseidon hash | Microsoft Research |
-| `reed-solomon-erasure` | 6.0.0 | Erasure coding | ? |
-| `ff` | 0.13 | Finite field arithmetic | ? |
+| Dependency             | Version | Role                       | Audit Status       |
+| ---------------------- | ------- | -------------------------- | ------------------ |
+| `nova-snark`           | 0.41.0  | Nova SNARK & Poseidon hash | Microsoft Research |
+| `reed-solomon-erasure` | 6.0.0   | Erasure coding             | ?                  |
+| `ff`                   | 0.13    | Finite field arithmetic    | ?                  |
 
 # Pre-Audit Checklist
 

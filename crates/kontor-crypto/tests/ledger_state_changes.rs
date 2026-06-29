@@ -8,6 +8,7 @@ use kontor_crypto::{
 use std::collections::BTreeMap;
 
 mod common;
+use common::fixtures::collect_test_file_metadata_rows;
 
 #[test]
 fn test_file_removal_invalidates_proof() {
@@ -89,8 +90,8 @@ fn test_file_removal_invalidates_proof() {
 
 #[test]
 fn test_ledger_reorg_changes_aggregated_root() {
-    // Test that reorganizing the ledger (same files, different order) changes the root
-    // Note: BTreeMap sorts by key, so file order is deterministic by file_id
+    // Test that reorganizing insertion order (same files, different order) changes the root
+    // because stable append-only ledger indices are assigned in insertion order.
     println!("Testing ledger reorganization impact");
 
     // Create files with specific names to control ordering
@@ -116,17 +117,16 @@ fn test_ledger_reorg_changes_aggregated_root() {
     ledger1.add_file(&prepared_files[2].0).unwrap();
     let root1 = ledger1.tree.root();
 
-    // Create another ledger with same files (BTreeMap ensures same order)
+    // Create another ledger with same files but a different insertion order.
     let mut ledger2 = FileLedger::new();
     ledger2.add_file(&prepared_files[2].0).unwrap();
     ledger2.add_file(&prepared_files[0].0).unwrap();
     ledger2.add_file(&prepared_files[1].0).unwrap();
     let root2 = ledger2.tree.root();
 
-    // Due to BTreeMap sorting, both ledgers should have the same order and root
-    assert_eq!(
+    assert_ne!(
         root1, root2,
-        "Ledgers with same files should have same root due to BTreeMap ordering"
+        "Ledgers with same files but different insertion order should differ with append-only indices"
     );
 
     // Now test with different file roots (simulating file content changes)
@@ -300,9 +300,9 @@ fn test_add_files_bulk_initialization() {
 
     // Bulk initialize ledger with all files at once
     let mut ledger = FileLedger::new();
-    ledger
-        .add_files(&[metadata1, metadata2, metadata3])
-        .expect("Bulk add should succeed");
+    let metadatas = vec![metadata1, metadata2, metadata3];
+    let indexed = collect_test_file_metadata_rows(metadatas.clone());
+    ledger.add_files(&indexed).expect("Bulk add should succeed");
 
     assert!(
         ledger.historical_roots.is_empty(),

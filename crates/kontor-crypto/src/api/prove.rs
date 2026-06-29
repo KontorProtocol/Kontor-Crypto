@@ -4,7 +4,7 @@
 //! broken down into focused, manageable functions.
 
 use super::{
-    plan::Plan,
+    plan::{AggInputs, Plan},
     types::{Challenge, FieldElement, PorParams, PreparedFile, Proof},
     witness::generate_circuit_witness,
 };
@@ -67,14 +67,9 @@ pub fn prove(
     let compressed_snark = CompressedSNARK::prove(&params.pp, &params.keys.pk, &recursive_snark)
         .map_err(|e| KontorPoRError::Snark(format!("Proof compression failed: {e:?}")))?;
 
-    // Collect challenge IDs in order
-    let challenge_ids: Vec<super::types::ChallengeID> = challenges.iter().map(|c| c.id()).collect();
-
     Ok(super::types::Proof {
         compressed_snark,
-        challenge_ids,
         ledger_root: plan.aggregated_root,
-        ledger_indices: plan.ledger_indices.clone(),
         aggregated_tree_depth: plan.aggregated_tree_depth,
     })
 }
@@ -161,7 +156,7 @@ fn setup_proving_environment(
     }
 
     // Create unified preprocessing plan
-    let plan = Plan::make_plan(challenges, ledger)?;
+    let plan = Plan::make_plan(challenges, AggInputs::Ledger(ledger))?;
 
     // Load or generate parameters for the exact shape
     let params = crate::params::load_or_generate_params(
