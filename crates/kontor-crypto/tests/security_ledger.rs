@@ -5,7 +5,10 @@ use rand::Rng;
 use std::collections::BTreeMap;
 
 mod common;
-use common::fixtures::{create_test_data, setup_test_scenario, synthetic_metadata, TestConfig};
+use common::fixtures::{
+    collect_test_file_metadata_rows, create_test_data, setup_test_scenario, synthetic_metadata,
+    TestConfig, TestFileMetadataRow,
+};
 use kontor_crypto::KontorPoRError;
 
 fn historical_root_total(ledger: &kontor_crypto::ledger::FileLedger) -> usize {
@@ -454,9 +457,9 @@ fn test_single_file_proof_survives_ledger_update() {
 
 #[test]
 fn test_multi_file_proof_valid_with_historical_root() {
-    // Multi-file proofs include ledger_root and ledger_indices.
-    // The proof remains valid as long as the root is in the historical set.
-    // No ledger snapshot needed - the proof carries its own indices.
+    // Multi-file proofs include the ledger root used during proof generation.
+    // The proof remains valid as long as that root is retained historically and
+    // the verifier can re-derive the same file indices from its ledger state.
     println!("Testing multi-file proof valid with historical root");
 
     // 1. Set up multi-file scenario with 2 files
@@ -502,14 +505,14 @@ fn test_multi_file_proof_valid_with_historical_root() {
 
     // 4. Verify using updated ledger - should work because:
     //    - proof.ledger_root is in historical_roots (automatically recorded by add_file)
-    //    - proof includes ledger_indices from proof generation time
-    //    - SNARK proves indices are correct for claimed root
+    //    - verifier-derived indices for the challenged files are unchanged
+    //    - SNARK verification is bound to the verifier's reconstructed statement
     let updated_system = api::PorSystem::new(&updated_ledger);
     let result = updated_system.verify(&multi_proof, &challenges);
 
     assert!(
         result.expect("Should complete verification"),
-        "Multi-file proof should be valid with historical root (proof carries its own indices)"
+        "Multi-file proof should be valid with historical root and verifier-derived indices"
     );
 
     println!("✓ Multi-file proof correctly validates with historical root");
@@ -763,10 +766,10 @@ fn test_ledger_file_ordering_consistency() {
             .unwrap();
     }
 
-    // Get the keys in sorted order (BTreeMap should maintain this)
+    // Get the keys in sorted order (the backing BTreeMap maintains lexicographic key order)
     let sorted_keys: Vec<_> = ledger.files.keys().cloned().collect();
 
-    // Verify alphabetical ordering
+    // Verify map-key ordering only; ledger indices are tested separately.
     assert_eq!(sorted_keys[0], "apple");
     assert_eq!(sorted_keys[1], "banana");
     assert_eq!(sorted_keys[2], "mango");
@@ -776,12 +779,9 @@ fn test_ledger_file_ordering_consistency() {
 }
 
 #[test]
-fn test_ledger_duplicate_file_updates_entry() {
-    // Test that adding the same file_id again updates the existing entry.
-    // This is the expected behavior: the ledger uses BTreeMap::insert which
-    // silently overwrites. This allows file metadata to be updated (e.g., if
-    // the file content changes and gets a new root).
-    println!("Testing duplicate file updates in ledger");
+fn test_ledger_rejects_duplicate_file_id() {
+    // SECURITY: file_id is immutable. Re-adding an existing file_id must fail.
+    println!("Testing duplicate file rejection in ledger");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
@@ -792,18 +792,18 @@ fn test_ledger_duplicate_file_updates_entry() {
     let result1 = ledger.add_file(&synthetic_metadata(file_id, root1, 3));
     assert!(result1.is_ok(), "First add should succeed");
 
-    let original_root = ledger.files.get(file_id).unwrap().root;
+    let original_root = ledger.files.get(file_id).unwrap().entry.root;
     assert_eq!(original_root, root1, "Initial root should be root1");
 
-    // Add the same file again with a different root - this should UPDATE
+    // Add the same file again with a different root - this should FAIL
     let root2 = kontor_crypto::api::FieldElement::from(200u64);
     let result2 = ledger.add_file(&synthetic_metadata(file_id, root2, 3));
 
-    assert!(result2.is_ok(), "Second add should succeed (update)");
+    assert!(result2.is_err(), "Second add should be rejected");
     assert_eq!(
-        ledger.files.get(file_id).unwrap().root,
-        root2,
-        "Root MUST be updated to new value - ledger uses insert semantics"
+        ledger.files.get(file_id).unwrap().entry.root,
+        root1,
+        "Root must remain unchanged after duplicate rejection"
     );
 
     // Verify only one file exists (not two)
@@ -813,14 +813,13 @@ fn test_ledger_duplicate_file_updates_entry() {
         "Should still have exactly one file entry"
     );
 
-    println!("✓ Duplicate file correctly updates existing entry");
+    println!("✓ Duplicate file_id is rejected");
 }
 
 #[test]
-fn test_duplicate_file_with_different_content_records_historical_root() {
-    // When updating a file (same file_id, different content), the ledger root changes
-    // and a new historical root should be recorded.
-    println!("Testing that updating a file (different content) records historical root");
+fn test_duplicate_file_with_different_content_is_rejected() {
+    // SECURITY: a changed file must have a new file_id; duplicates are rejected.
+    println!("Testing that duplicate file with different content is rejected");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
@@ -832,45 +831,28 @@ fn test_duplicate_file_with_different_content_records_historical_root() {
     let root_after_v1 = ledger.root();
     assert_eq!(historical_root_total(&ledger), 1);
 
-    // Update file with different content (different root value)
+    // Attempt duplicate with different content (different root value)
     let meta_v2 = synthetic_metadata(file_id, FieldElement::from(200u64), 3);
-    ledger.add_file(&meta_v2).unwrap();
-
-    let root_after_v2 = ledger.root();
-
-    // Roots should be different
-    assert_ne!(
-        root_after_v1, root_after_v2,
-        "Ledger root must change when file content changes"
-    );
-
-    // Should have 2 historical roots (one per add_file)
-    assert_eq!(
-        historical_root_total(&ledger),
-        2,
-        "Updating file with different content should record new historical root"
-    );
-
-    // Both roots should be valid
+    let result = ledger.add_file(&meta_v2);
+    assert!(result.is_err(), "Duplicate file_id should be rejected");
+    assert_eq!(ledger.root(), root_after_v1);
+    assert_eq!(historical_root_total(&ledger), 1);
     assert!(ledger.is_valid_root(root_after_v1));
-    assert!(ledger.is_valid_root(root_after_v2));
 
-    // File entry should have the new root
+    // File entry should remain unchanged
     assert_eq!(
-        ledger.files.get(file_id).unwrap().root,
-        FieldElement::from(200u64),
-        "File should have updated root"
+        ledger.files.get(file_id).unwrap().entry.root,
+        FieldElement::from(100u64),
+        "File entry must remain unchanged after duplicate rejection"
     );
 
-    println!("✓ File update with different content correctly records historical root");
+    println!("✓ Duplicate file with different content is rejected");
 }
 
 #[test]
-fn test_duplicate_file_with_same_content_still_records_historical_root() {
-    // Re-adding the exact same file (same file_id, same content) doesn't change
-    // the ledger root, but add_file still records the current root.
-    // This is intentional - every add_file call records the current root.
-    println!("Testing that re-adding identical file still records historical root");
+fn test_duplicate_file_with_same_content_is_rejected() {
+    // SECURITY: exact duplicates are rejected too; replaying add_file is not a no-op update.
+    println!("Testing that re-adding identical file is rejected");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
@@ -882,41 +864,18 @@ fn test_duplicate_file_with_same_content_still_records_historical_root() {
     let root_after_first = ledger.root();
     assert_eq!(historical_root_total(&ledger), 1);
 
-    // Re-add the exact same file
-    ledger.add_file(&meta).unwrap();
+    let result = ledger.add_file(&meta);
+    assert!(result.is_err(), "Duplicate file_id should be rejected");
+    assert_eq!(ledger.root(), root_after_first);
+    assert_eq!(historical_root_total(&ledger), 1);
 
-    let root_after_second = ledger.root();
-
-    // Roots should be IDENTICAL (same file, same content)
-    assert_eq!(
-        root_after_first, root_after_second,
-        "Ledger root should NOT change when re-adding identical file"
-    );
-
-    // Should have 2 historical roots - add_file always records
-    assert_eq!(
-        historical_root_total(&ledger),
-        2,
-        "Re-adding identical file still records historical root (every add_file records)"
-    );
-
-    // Both entries are the same root
-    use ff::PrimeField;
-    let first_recorded: [u8; 32] = ledger.historical_roots[0];
-    let second_recorded: [u8; 32] = ledger.historical_roots[1];
-    let expected: [u8; 32] = root_after_first.to_repr().into();
-
-    assert_eq!(first_recorded, expected);
-    assert_eq!(second_recorded, expected);
-
-    println!("✓ Re-adding identical file correctly records historical root");
+    println!("✓ Re-adding identical file is rejected");
 }
 
 #[test]
-fn test_duplicate_file_with_different_depth_records_historical_root() {
-    // Same file_id but different depth should change the rc (root commitment)
-    // and therefore change the ledger root.
-    println!("Testing that updating file depth records historical root");
+fn test_duplicate_file_with_different_depth_is_rejected() {
+    // SECURITY: file_id immutability also forbids changing the committed depth.
+    println!("Testing that duplicate file with different depth is rejected");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
@@ -926,54 +885,42 @@ fn test_duplicate_file_with_different_depth_records_historical_root() {
     let meta_depth3 = synthetic_metadata(file_id, FieldElement::from(100u64), 3);
     ledger.add_file(&meta_depth3).unwrap();
     let root_depth3 = ledger.root();
-    let rc_depth3 = ledger.files.get(file_id).unwrap().rc;
+    let rc_depth3 = ledger.files.get(file_id).unwrap().entry.rc;
 
-    // Update to depth 5 (same root value, different depth)
+    // Attempt duplicate with depth 5 (same root value, different depth)
     let meta_depth5 = synthetic_metadata(file_id, FieldElement::from(100u64), 5);
-    ledger.add_file(&meta_depth5).unwrap();
-    let root_depth5 = ledger.root();
-    let rc_depth5 = ledger.files.get(file_id).unwrap().rc;
-
-    // RC should change because rc = H(TAG_RC, root, depth)
-    assert_ne!(rc_depth3, rc_depth5, "RC must change when depth changes");
-
-    // Ledger root should change
-    assert_ne!(
-        root_depth3, root_depth5,
-        "Ledger root must change when file depth changes"
-    );
-
-    // Should have 2 historical roots
-    assert_eq!(historical_root_total(&ledger), 2);
+    let result = ledger.add_file(&meta_depth5);
+    assert!(result.is_err(), "Duplicate file_id should be rejected");
+    assert_eq!(ledger.root(), root_depth3);
+    assert_eq!(ledger.files.get(file_id).unwrap().entry.rc, rc_depth3);
+    assert_eq!(historical_root_total(&ledger), 1);
     assert!(ledger.is_valid_root(root_depth3));
-    assert!(ledger.is_valid_root(root_depth5));
 
-    println!("✓ File update with different depth correctly records historical root");
+    println!("✓ Duplicate file with different depth is rejected");
 }
 
 #[test]
-fn test_multiple_updates_to_same_file_accumulate_historical_roots() {
-    // Multiple updates to the same file should accumulate historical roots
-    println!("Testing that multiple file updates accumulate historical roots");
+fn test_multiple_updates_to_same_file_are_rejected() {
+    // SECURITY: repeated use of the same file_id must fail after the first add.
+    println!("Testing that repeated duplicate file additions are rejected");
 
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
 
     let file_id = "frequently_updated";
     let mut captured_roots = Vec::new();
 
-    // Add and update the file 5 times
+    // Add once, then reject subsequent attempts.
     for i in 0..5 {
         let meta = synthetic_metadata(file_id, FieldElement::from(i as u64 * 100), 3);
-        ledger.add_file(&meta).unwrap();
-        captured_roots.push(ledger.root());
+        if i == 0 {
+            ledger.add_file(&meta).unwrap();
+            captured_roots.push(ledger.root());
+        } else {
+            assert!(ledger.add_file(&meta).is_err());
+        }
     }
 
-    // Should have 5 historical roots (one per add_file)
-    assert_eq!(
-        historical_root_total(&ledger),
-        5,
-        "Multiple updates should accumulate historical roots"
-    );
+    assert_eq!(historical_root_total(&ledger), 1);
 
     // All roots should be valid
     for root in &captured_roots {
@@ -985,11 +932,11 @@ fn test_multiple_updates_to_same_file_accumulate_historical_roots() {
 
     // File has the last update's root
     assert_eq!(
-        ledger.files.get(file_id).unwrap().root,
-        FieldElement::from(400u64)
+        ledger.files.get(file_id).unwrap().entry.root,
+        FieldElement::from(0u64)
     );
 
-    println!("✓ Multiple file updates correctly accumulate historical roots");
+    println!("✓ Repeated duplicate file additions are rejected");
 }
 
 // ===========================================
@@ -1016,7 +963,8 @@ fn test_batch_add_produces_identical_cryptographic_commitments() {
 
     // Method 2: Batch add
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files(&files_data).unwrap();
+    let indexed = collect_test_file_metadata_rows(files_data.clone());
+    ledger_batch.add_files(&indexed).unwrap();
 
     // Verify cryptographic equivalence
     assert_eq!(
@@ -1027,8 +975,8 @@ fn test_batch_add_produces_identical_cryptographic_commitments() {
 
     // Verify each file's rc (root commitment) is identical
     for file_id in ["file_alpha", "file_beta", "file_gamma"] {
-        let rc_individual = ledger_individual.files.get(file_id).unwrap().rc;
-        let rc_batch = ledger_batch.files.get(file_id).unwrap().rc;
+        let rc_individual = ledger_individual.files.get(file_id).unwrap().entry.rc;
+        let rc_batch = ledger_batch.files.get(file_id).unwrap().entry.rc;
         assert_eq!(
             rc_individual, rc_batch,
             "SECURITY VIOLATION: RC for {} must be identical",
@@ -1054,7 +1002,9 @@ fn test_batch_add_proof_generation_and_verification() {
 
     // Use batch add to create ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_files([&metadata_1, &metadata_2]).unwrap();
+    let metadatas = vec![metadata_1.clone(), metadata_2.clone()];
+    let indexed = collect_test_file_metadata_rows(metadatas.clone());
+    ledger.add_files(&indexed).unwrap();
 
     // Generate a proof for file 1
     let challenge = api::Challenge::new(
@@ -1102,7 +1052,8 @@ fn test_batch_add_multi_file_proof_verification() {
 
     // Batch add all files to ledger
     let mut ledger = kontor_crypto::ledger::FileLedger::new();
-    ledger.add_files(&metadatas).unwrap();
+    let indexed = collect_test_file_metadata_rows(metadatas.clone());
+    ledger.add_files(&indexed).unwrap();
 
     // Create challenges for all files
     let challenges: Vec<_> = metadatas
@@ -1158,7 +1109,8 @@ fn test_batch_add_save_load_roundtrip() {
         })
         .collect();
 
-    ledger.add_files(&files).unwrap();
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger.add_files(&indexed).unwrap();
     let original_root = ledger.tree.root();
     let original_count = ledger.files.len();
 
@@ -1183,7 +1135,7 @@ fn test_batch_add_save_load_roundtrip() {
     for (file_id, entry) in &ledger.files {
         let loaded_entry = loaded.files.get(file_id).expect("File should exist");
         assert_eq!(
-            entry.rc, loaded_entry.rc,
+            entry.entry.rc, loaded_entry.entry.rc,
             "SECURITY VIOLATION: RC must be preserved for {}",
             file_id
         );
@@ -1193,59 +1145,71 @@ fn test_batch_add_save_load_roundtrip() {
 }
 
 #[test]
-fn test_batch_add_canonical_ordering_security() {
-    // SECURITY: Canonical ordering must be deterministic regardless of batch order.
-    // Non-deterministic ordering could lead to proof failures or index confusion attacks.
-    println!("Testing canonical ordering security with batch add");
+fn test_batch_add_explicit_index_reconstruction_determinism() {
+    // SECURITY: Reconstruction must be deterministic when persisted indices are supplied.
+    // Input order should not matter if the explicit stable indices are the same.
+    println!("Testing explicit-index reconstruction determinism with batch add");
 
     // Same files in different batch orders
-    let files_order1 = vec![
+    let files_order1 = [
         synthetic_metadata("zebra", api::FieldElement::from(1u64), 3),
         synthetic_metadata("apple", api::FieldElement::from(2u64), 3),
         synthetic_metadata("mango", api::FieldElement::from(3u64), 3),
     ];
 
-    let files_order2 = vec![
+    let files_order2 = [
         synthetic_metadata("mango", api::FieldElement::from(3u64), 3),
         synthetic_metadata("zebra", api::FieldElement::from(1u64), 3),
         synthetic_metadata("apple", api::FieldElement::from(2u64), 3),
     ];
 
     let mut ledger1 = kontor_crypto::ledger::FileLedger::new();
-    ledger1.add_files(&files_order1).unwrap();
+    let indexed_order1 = vec![
+        TestFileMetadataRow::new(files_order1[0].clone(), 0),
+        TestFileMetadataRow::new(files_order1[1].clone(), 1),
+        TestFileMetadataRow::new(files_order1[2].clone(), 2),
+    ];
+    ledger1.add_files(&indexed_order1).unwrap();
 
     let mut ledger2 = kontor_crypto::ledger::FileLedger::new();
-    ledger2.add_files(&files_order2).unwrap();
+    let indexed_order2 = vec![
+        TestFileMetadataRow::new(files_order2[0].clone(), 2),
+        TestFileMetadataRow::new(files_order2[1].clone(), 0),
+        TestFileMetadataRow::new(files_order2[2].clone(), 1),
+    ];
+    ledger2.add_files(&indexed_order2).unwrap();
 
-    // Roots must be identical
     assert_eq!(
         ledger1.tree.root(),
         ledger2.tree.root(),
-        "SECURITY VIOLATION: Different batch orders must produce same root"
+        "SECURITY VIOLATION: Explicit reconstruction indices must fully determine the root"
     );
 
-    // Canonical indices must be identical
     for file_id in ["apple", "mango", "zebra"] {
         let (idx1, rc1) = ledger1.lookup(file_id).unwrap();
         let (idx2, rc2) = ledger2.lookup(file_id).unwrap();
-        assert_eq!(
-            idx1, idx2,
-            "SECURITY VIOLATION: Canonical index for {} must be identical",
-            file_id
-        );
         assert_eq!(
             rc1, rc2,
             "SECURITY VIOLATION: RC for {} must be identical",
             file_id
         );
+        assert_eq!(
+            idx1, idx2,
+            "SECURITY VIOLATION: Index for {} must be identical across reconstruction orders",
+            file_id
+        );
     }
 
-    // Verify expected canonical order (alphabetical)
-    assert_eq!(ledger1.lookup("apple").unwrap().0, 0);
-    assert_eq!(ledger1.lookup("mango").unwrap().0, 1);
-    assert_eq!(ledger1.lookup("zebra").unwrap().0, 2);
+    // Verify persisted index assignment.
+    assert_eq!(ledger1.lookup("zebra").unwrap().0, 0);
+    assert_eq!(ledger1.lookup("apple").unwrap().0, 1);
+    assert_eq!(ledger1.lookup("mango").unwrap().0, 2);
 
-    println!("✓ Batch add maintains deterministic canonical ordering");
+    assert_eq!(ledger2.lookup("zebra").unwrap().0, 0);
+    assert_eq!(ledger2.lookup("apple").unwrap().0, 1);
+    assert_eq!(ledger2.lookup("mango").unwrap().0, 2);
+
+    println!("✓ Batch add deterministically reconstructs persisted indices");
 }
 
 #[test]
@@ -1263,7 +1227,8 @@ fn test_batch_add_aggregation_proof_integrity() {
         synthetic_metadata("file_c", api::FieldElement::from(300u64), 5),
         synthetic_metadata("file_d", api::FieldElement::from(400u64), 3),
     ];
-    ledger.add_files(&files).unwrap();
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger.add_files(&indexed).unwrap();
 
     // Get aggregation proof for each file and verify structure
     for file_id in ["file_a", "file_b", "file_c", "file_d"] {
@@ -1313,13 +1278,16 @@ fn test_batch_add_ledger_root_changes_with_different_files() {
     ];
 
     let mut ledger_a = kontor_crypto::ledger::FileLedger::new();
-    ledger_a.add_files(&files_a).unwrap();
+    let indexed_a = collect_test_file_metadata_rows(files_a.clone());
+    ledger_a.add_files(&indexed_a).unwrap();
 
     let mut ledger_b = kontor_crypto::ledger::FileLedger::new();
-    ledger_b.add_files(&files_b).unwrap();
+    let indexed_b = collect_test_file_metadata_rows(files_b.clone());
+    ledger_b.add_files(&indexed_b).unwrap();
 
     let mut ledger_c = kontor_crypto::ledger::FileLedger::new();
-    ledger_c.add_files(&files_c).unwrap();
+    let indexed_c = collect_test_file_metadata_rows(files_c.clone());
+    ledger_c.add_files(&indexed_c).unwrap();
 
     // All roots must be different
     assert_ne!(
@@ -1348,12 +1316,14 @@ fn test_batch_add_rc_computation_consistency() {
     // Add via individual method
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
     ledger_individual.add_file(&metadata).unwrap();
-    let rc_individual = ledger_individual.files.get("test_file").unwrap().rc;
+    let rc_individual = ledger_individual.files.get("test_file").unwrap().entry.rc;
 
     // Add via batch method
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files([&metadata]).unwrap();
-    let rc_batch = ledger_batch.files.get("test_file").unwrap().rc;
+    let metadatas = vec![metadata.clone()];
+    let indexed = collect_test_file_metadata_rows(metadatas.clone());
+    ledger_batch.add_files(&indexed).unwrap();
+    let rc_batch = ledger_batch.files.get("test_file").unwrap().entry.rc;
 
     assert_eq!(
         rc_individual, rc_batch,
@@ -1394,7 +1364,9 @@ fn test_batch_add_with_real_files_proof_equivalence() {
 
     // Create ledger via batch add
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files([&metadata_1, &metadata_2]).unwrap();
+    let metadatas = vec![metadata_1.clone(), metadata_2.clone()];
+    let indexed = collect_test_file_metadata_rows(metadatas.clone());
+    ledger_batch.add_files(&indexed).unwrap();
 
     // Roots must be identical
     assert_eq!(
@@ -1458,13 +1430,13 @@ fn test_batch_add_with_real_files_proof_equivalence() {
 }
 
 #[test]
-fn test_batch_add_canonical_indices_match_individual_adds() {
-    // SECURITY: The canonical index for each file must be identical whether
+fn test_batch_add_stable_indices_match_individual_adds() {
+    // SECURITY: The stable index for each file must be identical whether
     // the ledger was built via batch add or individual adds.
-    // Different indices would break proof verification.
-    println!("Testing canonical index equivalence between batch and individual adds");
+    // Different indices for identical insertion order would break proof verification.
+    println!("Testing stable index equivalence between batch and individual adds");
 
-    // Create files with names that will sort in a specific order
+    // Create files in a deliberate insertion order so stable indices are predictable.
     let files = vec![
         synthetic_metadata("delta", FieldElement::from(400u64), 3),
         synthetic_metadata("alpha", FieldElement::from(100u64), 4),
@@ -1472,7 +1444,7 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
         synthetic_metadata("beta", FieldElement::from(200u64), 3),
     ];
 
-    // Build ledger via individual adds (in random order)
+    // Build ledger via individual adds in that same insertion order.
     let mut ledger_individual = kontor_crypto::ledger::FileLedger::new();
     for metadata in files.iter() {
         ledger_individual.add_file(metadata).unwrap();
@@ -1480,10 +1452,11 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
 
     // Build ledger via batch add (same order)
     let mut ledger_batch = kontor_crypto::ledger::FileLedger::new();
-    ledger_batch.add_files(&files).unwrap();
+    let indexed = collect_test_file_metadata_rows(files.clone());
+    ledger_batch.add_files(&indexed).unwrap();
 
-    // Verify canonical indices are identical
-    let expected_order = ["alpha", "beta", "delta", "gamma"]; // Alphabetical
+    // Verify stable indices are identical and follow insertion order.
+    let expected_order = ["delta", "alpha", "gamma", "beta"];
 
     for (expected_idx, file_id) in expected_order.iter().enumerate() {
         let (idx_individual, rc_individual) = ledger_individual
@@ -1495,17 +1468,17 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
 
         assert_eq!(
             idx_individual, expected_idx,
-            "SECURITY VIOLATION: {} should be at index {} in individual ledger, got {}",
+            "SECURITY VIOLATION: {} should be at insertion index {} in individual ledger, got {}",
             file_id, expected_idx, idx_individual
         );
         assert_eq!(
             idx_batch, expected_idx,
-            "SECURITY VIOLATION: {} should be at index {} in batch ledger, got {}",
+            "SECURITY VIOLATION: {} should be at insertion index {} in batch ledger, got {}",
             file_id, expected_idx, idx_batch
         );
         assert_eq!(
             idx_individual, idx_batch,
-            "SECURITY VIOLATION: Canonical index for {} differs between batch ({}) and individual ({})",
+            "SECURITY VIOLATION: Stable index for {} differs between batch ({}) and individual ({})",
             file_id, idx_batch, idx_individual
         );
         assert_eq!(
@@ -1517,7 +1490,7 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
 
     // Also verify via get_canonical_index_for_rc
     for file_id in &expected_order {
-        let rc = ledger_individual.files.get(*file_id).unwrap().rc;
+        let rc = ledger_individual.files.get(*file_id).unwrap().entry.rc;
         let idx_individual = ledger_individual.get_canonical_index_for_rc(rc);
         let idx_batch = ledger_batch.get_canonical_index_for_rc(rc);
 
@@ -1528,7 +1501,7 @@ fn test_batch_add_canonical_indices_match_individual_adds() {
         );
     }
 
-    println!("✓ Canonical indices are identical between batch and individual adds");
+    println!("✓ Stable indices are identical between batch and individual adds");
 }
 
 // =============================================================================
@@ -1613,12 +1586,19 @@ fn test_add_files_does_not_record_historical_roots() {
     assert_eq!(historical_root_total(&ledger), 1);
 
     // Batch add multiple files - should NOT record any historical roots
-    let batch = vec![
+    let batch = [
         synthetic_metadata("file_2", FieldElement::from(200u64), 3),
         synthetic_metadata("file_3", FieldElement::from(300u64), 3),
         synthetic_metadata("file_4", FieldElement::from(400u64), 3),
     ];
-    ledger.add_files(&batch).unwrap();
+    let indexed = batch
+        .iter()
+        .enumerate()
+        .map(|(offset, metadata)| {
+            TestFileMetadataRow::new(metadata.clone(), ledger.next_ledger_index() + offset)
+        })
+        .collect::<Vec<_>>();
+    ledger.add_files(&indexed).unwrap();
 
     assert_eq!(
         historical_root_total(&ledger),
@@ -2047,8 +2027,8 @@ fn test_empty_batch_is_noop_no_historical_root() {
     let history_before = ledger.historical_roots.len();
 
     // Empty batch
-    let empty: Vec<&api::FileMetadata> = vec![];
-    ledger.add_files(empty).unwrap();
+    let indexed_empty: Vec<TestFileMetadataRow> = vec![];
+    ledger.add_files(&indexed_empty).unwrap();
 
     // Verify complete no-op
     assert_eq!(ledger.root(), root_before, "Root should not change");

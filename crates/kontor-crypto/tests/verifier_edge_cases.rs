@@ -2,47 +2,59 @@
 
 use kontor_crypto::api::{self, Challenge, FieldElement};
 use kontor_crypto::KontorPoRError;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+
+fn nonce(label: &str) -> [u8; 16] {
+    let digest = Sha256::digest(label.as_bytes());
+    digest[..16].try_into().expect("slice is 16 bytes")
+}
 
 #[test]
 fn test_verifier_rejects_out_of_range_ledger_index() {
-    // Verifier should reject ledger_indices >= 2^aggregated_tree_depth, since the circuit
-    // only consumes low bits and would otherwise permit non-canonical indices.
+    // Verifier should reject proofs when derived ledger indices don't fit the claimed
+    // aggregated tree depth.
     let data_a = vec![1u8; 100];
     let data_b = vec![2u8; 100];
-    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a.dat", b"").unwrap();
-    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b.dat", b"").unwrap();
+    let data_c = vec![3u8; 100];
+    let (prepared_a, meta_a) = api::prepare_file(&data_a, "a.dat", &nonce("a")).unwrap();
+    let (prepared_b, meta_b) = api::prepare_file(&data_b, "b.dat", &nonce("b")).unwrap();
+    let (prepared_c, meta_c) = api::prepare_file(&data_c, "c.dat", &nonce("c")).unwrap();
 
     let mut ledger = kontor_crypto::FileLedger::new();
     ledger.add_file(&meta_a).unwrap();
     ledger.add_file(&meta_b).unwrap();
+    ledger.add_file(&meta_c).unwrap();
 
     let challenges = vec![
         Challenge::new_test(meta_a.clone(), 1000, 1, FieldElement::from(1u64)),
         Challenge::new_test(meta_b.clone(), 1000, 1, FieldElement::from(2u64)),
+        Challenge::new_test(meta_c.clone(), 1000, 1, FieldElement::from(3u64)),
     ];
 
     let system = kontor_crypto::api::PorSystem::new(&ledger);
     let mut proof = system
-        .prove(vec![&prepared_a, &prepared_b], &challenges)
+        .prove(vec![&prepared_a, &prepared_b, &prepared_c], &challenges)
         .expect("Should generate a valid multi-file proof");
 
-    assert!(proof.aggregated_tree_depth > 0, "Must be multi-file proof");
+    assert!(
+        proof.aggregated_tree_depth > 1,
+        "Must have at least depth 2 for 3-file proof"
+    );
 
-    // Make ledger_index out of range: max is (1<<depth)-1, so choose 1<<depth.
-    let out_of_range = 1usize << proof.aggregated_tree_depth;
-    proof.ledger_indices[0] = out_of_range;
+    // Shrink claimed depth so derived index 2 no longer fits range [0, 1].
+    proof.aggregated_tree_depth -= 1;
 
     let res = system.verify(&proof, &challenges);
     assert!(
         matches!(res, Err(KontorPoRError::InvalidInput(_))),
-        "Expected InvalidInput for out-of-range ledger index, got: {res:?}"
+        "Expected InvalidInput for out-of-range derived ledger index, got: {res:?}"
     );
 }
 
 #[test]
-fn test_verifier_rejects_ledger_indices_length_mismatch() {
-    // Verifier should reject proofs whose ledger_indices length doesn't match files_per_step.
+fn test_verifier_rejects_zero_aggregated_tree_depth_for_multifile() {
+    // Verifier should reject multi-file proofs with aggregated_tree_depth = 0.
     let data_a = vec![3u8; 100];
     let data_b = vec![4u8; 100];
     let (prepared_a, meta_a) = api::prepare_file(&data_a, "a2.dat", b"").unwrap();
@@ -62,13 +74,12 @@ fn test_verifier_rejects_ledger_indices_length_mismatch() {
         .prove(vec![&prepared_a, &prepared_b], &challenges)
         .expect("Should generate a valid multi-file proof");
 
-    // Corrupt the proof: remove one index so the length doesn't match files_per_step.
-    proof.ledger_indices.pop();
+    proof.aggregated_tree_depth = 0;
 
     let res = system.verify(&proof, &challenges);
     assert!(
         matches!(res, Err(KontorPoRError::InvalidInput(_))),
-        "Expected InvalidInput for ledger_indices length mismatch, got: {res:?}"
+        "Expected InvalidInput for zero aggregated_tree_depth on multi-file proof, got: {res:?}"
     );
 }
 

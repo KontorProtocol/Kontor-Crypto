@@ -132,9 +132,7 @@ fn build_single_file_proof_with_custom_witness_source(
 
     Proof {
         compressed_snark,
-        challenge_ids: vec![challenge.id()],
         ledger_root: statement_root,
-        ledger_indices: vec![ledger_index],
         aggregated_tree_depth: agg_depth,
     }
 }

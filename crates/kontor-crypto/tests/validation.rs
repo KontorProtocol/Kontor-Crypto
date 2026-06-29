@@ -519,9 +519,12 @@ fn test_verify_fails_with_mismatched_challenge_counts() {
     let mut modified_challenges = setup.challenges.clone();
     modified_challenges[1].num_challenges += 1;
 
-    // Verification should fail due to mismatched challenge IDs (caused by different num_challenges)
+    // Verification should fail due to inconsistent num_challenges across inputs.
     let result = system.verify(&proof, &modified_challenges);
-    assert_verify_fails_contains(result, Some("Challenge ID mismatch"));
+    assert_verify_fails_contains(
+        result,
+        Some("All challenges must have the same num_challenges for verification"),
+    );
 
     println!("✓ Mismatched num_challenges in verification correctly rejected");
 }
